@@ -12,12 +12,12 @@ library(doFuture)
 library(sf)
 theme_set(theme_bw() + theme(panel.grid=element_blank()))
 
-set.seed(101)
+set.seed(11)
 
 
 # define parameters -------------------------------------------------------
 
-cores_per_sim <- 30
+cores_per_sim <- 20
 parallel_sims <- 1
 start_date <- "2023-01-01"
 end_date <- "2023-12-31"
@@ -37,7 +37,8 @@ dirs <- switch(
                mesh="E:/hydro",
                hydro1="E:/hydro/etive28/Archive",
                hydro2="E:/hydro/WeStCOMS2/Archive",
-               jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
+               jdk="C:/Users/sa04ts/.jdks/openjdk-22.0.1/bin/javaw",
+               # jdk="C:/Users/sa04ts/.jdks/openjdk-19/bin/javaw",
                jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v1-0-0.jar",
                out=glue("D:/EtiveLice/out/biotracker"))
 )
@@ -49,27 +50,25 @@ egg_post <- list(constant=tibble(b=rnorm(4000, 28.2, 2)),
   map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
         unite("all", everything(), sep=",") %>%
         .$all)
-mort_post <- list(constant=tibble(b=plogis(rnorm(4000, qlogis(0.01), 0.25))),
+mort_post <- list(constant=tibble(b=plogis(rnorm(4000, qlogis(0.1), 0.25))),
                  logistic=read_csv(glue("{post_dir}/mort_sal_logistic_post.csv"), show_col_types=F)) |>
   map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
         unite("all", everything(), sep=",") %>%
         .$all)
 n_sim <- 6
-swim_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.8, 0.8, 1), nrow=2))
-light_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.8, 0.8, 1), nrow=2))
 sim.i <- tibble(D_h=runif(n_sim, 0.05, 0.5),
-                D_hVert=runif(n_sim, 0.0005, 0.005),
+                D_hVert=runif(n_sim, 0.005, 0.05),
                 mortSal_fn=sample(c("constant", "logistic"), n_sim, replace=T),
                 eggTemp_fn=sample(c("constant", "logistic"), n_sim, replace=T),
-                lightThreshCopepodid=qunif(pnorm(light_mx[,1]), (2e-6)^0.5, (2e-4)^0.5)^2,
-                lightThreshNauplius=qunif(pnorm(light_mx[,2]), (0.05)^0.5, (0.5)^0.5)^2,
-                swimUpSpeedMean=-(qunif(pnorm(swim_mx[,1]), (1e-4)^0.5, (2e-2)^0.5))^2,
-                swimDownSpeedMean=(qunif(pnorm(swim_mx[,2]), (1e-4)^0.5, (2e-2)^0.5))^2,
+                lightThreshCopepodid=runif(n_sim, 0.00001, 0.0005),
+                lightThreshNauplius=runif(n_sim, 0.05, 0.75),
+                swimUpSpeedMean=runif(n_sim, 1e-4, 1e-2) * -1,
+                swimDownSpeedMean=runif(n_sim, 1e-4, 1e-2),
                 passiveSinkRateSal=sample(c(T, F), n_sim, replace=T),
                 salinityThreshMin=runif(n_sim, 20, 28),
                 salinityThreshMax=pmin(salinityThreshMin + runif(n_sim, 0.1, 6), 32),
                 viableDegreeDays=runif(n_sim, 35, 45),
-                connectivityThresh=30) |>
+                connectivityThresh=runif(n_sim, 100, 200)) |>
   mutate(across(where(is.numeric), ~signif(.x, 5))) |>
   mutate(i=str_pad(row_number(), 2, "left", "0"),
          outDir=glue("{dirs$out}/sim_{i}/")) |>
@@ -93,7 +92,7 @@ walk(sim_seq,
        parallelThreadsHD=6,
        start_ymd=as.numeric(str_remove_all(start_date, "-")),
        numberOfDays=nDays,
-       nparts=5,
+       nparts=10,
        checkOpenBoundaries="true",
        # meshes and environment
        mesh1=glue("{dirs$mesh}/etive28_mesh.nc"),
@@ -103,8 +102,8 @@ walk(sim_seq,
        mesh2Domain="westcoms2",
        datadir2=glue("{dirs$hydro2}/"),
        # sites
-       sitefile=glue("D:/EtiveLice/data/pen_sites_linnhe_2023.csv"),
-       sitefileEnd=glue("D:/EtiveLice/data/pen_sites_etive_2023.csv"),
+       sitefile=glue("D:/EtiveLice/data/farm_sites.csv"),
+       sitefileEnd=glue("D:/EtiveLice/data/farm_sites.csv"),
        siteDensityPath=glue("D:/EtiveLice/data/lice_daily_2023-01-01_2023-12-31.csv"),
        # dynamics
        D_hVert=sim.i$D_hVert[.x],
@@ -165,35 +164,25 @@ plan(sequential)
 # process output ----------------------------------------------------------
 
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
-pens_linnhe <- read_csv("data/pen_sites_linnhe_2023.csv")
-pens_etive <- read_csv("data/pen_sites_etive_2023.csv")
-etive_farms <- read_csv("data/pen_sites_etive_2023.csv") |>
-  mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1])
+etive_farms <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
 # Site conditions
 site_env_df <- dirf(glue("{dirs$out}/sim_01"), "siteConditions") |>
   map_dfr(~read_csv(.x, show_col_types=F,
                     col_select=c(site, depth, mesh, u, v, w, uv, salinity, temperature)) |>
             mutate(date=ymd(str_split_fixed(basename(.x), "_", 3)[,2]))) |>
-  rename(pen=site) |>
-  select(-mesh) |>
-  mutate(pen=paste0(str_split_fixed(pen, "_", 2)[,1],
-                    "_",
-                    str_pad(str_split_fixed(pen, "_", 2)[,2], 2, "left", "0"))) |>
-  inner_join(etive_farms |> select(sepaSite, pen)) |>
-  select(sepaSite, pen, date, depth, u, v, w, uv, salinity, temperature)
+  filter(site %in% etive_farms) |>
+  rename(sepaSite=site)
 write_csv(site_env_df, "data/sim/inputs/farm_env.csv")
 
 # Influx
 mesh_fp <- st_read(glue("{dirs$mesh}/etive28_mesh_footprint.gpkg"))
+site_i <- read_csv("D:/EtiveLice/data/farm_sites.csv")
 c_long <- map_dfr(dirrf(dirs$out, "connectivity.*csv"),
-                  ~load_connectivity(.x,
-                                     source_names=pens_linnhe$pen,
-                                     dest_names=pens_etive$pen,
-                                     liceScale=1) |>
+                  ~load_connectivity(.x, site_i$sepaSite, liceScale=1) |>
                     mutate(sim=str_sub(str_split_fixed(.x, "sim_", 2)[,2], 1, 2)))
 site_areas <- sim.i |>
   select(i, connectivityThresh) |>
-  mutate(site_df=list(pens_linnhe)) |>
+  mutate(site_df=list(site_i)) |>
   unnest(site_df) |>
   st_as_sf(coords=c("easting", "northing"), crs=27700) %>%
   st_buffer(dist=.$connectivityThresh) |>
@@ -208,21 +197,19 @@ write_csv(site_areas, "data/sim/inputs/farm_influx_areas.csv")
 c_daily <- list(
   c_long |>
     calc_influx(destination, value, sim, date) |>
-    rename(pen=destination) |>
-    inner_join(site_areas, by=join_by(pen, sim)) |>
+    rename(sepaSite=destination) |>
+    inner_join(site_areas, by=join_by(sepaSite, sim)) |>
     mutate(influx_m2=influx/area) |>
     select(-area),
   c_long |>
-    mutate(destination=factor(destination, levels=levels(source))) |>
-    calc_self_infection(source, destination, value, sim, date) |> rename(pen=source) |>
-    inner_join(site_areas, by=join_by(pen, sim)) |>
+    calc_self_infection(source, destination, value, sim, date) |> rename(sepaSite=source) |>
+    inner_join(site_areas, by=join_by(sepaSite, sim)) |>
     mutate(self_m2=self/area) |>
     select(-area)
 ) |>
   reduce(full_join) |>
-  complete(pen, sim, date,
+  complete(sepaSite, sim, date,
            fill=list(influx=0, influx_m2=0, N_influx=0,
-                     self=0, self_m2=0)) |>
-  mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1])
+                     self=0, self_m2=0))
 
 write_csv(c_daily, "data/sim/inputs/influx.csv")
