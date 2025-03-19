@@ -186,12 +186,18 @@ library(brms)
 theme_set(theme_bw())
 
 ## EGG PRODUCTION
+# Scottish data + biotracker assume eggs/day/AF, NOT eggs/day/Gravid!
+# egg_df is adjusted to assume 82.6% of adult females are gravid based on
+# average development times in Toorians & Adams 2020 (35d: AF, 55-150d: Gravid)
 # Kragesteen 2023: Egg = f(temperature)
+# typo in Table 1: Hamre 2019 has 28.9, not 28.6 for T=6
 egg_df <- read_csv("data/lit/Kragesteen2023_Table1.csv") |>
-  filter(temperature > 4)
+  filter(temperature > 4) |>
+  mutate(eggs_day_AG=if_else(temperature==6, 28.9, eggs_day_AG),
+         eggs_day_AF=eggs_day_AG*(150-55)/(150-35))
 
 # linear
-egg_temp_linear <- brm(eggs_day_AG ~ temperature, data=egg_df, cores=4,
+egg_temp_linear <- brm(eggs_day_AF ~ temperature, data=egg_df, cores=4,
                        prior=c(prior(normal(0, 10), class=sigma)))
 egg_temp_linear |> saveRDS("data/lit/fit/egg_temp_linear_brmsfit.rds")
 as_draws_df(egg_temp_linear) |>
@@ -201,25 +207,25 @@ as_draws_df(egg_temp_linear) |>
   write_csv("data/lit/fit/egg_temp_linear_post.csv")
 
 # logistic
-egg_temp_logistic <- brm(bf(eggs_day_AG ~ eggMax/(1+exp(-k*(temperature - temp0))) + b, nl=T) +
-                           lf(eggMax ~ 1, k~1, temp0~1, b~1),
-                         data=egg_df, cores=4,
-                         prior=c(prior(normal(100, 10), nlpar="eggMax"),
+egg_temp_logistic <- brm(bf(eggs_day_AF ~ eggMax/(1+exp(-k*(temperature - tempMid))) + eggMin, nl=T) +
+                           lf(eggMax ~ 1, k~1, tempMid~1, eggMin~1),
+                         data=egg_df, cores=4, control=list(adapt_delta=0.99),
+                         prior=c(prior(normal(70, 5), nlpar="eggMax"),
                                  prior(normal(0, 1), nlpar="k"),
-                                 prior(normal(10, 10), nlpar="temp0"),
-                                 prior(normal(10, 10), nlpar="b", lb=0),
-                                 prior(normal(0, 10), class=sigma)))
+                                 prior(normal(10, 3), nlpar="tempMid"),
+                                 prior(normal(10, 5), nlpar="eggMin", lb=0),
+                                 prior(normal(0, 5), class=sigma)))
 egg_temp_logistic |> saveRDS("data/lit/fit/egg_temp_logistic_brmsfit.rds")
 as_draws_df(egg_temp_logistic) |>
   rename(eggMax=b_eggMax_Intercept,
          k=b_k_Intercept,
-         temp0=b_temp0_Intercept,
-         b=b_b_Intercept) |>
-  select(eggMax, k, temp0, b) |>
+         tempMid=b_tempMid_Intercept,
+         eggMin=b_eggMin_Intercept) |>
+  select(eggMax, k, tempMid, eggMin) |>
   write_csv("data/lit/fit/egg_temp_logistic_post.csv")
 
 # quadratic
-egg_temp_quadratic <- brm(bf(eggs_day_AG ~ a * (b + temperature)^2, nl=T) +
+egg_temp_quadratic <- brm(bf(eggs_day_AF ~ a * (b + temperature)^2, nl=T) +
                         lf(a ~ 1, b ~ 1),
                       prior=c(prior(normal(0.17, 3), nlpar="a"),
                               prior(normal(4.28, 3), nlpar="b"),
@@ -238,35 +244,38 @@ as_draws_df(egg_temp_quadratic) |>
 
 egg_post <- read_csv("data/lit/fit/egg_temp_logistic_post.csv")
 temp_seq <- seq(3, 20, by=0.1)
-plot(NA, NA, xlim=c(3, 20), ylim=c(0, 150),
-     xlab="Temperature", ylab="Eggs per gravid female per day")
+plot(NA, NA, xlim=c(3, 20), ylim=c(0, 100),
+     xlab="Temperature", ylab="Eggs per adult female per day")
 for(i in 1:300) {
-  lines(temp_seq, egg_post$eggMax[i]/(1+exp(-egg_post$k[i]*(temp_seq - egg_post$temp0[i]))) + egg_post$b[i], col=rgb(0,0,0,0.1))
+  lines(temp_seq, egg_post$eggMax[i]/(1+exp(-egg_post$k[i]*(temp_seq - egg_post$tempMid[i]))) + egg_post$eggMin[i], col=rgb(0,0,0,0.1))
 }
 lines(temp_seq, 0.17 * (4.28 + temp_seq)^2, col="red")
-lines(temp_seq, median(egg_post$eggMax)/(1+exp(-median(egg_post$k)*(temp_seq - median(egg_post$temp0)))) + median(egg_post$b), col="black", lwd=2)
-points(egg_df$temperature, egg_df$eggs_day_AG, col="blue")
+lines(temp_seq, median(egg_post$eggMax)/(1+exp(-median(egg_post$k)*(temp_seq - median(egg_post$tempMid)))) + median(egg_post$eggMin), col="black", lwd=2)
+points(egg_df$temperature, egg_df$eggs_day_AF, col="blue", pch=19)
+abline(h=28.2, lty=3)
 
 
-
-plot(NA, NA, xlim=c(3, 20), ylim=c(0, 150),
-     xlab="Temperature", ylab="Eggs per gravid female per day")
+egg_post <- read_csv("data/lit/fit/egg_temp_quadratic_post.csv")
+plot(NA, NA, xlim=c(3, 20), ylim=c(0, 100),
+     xlab="Temperature", ylab="Eggs per adult female per day")
 for(i in 1:300) {
   lines(temp_seq, egg_post$a[i] * (egg_post$b[i] + temp_seq)^2, col=rgb(0,0,0,0.2))
 }
 lines(temp_seq, 0.17 * (4.28 + temp_seq)^2, col="red")
-points(egg_df$temperature, egg_df$eggs_day_AG, col="blue")
+points(egg_df$temperature, egg_df$eggs_day_AF, col="blue", pch=19)
+abline(h=28.2, lty=3)
 
 
 egg_post <- read_csv("data/lit/fit/egg_temp_linear_post.csv")
-plot(NA, NA, xlim=c(3, 20), ylim=c(0, 150),
+plot(NA, NA, xlim=c(3, 20), ylim=c(0, 100),
      xlab="Temperature", ylab="Eggs per gravid female per day")
 for(i in 1:300) {
   lines(temp_seq, egg_post$a[i] + egg_post$b[i] * temp_seq, col=rgb(0,0,0,0.1))
 }
 lines(temp_seq, 0.17 * (4.28 + temp_seq)^2, col="red")
 lines(temp_seq, mean(egg_post$a) + mean(egg_post$b) * temp_seq, col="black", lwd=2)
-points(egg_df$temperature, egg_df$eggs_day_AG, col="blue")
+points(egg_df$temperature, egg_df$eggs_day_AF, col="blue", pch=19)
+abline(h=28.2, lty=3)
 
 
 
@@ -285,21 +294,21 @@ sal_df <- read_csv("data/lit/Bricknell2006_Table1.csv") |>
          logit_mort_h=boot::logit(mort_h))
 
 # Logistic
-mort_sal_logistic <- brm(bf(mort_h ~ mortMax/(1+exp(-k*(salinity - sal0))) + b, nl=T) +
-                      lf(mortMax ~ 1, k~1, sal0~1, b~1),
+mort_sal_logistic <- brm(bf(mort_h ~ mortMax/(1+exp(-k*(salinity - salMid))) + mortMin, nl=T) +
+                      lf(mortMax ~ 1, k~1, salMid~1, mortMin~1),
                     data=sal_df, cores=4,
                     prior=c(prior(normal(1, 0.1), nlpar="mortMax", lb=0, ub=1),
-                            prior(normal(0, 3), nlpar="k"),
-                            prior(normal(15, 4), nlpar="sal0"),
-                            prior(normal(0.01, 0.1), nlpar="b", lb=0, ub=1),
+                            prior(normal(0, 1), nlpar="k"),
+                            prior(normal(15, 4), nlpar="salMid"),
+                            prior(normal(0.01, 0.01), nlpar="mortMin", lb=0, ub=1),
                             prior(normal(0, 0.4), class=sigma)))
 mort_sal_logistic |> saveRDS("data/lit/fit/mort_sal_logistic_brmsfit.rds")
 as_draws_df(mort_sal_logistic) |>
   rename(mortMax=b_mortMax_Intercept,
          k=b_k_Intercept,
-         sal0=b_sal0_Intercept,
-         b=b_b_Intercept) |>
-  select(mortMax, k, sal0, b) |>
+         salMid=b_salMid_Intercept,
+         mortMin=b_mortMin_Intercept) |>
+  select(mortMax, k, salMid, mortMin) |>
   write_csv("data/lit/fit/mort_sal_logistic_post.csv")
 
 
@@ -312,10 +321,11 @@ sal_seq <- seq(5, 35, by=0.1)
 plot(NA, NA, xlim=c(5, 35), ylim=c(0, 1),
      xlab="Salinity", ylab="Hourly mortality")
 for(i in 1:300) {
-  lines(sal_seq, mort_post$mortMax[i]/(1+exp(-mort_post$k[i]*(sal_seq - mort_post$sal0[i]))) + mort_post$b[i], col=rgb(0,0,0,0.1))
+  lines(sal_seq, mort_post$mortMax[i]/(1+exp(-mort_post$k[i]*(sal_seq - mort_post$salMid[i]))) + mort_post$mortMin[i], col=rgb(0,0,0,0.1))
 }
-lines(sal_seq, median(mort_post$mortMax)/(1+exp(-median(mort_post$k)*(sal_seq - median(mort_post$sal0)))) + median(mort_post$b), col="red", lwd=2)
-lines(sal_seq, mean(mort_post$mortMax)/(1+exp(-mean(mort_post$k)*(sal_seq - mean(mort_post$sal0)))) + mean(mort_post$b), col="red3", lwd=2)
+lines(sal_seq, median(mort_post$mortMax)/(1+exp(-median(mort_post$k)*(sal_seq - median(mort_post$salMid)))) + median(mort_post$mortMin), col="red", lwd=2)
+lines(sal_seq, mean(mort_post$mortMax)/(1+exp(-mean(mort_post$k)*(sal_seq - mean(mort_post$salMid)))) + mean(mort_post$mortMin), col="red3", lwd=2)
 points(sal_df$salinity, sal_df$mort_h, col="blue")
+
 
 
