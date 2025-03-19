@@ -1,0 +1,491 @@
+---
+title: "E(tive)Lice verification assessment"
+author: "Tim Szewczyk"
+format: html
+theme: litera
+mainfont: Garamond
+monofont: Lucida Console
+editor: visual
+toc: true
+number-sections: true
+bibliography: references.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+# Overview
+
+This document evaluates the IEM performance on the simulated verification data sets.
+
+# Setup
+
+```{r}
+#| message: false
+#| warning: false
+#| results: false
+#| echo: false
+library(tidyverse)
+library(sf)
+library(glue)
+library(here)
+proj_dir <- here()
+theme_set(theme_bw())
+dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
+
+farm_order <- c("FFMC84", "FFMC32", "APT1", "SAR1")#, "FFMC27")
+sim_dir <- glue("{proj_dir}/data/sim/")
+```
+
+```{r}
+#| echo: false
+stages <- c("Ch", "PA", "Ad", "Gr")
+stage_trans <- c("Ch-PA", "PA-Ad", "Ad-Gr")
+param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
+                           paste0("ensWts_p[", 1:6, "]"),
+                           "IP_bg", "IP_bg_m3",
+                           paste0("surv_beta[1,", 1:4, "]"),
+                           paste0("surv_beta[2,", 1:4, "]"),
+                           paste0("pMoltF_beta[1,", 1:3, "]"),
+                           paste0("pMoltF_beta[2,", 1:3, "]"),
+                           paste0("pMoltM_beta[1,", 1:2, "]"),
+                           paste0("pMoltM_beta[2,", 1:2, "]"),
+                           paste0("thresh_GDD[", 1:3, ",1]"),
+                           paste0("thresh_GDD[", 1:2, ",2]"),
+                           "lifespan",
+                           paste0("detect_p[", 1:4, "]"),
+                           "nb_prec"),
+                    label=c(paste0("attach_", c("Int", "RW", "Sal", "UV", "UVsq")),
+                            paste0("ensWt_", 1:6),
+                            "IP_bg", "IP_bg_m3",
+                            paste0("surv_Int_", stages),
+                            paste0("surv_Sal_", stages),
+                            paste0("pMoltF_Int_", stage_trans),
+                            paste0("pMoltF_Temp_", stage_trans),
+                            paste0("pMoltM_Int_", stage_trans[-3]),
+                            paste0("pMoltM_Temp_", stage_trans[-3]),
+                            paste0("moltF_GDD_", stage_trans),
+                            paste0("moltM_GDD_", stage_trans[-3]),
+                            "lifespan_GDD",
+                            paste0("p_detect_", stages),
+                            "neg_binom_prec"
+                    )) |>
+  mutate(label=factor(label, levels=unique(label)))
+```
+
+# Load data and posterior summaries
+
+```{r}
+#| message: false
+#| warning: false
+out_parts_df <- dir(sim_dir, "sim_")[1:6] |>
+  map_dfr(
+    ~full_join(
+      bind_rows(read_csv(glue("{sim_dir}/{.x}/posterior_summary_pt1.csv"), 
+                         show_col_types=F) |> 
+                  filter(name != "nb_prec"),
+                read_csv(glue("{sim_dir}/{.x}/posterior_summary_pt2_pop.csv"), 
+                         show_col_types=F) |>
+                  filter(name != "nb_prec"),
+                read_csv(glue("{sim_dir}/{.x}/posterior_summary_pt3.csv"), 
+                         show_col_types=F)),
+      read_csv(glue("{sim_dir}/{.x}/params_full.csv"), show_col_types=F), 
+      by=join_by(name)
+    ) |>
+      mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
+      inner_join(param_key, by=join_by(name)))
+out_full_df <- dir(sim_dir, "sim_")[1:6] |>
+  map_dfr(
+    ~full_join(
+      read_csv(glue("{sim_dir}/{.x}/posterior_summary_full_FEMALE.csv"), show_col_types=F),
+      read_csv(glue("{sim_dir}/{.x}/params_full.csv"), show_col_types=F), 
+      by=join_by(name)
+    ) |>
+      mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
+      inner_join(param_key, by=join_by(name)))
+out_df <- bind_rows(
+  out_parts_df |> mutate(fit="by_part"),
+  out_full_df |> mutate(fit="in_full")
+)
+```
+
+## IP and attachment
+
+### Ensemble IP weights
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 3
+#| echo: false
+p_ensWts <- out_df |>
+  filter(grepl("ensWts", name)) |>
+  verification_plot(scales="free_x") +
+  scale_x_continuous(limits=c(0, 1), breaks=round((0:3)/3, 2))
+p_ensWts
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("ensWts", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  pr_in_CI_plot()
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 3
+#| echo: false
+out_df |>
+  filter(grepl("ensWts", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  scatter_post_mean_plot()
+```
+
+### Background IP
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 3
+#| echo: false
+p_IP <- out_df |> 
+  filter(grepl("IP_bg", name)) |>
+  verification_plot(ncol=3, scales="free")
+p_IP
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("IP_bg", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  pr_in_CI_plot()
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 3
+#| echo: false
+out_df |>
+  filter(grepl("IP_bg_m3", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  scatter_post_mean_plot()
+```
+
+### P(attach)
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 3
+#| echo: false
+p_attach <- out_df |>   
+  filter(grepl("attach_beta", name)) |>   
+  verification_plot(scales="free_x") +     
+  geom_vline(xintercept=0, linetype=3) 
+p_attach
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("attach_beta", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  pr_in_CI_plot()
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 7
+#| fig-height: 3
+#| echo: false
+out_df |>
+  filter(grepl("attach_beta", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  scatter_post_mean_plot()
+```
+
+## Development and survival
+
+### P(survival)
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 6
+#| echo: false
+p_surv <- out_df |> filter(grepl("surv_beta", name)) |>
+  verification_plot(ncol=4, scales="free_x") +
+  geom_vline(xintercept=0, linetype=3)
+p_surv
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("surv_beta", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  pr_in_CI_plot()
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("surv_beta", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  scatter_post_mean_plot()
+```
+
+### P(molt) intercept
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 3
+#| echo: false
+p_pMoltInt <- out_df |> 
+  filter(grepl("pMolt.*_beta\\[1", name)) |>
+  mutate(across(where(is.numeric), plogis)) |>
+  verification_plot(ncol=5) +
+  geom_vline(xintercept=0, linetype=3) +
+  scale_x_continuous(limits=c(0, 0.1), breaks=c(0, 0.05, 0.1))
+p_pMoltInt
+```
+
+### P(molt) temperature effect
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 3
+#| echo: false
+p_pMoltTemp <- out_df |> 
+  filter(grepl("pMolt.*_beta\\[2", name)) |>
+  verification_plot(ncol=5) +
+  geom_vline(xintercept=0, linetype=3)
+p_pMoltTemp
+```
+
+## Sampling and detection
+
+### P(detect)
+
+```{r}
+#| fig-width: 8
+#| fig-height: 3
+#| echo: false
+p_detectp <- out_df |> 
+  filter(grepl("detect_p", name)) |>
+  verification_plot(scales="free") +
+  xlim(0, 1)
+p_detectp
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("detect_p", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  pr_in_CI_plot()
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("detect_p", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  scatter_post_mean_plot()
+```
+
+### Negative binomial precision
+
+```{r}
+#| fig-width: 4
+#| fig-height: 3
+#| echo: false
+p_nb <- out_df |> 
+  filter(grepl("nb_prec", name)) |>
+  verification_plot()
+p_nb
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("nb_prec", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  pr_in_CI_plot()
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 8
+#| fig-height: 2
+#| echo: false
+out_df |>
+  filter(grepl("nb_prec", name)) |>
+  mutate(inCI=between(value, L025, L975)) |>
+  scatter_post_mean_plot()
+```
+
+## All parameters
+
+```{r}
+full_sum_df <- out_df |>
+  filter(fit=="in_full") |>
+  filter(name != "IP_bg") |>
+  mutate(name=if_else(name=="lifespan", "thresh_GDD[,4]", name)) |>
+  mutate(param_type=str_split_fixed(name, "\\[", 2)[,1]) 
+lims_df <- full_sum_df |>
+  group_by(param_type) |>
+  summarise(lower=min(L25, value, na.rm=T),
+            upper=max(L75, value, na.rm=T))
+full_sum_df |>
+  ggplot(aes(mn, value)) +
+  geom_point(data=lims_df, aes(lower, lower), colour="white", size=0.2) +
+  geom_point(data=lims_df, aes(upper, upper), colour="white", size=0.2) +
+  geom_abline(linetype=3) +
+  geom_point(shape=1, alpha=0.75) +
+  geom_linerange(aes(xmin=L10, xmax=L90)) +
+  facet_wrap(~param_type, scales="free", nrow=2) +
+  # coord_(xlim=lims, ylim=lims) +
+  labs(x="Posterior mean + 80% CI", 
+       y="True value",
+       title="Verification across 6 simulated datasets")
+ggsave("admin/project_meetings/figs_temp/full_performance.png", width=8, height=4.5, dpi=300)
+```
+
+# Posterior regressions
+
+## Survival
+
+```{r}
+S_range <- range(readRDS("data/sim/sim_01/sal_mx.rds"))
+S_df <- tibble(sal=seq_range(S_range, length.out=100))
+pSurv_df <- out_df |>
+  filter(sim %in% out_full_df$sim) |>
+  filter(grepl("surv_beta", name)) |>
+  mutate(stage=str_sub(label, -2, -1),
+         beta=paste0("b", str_sub(name, -4, -4))) |>
+  select(stage, beta, mn, value, sim, fit) |>
+  pivot_longer(3:4, names_to="src", values_to="value") |>
+  filter(! (src=="value" & fit=="by_part")) |>
+  mutate(fit=if_else(src=="value", "True", fit)) |>
+  select(-src) |>
+  pivot_wider(names_from="beta", values_from="value") |>
+  mutate(S_df=list(S_df)) |>
+  unnest(S_df) |>
+  mutate(pSurv=plogis(b1 + b2*sal),
+         salinity=sal+30,
+         stage=factor(stage, levels=unique(stage)))
+```
+
+```{r}
+pSurv_df |>
+  ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
+  geom_line() +
+  scale_colour_manual(values=RColorBrewer::brewer.pal(n=6, name="Paired")[c(1,2,4,6)]) +
+  scale_linetype_manual(values=c(3, 2, 1)) +
+  ylim(0, 1) + 
+  labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
+  # facet_wrap(~sim)
+  facet_grid(stage~sim)
+```
+
+```{r}
+pSurv_df |>
+  ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
+  geom_line() +
+  # scale_colour_manual("Fit", values=c("#377eb8", "#4daf4a")) +
+  ylim(0, 1) + 
+  labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
+  facet_wrap(~sim)
+```
+
+## Development rate
+
+```{r}
+T_range <- range(readRDS("data/sim/sim_01/temp_mx.rds"))
+T_z_range <- range(readRDS("data/sim/sim_01/temp_z_mx.rds"))
+
+T_df <- tibble(temp=seq_range(T_range, length.out=100),
+               temp_z=seq_range(T_z_range, length.out=100))
+pMolt_df <- out_df |>
+  filter(sim %in% out_full_df$sim) |>
+  filter(grepl("pMolt.*_beta\\[", name)) |>
+  mutate(sex=if_else(grepl("F", name), "F", "M"),
+         stage=str_sub(label, -5, -1),
+         beta=paste0("b", str_sub(name, -4, -4))) |>
+  select(sex, stage, beta, mn, sim, fit) |>
+  pivot_wider(names_from="beta", values_from="mn") |>
+  mutate(T_df=list(T_df)) |>
+  unnest(T_df) |>
+  mutate(pMolt=plogis(b1 + b2*temp_z),
+         mnDays=1/pMolt,
+         stage=factor(stage, levels=unique(stage))) 
+```
+
+```{r}
+pMolt_df |>
+  ggplot(aes(temp, pMolt, group=paste(sim, fit), colour=fit)) + 
+  geom_line(alpha=0.3) +
+  scale_colour_manual("Fit", values=c("#377eb8", "#4daf4a")) +
+  ylim(0, 1) + 
+  labs(x="Temperature (C)", y="Daily Pr(Molt)") +
+  facet_grid(sex~stage)
+```
+
+```{r}
+pMolt_df |>
+  ggplot(aes(temp, mnDays, group=paste(sim, fit), colour=fit)) + 
+  geom_line(alpha=0.3) +
+  scale_colour_manual("Fit", values=c("#377eb8", "#4daf4a")) +
+  ylim(0, NA) +
+  labs(x="Temperature (C)", y="Mean days per stage") +
+  facet_grid(sex~stage)
+```
