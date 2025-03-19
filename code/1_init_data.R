@@ -28,6 +28,13 @@ theme_set(theme_bw() + theme(panel.grid=element_blank()))
 
 mesh.fp <- st_read("../03_packages/WeStCOMS/data/WeStCOMS2_meshFootprint.gpkg")
 farm_bbox <- list(xmin=125000, xmax=225500, ymin=629000, ymax=800000)
+pen_df <- st_read("data/pen_sites.gpkg") |>
+  add_lonlat(drop_geom=T) |>
+  rename(easting=lon, northing=lat) |>
+  group_by(sepaSite) |>
+  mutate(nPens=n()) |>
+  ungroup() |>
+  arrange(pen)
 
 # Biomass is managed by SEPA, while sea lice is managed by MSS
 # Separate site names are used, and there is not always total overlap
@@ -78,8 +85,7 @@ sites_validation <- sites.i |>
   slice_min(dist, by=mssID) |>
   select(sepaSite, mssID, easting, northing, geometry)
 
-# TODO: update this --- copied from HoloLice....
-out.df <- read_csv("data/lice_biomass_2017-01-01_2024-06-30.csv")
+out.df <- read_csv("data/lice_biomass_2017-01-01_2024-09-30.csv")
 
 
 # save output -------------------------------------------------------------
@@ -93,13 +99,43 @@ out.df |>
   write_csv(glue("data/lice_biomass_{min(out.df$date)}_{max(out.df$date)}.csv"))
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
+  filter(date >= "2021-04-01") |>
+  filter(date <= "2024-12-31") |>
+  group_by(sepaSite) |>
+  filter(any(actualBiomassOnSiteTonnes > 0)) |>
+  summarise() |>
+  left_join(sites.i |> st_drop_geometry() |> select(sepaSite, easting, northing)) |>
+  write_csv("data/farm_sites_2021-2024.csv")
+out.df |>
+  filter(sepaSite %in% linnhe_farms) |>
   filter(date >= "2023-01-01") |>
   filter(date <= "2023-12-31") |>
   group_by(sepaSite) |>
   filter(any(actualBiomassOnSiteTonnes > 0)) |>
   summarise() |>
   left_join(sites.i |> st_drop_geometry() |> select(sepaSite, easting, northing)) |>
-  write_csv("data/farm_sites.csv")
+  write_csv("data/farm_sites_2023.csv")
+
+pen_df |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2023.csv")$sepaSite) |>
+  select(pen, easting, northing) |>
+  write_csv("data/pen_sites_linnhe_2023.csv")
+pen_df |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2023.csv")$sepaSite) |>
+  filter(loch=="Etive") |>
+  select(pen, easting, northing) |>
+  write_csv("data/pen_sites_etive_2023.csv")
+
+pen_df |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2021-2024.csv")$sepaSite) |>
+  select(pen, easting, northing) |>
+  write_csv("data/pen_sites_linnhe_2021-2024.csv")
+pen_df |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2021-2024.csv")$sepaSite) |>
+  filter(loch=="Etive") |>
+  select(pen, easting, northing) |>
+  write_csv("data/pen_sites_etive_2021-2024.csv")
+
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
   filter(date >= "2023-01-01") |>
@@ -110,10 +146,35 @@ out.df |>
   mutate(total_AF=actualBiomassOnSiteTonnes * weeklyAverageAf * 240,
          date.c=str_remove_all(date, "-")) |>
   select(sepaSite, date.c, total_AF) |>
+  full_join(pen_df |> select(sepaSite, pen, nPens),
+            relationship="many-to-many") |>
+  mutate(total_AF=total_AF/nPens) |>
   pivot_wider(names_from=date.c, values_from=total_AF) |>
-  filter(sepaSite %in% read_csv("data/farm_sites.csv")$sepaSite) |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2023.csv")$sepaSite) |>
+  select(-sepaSite, -nPens) |>
+  rename(sepaSite=pen) |>
   mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
-  write_csv(glue("data/lice_daily_2023-01-01_2023-12-31.csv"))
+  write_csv("data/lice_daily_2023-01-01_2023-12-31.csv")
+
+out.df |>
+  filter(sepaSite %in% linnhe_farms) |>
+  filter(date >= "2021-04-01") |>
+  filter(date <= "2024-12-31") |>
+  group_by(sepaSite) |>
+  mutate(actualBiomassOnSiteTonnes=first(actualBiomassOnSiteTonnes)) |>
+  ungroup() |>
+  mutate(total_AF=actualBiomassOnSiteTonnes * weeklyAverageAf * 240,
+         date.c=str_remove_all(date, "-")) |>
+  select(sepaSite, date.c, total_AF) |>
+  full_join(pen_df |> select(sepaSite, pen, nPens),
+            relationship="many-to-many") |>
+  mutate(total_AF=total_AF/nPens) |>
+  pivot_wider(names_from=date.c, values_from=total_AF) |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2021-2024.csv")$sepaSite) |>
+  select(-sepaSite, -nPens) |>
+  rename(sepaSite=pen) |>
+  mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
+  write_csv(glue("data/lice_daily_2021-04-01_2024-09-30.csv"))
 
 
 
