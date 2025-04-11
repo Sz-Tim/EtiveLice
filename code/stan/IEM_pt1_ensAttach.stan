@@ -20,9 +20,9 @@ data {
   array[nAttachCov, 2] real prior_attach_beta;
   array[nSurvCov, nStages, 2] real prior_surv_beta;
   array[nStages-1, 2] real prior_thresh_GDD_F;
-  array[nStages-2, 2] real prior_thresh_GDD_M;
+  array[nStages-1, 2] real prior_thresh_GDD_M;
   array[2, nStages-1, 2] real prior_pMolt_F;
-  array[2, nStages-2, 2] real prior_pMolt_M;
+  array[2, nStages-1, 2] real prior_pMolt_M;
   array[2] real prior_lifespan;
   array[nStages, 2] real prior_logit_detect_p;
 }
@@ -58,7 +58,16 @@ transformed parameters {
       pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
     }
     N_attach = ensIP .* pr_attach * 0.5;
-    ybar_attach = N_attach ./ nFish_mx;
+    for(farm in 1:nFarms) {
+      for(day in 1:nDays) {
+        if(nFish_mx[day, farm] == 0) {
+          N_attach[day, farm] = 0;
+          ybar_attach[day, farm] = 0.000001;
+        } else {
+          ybar_attach[day, farm] = N_attach[day, farm] ./ nFish_mx[day, farm];
+        }
+      }
+    }
   }
   // priors
   lprior += std_normal_lpdf(ensWts_p_uc);

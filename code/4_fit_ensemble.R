@@ -16,26 +16,26 @@ rstan_options(threads_per_chain = 1) # reduce_sum() or map_rect() in .stan
 source("code/fn/helpers.R")
 
 
-for(sim in 6:7) {
+for(sim in 1:2) {
 
   dat_dir <- glue("data/sim/sim_{str_pad(sim, 2, 'left', '0')}/")
   stan_dat <- make_stan_data(dat_dir)
 
-  stages <- c("Ch", "PA", "Ad", "Gr")
-  stage_trans <- c("Ch-PA", "PA-Ad", "Ad-Gr")
+  stages <- c("Ch", "PA", "Ad")
+  stage_trans <- c("Ch-PA", "PA-Ad")
   param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                              paste0("ensWts_p[", 1:6, "]"),
                              "IP_bg", "IP_bg_m3",
-                             paste0("surv_beta[1,", 1:4, "]"),
-                             paste0("surv_beta[2,", 1:4, "]"),
-                             paste0("pMoltF_beta[1,", 1:3, "]"),
-                             paste0("pMoltF_beta[2,", 1:3, "]"),
+                             paste0("surv_beta[1,", 1:3, "]"),
+                             paste0("surv_beta[2,", 1:3, "]"),
+                             paste0("pMoltF_beta[1,", 1:2, "]"),
+                             paste0("pMoltF_beta[2,", 1:2, "]"),
                              paste0("pMoltM_beta[1,", 1:2, "]"),
                              paste0("pMoltM_beta[2,", 1:2, "]"),
-                             paste0("thresh_GDD[", 1:3, ",1]"),
+                             paste0("thresh_GDD[", 1:2, ",1]"),
                              paste0("thresh_GDD[", 1:2, ",2]"),
                              "lifespan",
-                             paste0("detect_p[", 1:4, "]"),
+                             paste0("detect_p[", 1:3, "]"),
                              "nb_prec"),
                       label=c(paste0("attach_", c("Int", "RW", "Sal", "UV", "UVsq")),
                               paste0("ensWt_sim_", 1:6),
@@ -44,10 +44,10 @@ for(sim in 6:7) {
                               paste0("surv_Sal_", stages),
                               paste0("pMoltF_Int_", stage_trans),
                               paste0("pMoltF_Temp_", stage_trans),
-                              paste0("pMoltM_Int_", stage_trans[-3]),
-                              paste0("pMoltM_Temp_", stage_trans[-3]),
+                              paste0("pMoltM_Int_", stage_trans),
+                              paste0("pMoltM_Temp_", stage_trans),
                               paste0("moltF_GDD_", stage_trans),
-                              paste0("moltM_GDD_", stage_trans[-3]),
+                              paste0("moltM_GDD_", stage_trans),
                               "lifespan_GDD",
                               paste0("p_detect_", stages),
                               "neg_binom_prec"

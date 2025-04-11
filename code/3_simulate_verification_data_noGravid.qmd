@@ -40,7 +40,7 @@ proj_dir <- here()
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 
-farm_order <- c("FFMC84", "FFMC32", "APT1", "SAR1")#, "FFMC27")
+farm_order <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
 
 # mesh footprints
 mesh_dir <- glue("{proj_dir}/../03_packages/WeStCOMS/data")
@@ -124,7 +124,8 @@ farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
          RW=sqrt(actualBiomassOnSiteTonnes/nPens*1000/(20*20*pi*30^2)),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5)) |>
   group_by(sepaSite) |>
-  mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:52))) |>
+  mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:52)),
+         sampled=sampled & (nFish_est > 0)) |>
   ungroup() |>
   select(-firstDay, -nPens) |>
   mutate(nFishSampled=if_else(sampled, sample(20:25, 1), 0))
@@ -592,19 +593,19 @@ if(use_farm_avg) {
 }
 
 p_ls <- list(
-  ggplot(ensIP_df, aes(date, influx_m3, colour=sepaSite)) +
+  ggplot(ensIP_df, aes(date, influx_m3/24, colour=sepaSite)) +
     geom_line(aes(group=pen), linewidth=0.1, alpha=0.5) +
     geom_line(data=ensIP_farm, linewidth=0.5) +
     scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
-    scale_y_continuous("Ensemble daily copepodids / m3 / d") +
+    scale_y_continuous("Ensemble daily copepodids / m3 / h") +
     scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
     facet_grid(.~sepaSite) +
     theme(axis.title.x=element_blank()),
-  ggplot(ensIP_df, aes(date, influx_m3^0.25, colour=sepaSite)) +
+  ggplot(ensIP_df, aes(date, (influx_m3/24)^0.25, colour=sepaSite)) +
     geom_line(aes(group=pen), linewidth=0.1, alpha=0.5) +
     geom_line(data=ensIP_farm, linewidth=0.5) +
     scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
-    scale_y_continuous("(Daily copepodids / m3 / d)^0.25") +
+    scale_y_continuous("(Daily copepodids / m3 / h)^0.25") +
     scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
     facet_grid(.~sepaSite) +
     theme(axis.title.x=element_blank()))

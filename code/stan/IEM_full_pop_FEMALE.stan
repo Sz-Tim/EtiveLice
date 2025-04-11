@@ -46,26 +46,28 @@ transformed data {
   matrix[nFarms, nDays] t_nFishSampled_mx = nFishSampled_mx';
   // array[nStages, 2] matrix[nFarms, nDays] mu_true2;
   array[2, nStages, nFarms, nDays] int y2; // reshaped y
+  matrix[nDays, nFarms] fishPresent;
   int sex = 1;
 
   for(farm in 1:nFarms) {
     temp_X[farm, ,1] = ones_vector(nDays);
     temp_X[farm, ,2] = temp_z_mx[, farm];
   }
+  for(farm in 1:nFarms) {
+    N_init[sex, farm] = rep_matrix(0, nStages, nDays);
+  }
+  for(farm in 1:nFarms) {
+    for(day in 1:nDays) {
+      trans_mx_init[sex, farm, day] = zero_matrix_stages_stages;
+      fishPresent[day, farm] = t_nFish_mx[farm, day] > 0;
+    }
+  }
+  for(stage in 1:nStages) {
     for(farm in 1:nFarms) {
-      N_init[sex, farm] = rep_matrix(0, nStages, nDays);
+      // mu_true2[stage, sex, farm] = mu_true[stage, sex, , farm]';
+      y2[sex, stage, farm] = y[stage, sex, , farm];
     }
-    for(farm in 1:nFarms) {
-      for(day in 1:nDays) {
-        trans_mx_init[sex, farm, day] = zero_matrix_stages_stages;
-      }
-    }
-    for(stage in 1:nStages) {
-      for(farm in 1:nFarms) {
-        // mu_true2[stage, sex, farm] = mu_true[stage, sex, , farm]';
-        y2[sex, stage, farm] = y[stage, sex, , farm];
-      }
-    }
+  }
 }
 
 parameters {
@@ -120,11 +122,12 @@ profile("param_rescale") {
                                  prior_pMolt_F[i,stage,1]);
     }
   }
-  for(stage in 1:nStages) {
+  for(stage in 1:(nStages-1)) {
     detect_p[stage] = inv_logit(fma(logit_detect_p[stage],
                                     prior_logit_detect_p[stage,2],
                                     prior_logit_detect_p[stage,1]));
   }
+  detect_p[nStages] = 1;
 }
 profile("attachment") {
   // calculate ensIP, pr_attach, N_attach, stage_logSurv
@@ -136,7 +139,7 @@ profile("attachment") {
       pMolt[1, farm, , stage] = inv_logit(temp_X[farm] * pMoltF_beta[, stage]);
     }
   }
-  N_attach = ensIP .* pr_attach * 0.5;
+  N_attach = ensIP .* pr_attach .* fishPresent * 0.5;
 }
 profile("trans_mx") {
   trans_mx = trans_mx_init;

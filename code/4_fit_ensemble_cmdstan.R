@@ -16,21 +16,21 @@ source("code/fn/helpers.R")
 theme_set(theme_classic())
 
 n_chains <- 3
-stages <- c("Ch", "PA", "Ad", "Gr")
-stage_trans <- c("Ch-PA", "PA-Ad", "Ad-Gr")
+stages <- c("Ch", "PA", "Ad")
+stage_trans <- c("Ch-PA", "PA-Ad")
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            paste0("ensWts_p[", 1:6, "]"),
                            "IP_bg", "IP_bg_m3",
-                           paste0("surv_beta[1,", 1:4, "]"),
-                           paste0("surv_beta[2,", 1:4, "]"),
-                           paste0("pMoltF_beta[1,", 1:3, "]"),
-                           paste0("pMoltF_beta[2,", 1:3, "]"),
+                           paste0("surv_beta[1,", 1:3, "]"),
+                           paste0("surv_beta[2,", 1:3, "]"),
+                           paste0("pMoltF_beta[1,", 1:2, "]"),
+                           paste0("pMoltF_beta[2,", 1:2, "]"),
                            paste0("pMoltM_beta[1,", 1:2, "]"),
                            paste0("pMoltM_beta[2,", 1:2, "]"),
-                           paste0("thresh_GDD[", 1:3, ",1]"),
+                           paste0("thresh_GDD[", 1:2, ",1]"),
                            paste0("thresh_GDD[", 1:2, ",2]"),
                            "lifespan",
-                           paste0("detect_p[", 1:4, "]"),
+                           paste0("detect_p[", 1:2, "]"),
                            "nb_prec"),
                     label=c(paste0("attach_", c("Int", "RW", "Sal", "UV", "UVsq")),
                             paste0("ensWt_", 1:6),
@@ -39,12 +39,12 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                             paste0("surv_Sal_", stages),
                             paste0("pMoltF_Int_", stage_trans),
                             paste0("pMoltF_Temp_", stage_trans),
-                            paste0("pMoltM_Int_", stage_trans[-3]),
-                            paste0("pMoltM_Temp_", stage_trans[-3]),
+                            paste0("pMoltM_Int_", stage_trans),
+                            paste0("pMoltM_Temp_", stage_trans),
                             paste0("moltF_GDD_", stage_trans),
-                            paste0("moltM_GDD_", stage_trans[-3]),
+                            paste0("moltM_GDD_", stage_trans),
                             "lifespan_GDD",
-                            paste0("p_detect_", stages),
+                            paste0("p_detect_", stages[-3]),
                             "neg_binom_prec"
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
@@ -586,7 +586,7 @@ for(sim in 1:30) {
 
   # IEM: full model F -------------------------------------------------------
 
-  iter <- 1000
+  iter <- 10
   mod_full <- cmdstan_model("code/stan/IEM_full_FEMALE.stan")
   fit_full <- mod_full$sample(
     data=stan_dat$dat, init=0, seed=101,
@@ -616,10 +616,12 @@ for(sim in 1:30) {
     name=c(paste0("attach_beta[", 1:5, "]"),
            "IP_bg", "IP_bg_m3",
            paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
-           paste0("surv_beta[1,", 1:4, "]"), paste0("surv_beta[2,", 1:4, "]"),
-           paste0("thresh_GDD[", 1:3, ",1]"), paste0("thresh_GDD[", 1:3, ",2]"),
+           paste0("surv_beta[1,", 1:stan_dat$dat$nStages, "]"),
+           paste0("surv_beta[2,", 1:stan_dat$dat$nStages, "]"),
+           paste0("thresh_GDD[", 1:(stan_dat$dat$nStages-1), ",1]"),
+           paste0("thresh_GDD[", 1:(stan_dat$dat$nStages-1), ",2]"),
            "lifespan",
-           paste0("detect_p[", 1:stan_dat$dat$nStages, "]"), "nb_prec"),
+           paste0("detect_p[", 1:(stan_dat$dat$nStages-1), "]"), "nb_prec"),
     value=c(stan_dat$params$attach_beta,
             stan_dat$params$IP_bg, stan_dat$params$IP_bg_m3,
             stan_dat$params$ensWts_p,

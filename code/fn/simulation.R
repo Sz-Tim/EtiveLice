@@ -350,6 +350,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   }
   # assume even sex ratio
   N_attach <- ensIP * pr_attach / nFish_mx / 2
+  N_attach[nFish_mx==0] <- 0
   for(day in 1:info$nDays) {
     for(farm in 1:info$nFarms) {
       y_attach[day, farm] <- rnbinom(1, mu=N_attach[day, farm], size=params$nb_prec)
@@ -374,6 +375,9 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
         cohort_stage[cohort, 1:cohort, farm, sex] <- 0
         cohort_stage[cohort, cohort:info$nDays, farm, sex] <- 1
         for(day in cohort:info$nDays) {
+          if(nFish_mx[day, farm] == 0) {
+            cohort_stage[cohort, day:info$nDays, farm, sex] <- 0
+          }
           if(cohort_stage[cohort, day, farm, sex] > 0) {
             if(cohort_stage[cohort, day, farm, sex] < info$nStages) {
               if(cohort_GDD[cohort, day, farm] > params$thresh_GDD[cohort_stage[cohort, day, farm, sex],sex]) {
@@ -399,7 +403,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
         # update cohorts
         for(farm in 1:info$nFarms) {
           # update abundance
-          if(cohort_GDD[cohort, day-1, farm] > params$lifespan) {
+          if(cohort_stage[cohort, day-1, farm, sex] == 0) {
             cohort_N[cohort, day, farm, ] <- 0
           } else {
             cohort_N[cohort, day, farm, ] <- cohort_N[cohort, day-1, farm, ] *
@@ -424,9 +428,9 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
       y_bar[stage, sex, , ] <- mu[stage, sex, , ] * nFishSampled_mx * params$detect_p[stage]
     }
   }
-  y_bar[is.infinite(y_bar)] <- 0
 
-  # #--- Sample fish and calculate mean
+  #--- Sample fish and calculate mean
+  # y_bar_overdisp <- y_bar + rnorm(prod(dim(y_bar)), 0, params$nb_prec)
   for(farm in 1:info$nFarms) {
     for(day in sampledDays[farm,]) {
       for(sex in 1:2) {

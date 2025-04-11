@@ -32,7 +32,7 @@ data {
   array[nStages-1, 2] real prior_thresh_GDD_F;
   array[2, nStages-1, 2] real prior_pMolt_F;
   array[2] real prior_lifespan;
-  array[nStages, 2] real prior_logit_detect_p;
+  array[nStages-1, 2] real prior_logit_detect_p;
 }
 
 transformed data {
@@ -46,6 +46,8 @@ transformed data {
   array[nSex, nFarms, nStages, nDays] int y2; // reshaped y
   matrix[nFarms, nDays] t_nFish_mx = nFish_mx';
   matrix[nFarms, nDays] t_nFishSampled_mx = nFishSampled_mx';
+  matrix[nDays, nFarms] nFishNoZero_mx = nFish_mx;
+  matrix[nDays, nFarms] fishPresent;
 
   for(sex in 1:nSex) {
     for(farm in 1:nFarms) {
@@ -66,6 +68,14 @@ transformed data {
     for(cohort in 1:nDays) {
       cohort_GDD[farm, cohort] = zeros_vector(nDays);
       cohort_GDD[farm, cohort, cohort:nDays] = cumulative_sum(temp_mx[cohort:nDays, farm]);
+    }
+  }
+  for(farm in 1:nFarms) {
+    for(day in 1:nDays) {
+      fishPresent[day, farm] = nFish_mx[day, farm] > 0;
+      if(nFish_mx[day, farm] == 0) {
+        nFishNoZero_mx[day, farm] = 1;
+      }
     }
   }
 }
@@ -134,7 +144,7 @@ profile("attachment") {
     pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
     stage_logSurv[farm] = log_inv_logit(sal_mx[farm] * surv_beta)';
   }
-  N_attach = ensIP .* pr_attach * 0.5 ./ t_nFish_mx;
+  N_attach = ensIP .* pr_attach .* fishPresent * 0.5 ./ nFishNoZero_mx;
 }
 profile("priors") {
   // priors
@@ -172,7 +182,8 @@ profile("cohort_stage") {
         int current_stage = 1;
         for(day in (cohort+1):nDays) {
           if(current_stage <= nStages) { // is it still alive?
-            if(cohort_GDD[farm, cohort, day] > lifespan) { // has it reached its lifespan?
+            if(cohort_GDD[farm, cohort, day] > lifespan || // has it reached its lifespan?
+                  !fishPresent[day, farm]) { // have the fish been harvested?
               cohort_molts[sex, farm, cohort, current_stage:nStages, 2] = rep_array(day, nStages-current_stage+1);
               current_stage = nStages + 1;
             }
