@@ -28,15 +28,15 @@ dirs <- switch(
   get_os(),
   linux=list(proj=getwd(),
              mesh="/home/sa04ts/hydro/meshes",
-             hydro1="/home/sa04ts/hydro/etive28/Archive",
-             hydro2="/home/sa04ts/hydro/WeStCOMS2/Archive",
+             hf0="/home/sa04ts/hydro/etive28/Archive",
+             hf1="/home/sa04ts/hydro/WeStCOMS2/Archive",
              jdk="/usr/local/java/jre1.8.0_211/bin/java",
              jar="/home/sa04ts/biotracker/biotracker_v1-0-0.jar",
              out=glue("{getwd()}/out/biotracker")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
-               hydro1="E:/hydro/etive28/Archive",
-               hydro2="E:/hydro/WeStCOMS2/Archive",
+               hf0="E:/hydro/etive28/Archive",
+               hf1="E:/hydro/WeStCOMS2/Archive",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
                jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v1-0-0.jar",
                out=glue("D:/EtiveLice/out/biotracker"))
@@ -55,10 +55,12 @@ mort_post <- list(constant=tibble(b=plogis(rnorm(4000, qlogis(0.01), 0.25))),
         unite("all", everything(), sep=",") %>%
         .$all)
 n_sim <- 6
-swim_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.8, 0.8, 1), nrow=2))
-light_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.8, 0.8, 1), nrow=2))
-sim.i <- tibble(D_h=runif(n_sim, 0.05, 0.5),
-                D_hVert=runif(n_sim, 0.0005, 0.005),
+swim_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
+light_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
+salMin_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
+salMax_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
+sim.i <- tibble(D_h=exp(runif(n_sim, log(1e-4), log(10))),
+                D_hVert=exp(runif(n_sim, log(1e-6), log(1))),
                 mortSal_fn=sample(c("constant", "logistic"), n_sim, replace=T),
                 eggTemp_fn=sample(c("constant", "logistic"), n_sim, replace=T),
                 lightThreshCopepodid=qunif(pnorm(light_mx[,1]), (2e-6)^0.5, (2e-4)^0.5)^2,
@@ -66,12 +68,14 @@ sim.i <- tibble(D_h=runif(n_sim, 0.05, 0.5),
                 swimUpSpeedMean=-(qunif(pnorm(swim_mx[,1]), (1e-4)^0.5, (2e-2)^0.5))^2,
                 swimDownSpeedMean=(qunif(pnorm(swim_mx[,2]), (1e-4)^0.5, (2e-2)^0.5))^2,
                 passiveSinkRateSal=sample(c(T, F), n_sim, replace=T),
-                salinityThreshMin=runif(n_sim, 20, 28),
-                salinityThreshMax=pmin(salinityThreshMin + runif(n_sim, 0.1, 6), 32),
+                salinityThreshCopepodidMin=qunif(pnorm(salMin_mx[,1]), 20, 28),
+                salinityThreshNaupliusMin=qunif(pnorm(salMin_mx[,2]), 20, 28),
+                salinityThreshCopepodidMax=pmin(salinityThreshCopepodidMin + qunif(pnorm(salMax_mx[,1]), 0.1, 6), 32),
+                salinityThreshNaupliusMax=pmin(salinityThreshNaupliusMin + qunif(pnorm(salMax_mx[,2]), 0.1, 6), 32),
                 viableDegreeDays=runif(n_sim, 35, 45),
-                connectivityThresh=30) |>
+                connectivityThresh=runif(n_sim, 30, 250)) |>
   mutate(across(where(is.numeric), ~signif(.x, 5))) |>
-  mutate(i=str_pad(row_number(), 2, "left", "0"),
+  mutate(i=str_pad(row_number(), 3, "left", "0"),
          outDir=glue("{dirs$out}/sim_{i}/")) |>
   rowwise() |>
   mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
@@ -96,16 +100,16 @@ walk(sim_seq,
        nparts=5,
        checkOpenBoundaries="true",
        # meshes and environment
-       mesh1=glue("{dirs$mesh}/etive28_mesh.nc"),
-       mesh1Domain="etive28",
-       datadir=glue("{dirs$hydro1}/"),
-       mesh2=glue("{dirs$mesh}/WeStCOMS2_mesh.nc"),
-       mesh2Domain="westcoms2",
-       datadir2=glue("{dirs$hydro2}/"),
+       mesh0=glue("{dirs$mesh}/etive28_mesh.nc"),
+       hfDir0=glue("{dirs$hf0}/"),
+       hfFilePrefix0="etive28",
+       mesh1=glue("{dirs$mesh}/WeStCOMS2_mesh.nc"),
+       hfDir1=glue("{dirs$hf1}/"),
+       hfFilePrefix1="westcoms2",
        # sites
-       sitefile=glue("D:/EtiveLice/data/pen_sites_linnhe_2023.csv"),
-       sitefileEnd=glue("D:/EtiveLice/data/pen_sites_etive_2023.csv"),
-       siteDensityPath=glue("D:/EtiveLice/data/lice_daily_2023-01-01_2023-12-31.csv"),
+       sitefile=glue("D:/EtiveLice/data/farm_sites_2023.csv"),
+       sitefileEnd=glue("D:/EtiveLice/data/farm_sites_2023.csv"),
+       siteDensityPath=glue("D:/EtiveLice/data/lice_daily_2023-01-01_2023-12-31_FARMS.csv"),
        # dynamics
        D_hVert=sim.i$D_hVert[.x],
        D_h=sim.i$D_h[.x],
@@ -117,8 +121,10 @@ walk(sim_seq,
        eggTemp_b=sim.i$eggTemp_b[.x],
        mortSal_fn=sim.i$mortSal_fn[.x],
        mortSal_b=sim.i$mortSal_b[.x],
-       salinityThreshMin=sim.i$salinityThreshMin[.x],
-       salinityThreshMax=sim.i$salinityThreshMax[.x],
+       salinityThreshCopepodidMin=sim.i$salinityThreshCopepodidMin[.x],
+       salinityThreshCopepodidMax=sim.i$salinityThreshCopepodidMax[.x],
+       salinityThreshNaupliusMin=sim.i$salinityThreshNaupliusMin[.x],
+       salinityThreshNaupliusMax=sim.i$salinityThreshNaupliusMax[.x],
        lightThreshCopepodid=sim.i$lightThreshCopepodid[.x],
        lightThreshNauplius=sim.i$lightThreshNauplius[.x],
        swimUpSpeedCopepodidMean=sim.i$swimUpSpeedMean[.x],

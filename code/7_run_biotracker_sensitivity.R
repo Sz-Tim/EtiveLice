@@ -29,15 +29,15 @@ dirs <- switch(
   get_os(),
   linux=list(proj=getwd(),
              mesh="/home/sa04ts/hydro/meshes",
-             hydro1="/home/sa04ts/hydro/etive28/Archive",
-             hydro2="/home/sa04ts/hydro/WeStCOMS2/Archive",
+             hf0="/home/sa04ts/hydro/etive28/Archive",
+             hf1="/home/sa04ts/hydro/WeStCOMS2/Archive",
              jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
              jar="/home/sa04ts/biotracker/biotracker_v1-0-0.jar",
              out=glue("{getwd()}/out/sensitivity")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
-               hydro1="E:/hydro/etive28/Archive",
-               hydro2="E:/hydro/WeStCOMS2/Archive",
+               hf0="E:/hydro/etive28/Archive",
+               hf1="E:/hydro/WeStCOMS2/Archive",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
                jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker.jar",
                out=glue("D:/EtiveLice/out/sensitivity"))
@@ -60,8 +60,8 @@ swim_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
 light_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
 salMin_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
 salMax_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
-sim.i <- tibble(D_h=runif(n_sim, 0.05, 0.5),
-                D_hVert=runif(n_sim, 0.0005, 0.005),
+sim.i <- tibble(D_h=exp(runif(n_sim, log(1e-4), log(10))),
+                D_hVert=exp(runif(n_sim, log(1e-6), log(1))),
                 mortSal_fn=sample(c("constant", "logistic"), n_sim, replace=T),
                 eggTemp_fn=sample(c("constant", "logistic"), n_sim, replace=T),
                 lightThreshCopepodid=qunif(pnorm(light_mx[,1]), (2e-6)^0.5, (2e-4)^0.5)^2,
@@ -84,7 +84,7 @@ sim.i <- tibble(D_h=runif(n_sim, 0.05, 0.5),
   ungroup()
 write_csv(sim.i, glue("{dirs$out}/sim_i.csv"))
 sim_seq <- 1:nrow(sim.i)
-sim_seq <- sim_seq[-(1:188)]
+sim_seq <- sim_seq[-(1:215)]
 
 
 # set properties ----------------------------------------------------------
@@ -102,12 +102,12 @@ walk(sim_seq,
        nparts=10,
        checkOpenBoundaries="true",
        # meshes and environment
-       mesh1=glue("{dirs$mesh}/etive28_mesh.nc"),
-       mesh1Domain="etive28",
-       datadir=glue("{dirs$hydro1}/"),
-       mesh2=glue("{dirs$mesh}/WeStCOMS2_mesh.nc"),
-       mesh2Domain="westcoms2",
-       datadir2=glue("{dirs$hydro2}/"),
+       mesh0=glue("{dirs$mesh}/etive28_mesh.nc"),
+       hfDir0=glue("{dirs$hf0}/"),
+       hfFilePrefix0="etive28",
+       mesh1=glue("{dirs$mesh}/WeStCOMS2_mesh.nc"),
+       hfDir1=glue("{dirs$hf1}/"),
+       hfFilePrefix1="westcoms2",
        # sites
        sitefile=glue("D:/EtiveLice/data/farm_sites_2023.csv"),
        sitefileEnd=glue("D:/EtiveLice/data/farm_sites_2023.csv"),
@@ -189,7 +189,7 @@ c_0_5_summary <- c_5_20_summary <- c_0_20_summary <- vector("list", length(sim_d
 c_0_5_etive <- c_5_20_etive <- c_0_20_etive <- vector("list", length(sim_dirs))
 
 # for(i in 1:length(sim_dirs)) {
-for(i in 1:188) {
+for(i in 1:215) {
   f_0_5 <- dirrf(sim_dirs[i], "connectivity_0.0-5.0.*csv")
   f_5_20 <- dirrf(sim_dirs[i], "connectivity_5.0-20.0.*csv")
   sim <- str_sub(sim_dirs[i], -3, -1)
