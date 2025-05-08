@@ -42,7 +42,7 @@ pen_df <- st_read("data/pen_sites.gpkg") |>
 # locations, with the nearest sea lice counts applied to each
 
 # Download data
-download_lice_counts("2023-01-01", "2023-12-31", "data/ms_sea_lice_2021-present.csv")
+download_lice_counts("2023-01-01", "2024-12-31", "data/ms_sea_lice_2021-present.csv")
 download_ms_site_details("data/ms_site_details.csv")
 download_sepa_licenses("data/se_licence_conditions.csv")
 
@@ -58,12 +58,16 @@ sepa.locs <- read_csv("data/se_licence_conditions.csv") |>
   mutate(operator=if_else(operator=="Wester Ross Salmon Ltd", "Wester Ross Fisheries Ltd", operator)) |>
   st_drop_geometry() |>
   # relocate sites that are outside WeStCOMS2 mesh due to coastal simplification
-  mutate(easting=if_else(sepaSite=="RONAR1", 161050, easting),
-         northing=if_else(sepaSite=="RONAR1", 855080, northing)) |>
-  mutate(easting=if_else(sepaSite=="PLOI1", 206760, easting),
-         northing=if_else(sepaSite=="PLOI1", 916230, northing)) |>
+  mutate(easting=case_when(sepaSite=="RONAR1" ~ 161050,
+                           sepaSite=="PLOI1" ~ 206760,
+                           sepaSite=="SHUI1" ~ 192535,
+                           .default=easting),
+         northing=case_when(sepaSite=="RONAR1" ~ 855080,
+                            sepaSite=="PLOI1" ~ 916230,
+                            sepaSite=="SHUI1" ~ 749665,
+                            .default=northing)) |>
   st_as_sf(coords=c("easting", "northing"), crs=27700, remove=F) |>
-  select(sepaSite, operator, easting, northing, geometry)
+  select(sepaSite, operator, easting, northing, maximumBiomassAllowedTonnes, geometry)
 mss.locs <- read_csv("data/ms_site_details.csv") |>
   filter(aquacultureType=="Fish" & waterType=="Seawater") |>
   st_as_sf(coords=c("easting", "northing"), crs=27700, remove=F) %>%
@@ -85,7 +89,10 @@ sites_validation <- sites.i |>
   slice_min(dist, by=mssID) |>
   select(sepaSite, mssID, easting, northing, geometry)
 
-out.df <- read_csv("data/lice_biomass_2017-01-01_2024-09-30.csv")
+out.df <- read_csv("data/lice_biomass_2017-01-01_2024-12-31.csv") |>
+  left_join(sepa.locs |> select(sepaSite, maximumBiomassAllowedTonnes)) |>
+  mutate(total_AF=weeklyAverageAf * maximumBiomassAllowedTonnes *
+           (actualBiomassOnSiteTonnes > (0.2*maximumBiomassAllowedTonnes)) * 240)
 
 
 # save output -------------------------------------------------------------
@@ -95,7 +102,7 @@ linnhe_farms <- c("APT1", "ARDG1", "CALL1", "FFMC19", "FFMC20", "FFMC27",
                   "FFMC84", "GORS1", "KING1", "SAR1", "SHUI1")
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
-  select(sepaSite, date, weeklyAverageAf, actualBiomassOnSiteTonnes, total_AF) |>
+  select(sepaSite, date, weeklyAverageAf, actualBiomassOnSiteTonnes, maximumBiomassAllowedTonnes, total_AF) |>
   write_csv(glue("data/lice_biomass_{min(out.df$date)}_{max(out.df$date)}.csv"))
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
@@ -109,22 +116,22 @@ out.df |>
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
   filter(date >= "2023-01-01") |>
-  filter(date <= "2023-12-31") |>
+  filter(date <= "2024-12-31") |>
   group_by(sepaSite) |>
   filter(any(actualBiomassOnSiteTonnes > 0)) |>
   summarise() |>
   left_join(sites.i |> st_drop_geometry() |> select(sepaSite, easting, northing)) |>
-  write_csv("data/farm_sites_2023.csv")
+  write_csv("data/farm_sites_2023-2024.csv")
 
 pen_df |>
-  filter(sepaSite %in% read_csv("data/farm_sites_2023.csv")$sepaSite) |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2023-2024.csv")$sepaSite) |>
   select(pen, easting, northing) |>
-  write_csv("data/pen_sites_linnhe_2023.csv")
+  write_csv("data/pen_sites_linnhe_2023-2024.csv")
 pen_df |>
-  filter(sepaSite %in% read_csv("data/farm_sites_2023.csv")$sepaSite) |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2023-2024.csv")$sepaSite) |>
   filter(loch=="Etive") |>
   select(pen, easting, northing) |>
-  write_csv("data/pen_sites_etive_2023.csv")
+  write_csv("data/pen_sites_etive_2023-2024.csv")
 
 pen_df |>
   filter(sepaSite %in% read_csv("data/farm_sites_2021-2024.csv")$sepaSite) |>
@@ -139,7 +146,7 @@ pen_df |>
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
   filter(date >= "2023-01-01") |>
-  filter(date <= "2023-12-31") |>
+  filter(date <= "2024-12-31") |>
   group_by(sepaSite) |>
   mutate(actualBiomassOnSiteTonnes=first(actualBiomassOnSiteTonnes)) |>
   ungroup() |>
@@ -150,11 +157,26 @@ out.df |>
             relationship="many-to-many") |>
   mutate(total_AF=total_AF/nPens) |>
   pivot_wider(names_from=date.c, values_from=total_AF) |>
-  filter(sepaSite %in% read_csv("data/farm_sites_2023.csv")$sepaSite) |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2023-2024.csv")$sepaSite) |>
   select(-sepaSite, -nPens) |>
   rename(sepaSite=pen) |>
   mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
-  write_csv("data/lice_daily_2023-01-01_2023-12-31.csv")
+  write_csv("data/lice_daily_2023-01-01_2024-12-31.csv")
+
+out.df |>
+  filter(sepaSite %in% linnhe_farms) |>
+  filter(date >= "2023-01-01") |>
+  filter(date <= "2024-12-31") |>
+  group_by(sepaSite) |>
+  mutate(actualBiomassOnSiteTonnes=first(actualBiomassOnSiteTonnes)) |>
+  ungroup() |>
+  mutate(total_AF=actualBiomassOnSiteTonnes * weeklyAverageAf * 240,
+         date.c=str_remove_all(date, "-")) |>
+  select(sepaSite, date.c, total_AF) |>
+  pivot_wider(names_from=date.c, values_from=total_AF) |>
+  filter(sepaSite %in% read_csv("data/farm_sites_2023-2024.csv")$sepaSite) |>
+  mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
+  write_csv("data/lice_daily_2023-01-01_2024-12-31_FARMS.csv")
 
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
@@ -174,7 +196,7 @@ out.df |>
   select(-sepaSite, -nPens) |>
   rename(sepaSite=pen) |>
   mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
-  write_csv(glue("data/lice_daily_2021-04-01_2024-09-30.csv"))
+  write_csv(glue("data/lice_daily_2021-04-01_2024-12-31.csv"))
 
 
 
