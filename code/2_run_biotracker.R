@@ -12,15 +12,15 @@ library(doFuture)
 library(sf)
 theme_set(theme_bw() + theme(panel.grid=element_blank()))
 
-set.seed(101)
+set.seed(1001)
 
 
 # define parameters -------------------------------------------------------
 
-cores_per_sim <- 30
+cores_per_sim <- 18
 parallel_sims <- 1
 start_date <- "2023-01-01"
-end_date <- "2023-12-31"
+end_date <- "2024-12-31"
 nDays <- length(seq(ymd(start_date), ymd(end_date), by=1))
 
 os <- get_os()
@@ -31,14 +31,14 @@ dirs <- switch(
              hf0="/home/sa04ts/hydro/etive28/Archive",
              hf1="/home/sa04ts/hydro/WeStCOMS2/Archive",
              jdk="/usr/local/java/jre1.8.0_211/bin/java",
-             jar="/home/sa04ts/biotracker/biotracker_v1-0-0.jar",
+             jar="/home/sa04ts/biotracker/biotracker.jar",
              out=glue("{getwd()}/out/biotracker")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
                hf0="E:/hydro/etive28/Archive",
                hf1="E:/hydro/WeStCOMS2/Archive",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
-               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v1-0-0.jar",
+               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker.jar",
                out=glue("D:/EtiveLice/out/biotracker"))
 )
 
@@ -65,17 +65,16 @@ sim.i <- tibble(D_h=exp(runif(n_sim, log(1e-4), log(10))),
                 eggTemp_fn=sample(c("constant", "logistic"), n_sim, replace=T),
                 lightThreshCopepodid=qunif(pnorm(light_mx[,1]), (2e-6)^0.5, (2e-4)^0.5)^2,
                 lightThreshNauplius=qunif(pnorm(light_mx[,2]), (0.05)^0.5, (0.5)^0.5)^2,
-                swimUpSpeedMean=-(qunif(pnorm(swim_mx[,1]), (1e-4)^0.5, (2e-2)^0.5))^2,
-                swimDownSpeedMean=(qunif(pnorm(swim_mx[,2]), (1e-4)^0.5, (2e-2)^0.5))^2,
+                swimUpSpeedMean=-1/qunif(pnorm(swim_mx[,1]), 30, 1800), # 00:00:30 - 00:30:00 to swim 1 m
+                swimDownSpeedMean=1/qunif(pnorm(swim_mx[,2]), 30, 1800), # 00:00:30 - 00:30:00 to swim 1 m
                 passiveSinkRateSal=sample(c(T, F), n_sim, replace=T),
                 salinityThreshCopepodidMin=qunif(pnorm(salMin_mx[,1]), 20, 28),
                 salinityThreshNaupliusMin=qunif(pnorm(salMin_mx[,2]), 20, 28),
                 salinityThreshCopepodidMax=pmin(salinityThreshCopepodidMin + qunif(pnorm(salMax_mx[,1]), 0.1, 6), 32),
                 salinityThreshNaupliusMax=pmin(salinityThreshNaupliusMin + qunif(pnorm(salMax_mx[,2]), 0.1, 6), 32),
-                viableDegreeDays=runif(n_sim, 35, 45),
-                connectivityThresh=runif(n_sim, 30, 250)) |>
+                viableDegreeDays=runif(n_sim, 35, 45)) |>
   mutate(across(where(is.numeric), ~signif(.x, 5))) |>
-  mutate(i=str_pad(row_number(), 3, "left", "0"),
+  mutate(i=str_pad(row_number(), 2, "left", "0"),
          outDir=glue("{dirs$out}/sim_{i}/")) |>
   rowwise() |>
   mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
@@ -97,23 +96,29 @@ walk(sim_seq,
        parallelThreadsHD=6,
        start_ymd=as.numeric(str_remove_all(start_date, "-")),
        numberOfDays=nDays,
-       nparts=5,
+       nparts=10,
+       releaseInterval=1,
        checkOpenBoundaries="true",
        # meshes and environment
        mesh0=glue("{dirs$mesh}/etive28_mesh.nc"),
+       meshType0="FVCOM",
        hfDir0=glue("{dirs$hf0}/"),
+       hfDirPrefix0="netcdf_",
        hfFilePrefix0="etive28",
        mesh1=glue("{dirs$mesh}/WeStCOMS2_mesh.nc"),
+       meshType1="FVCOM",
        hfDir1=glue("{dirs$hf1}/"),
+       hfDirPrefix1="netcdf_",
        hfFilePrefix1="westcoms2",
        # sites
-       sitefile=glue("D:/EtiveLice/data/farm_sites_2023.csv"),
-       sitefileEnd=glue("D:/EtiveLice/data/farm_sites_2023.csv"),
-       siteDensityPath=glue("D:/EtiveLice/data/lice_daily_2023-01-01_2023-12-31_FARMS.csv"),
+       sitefile="D:/EtiveLice/data/pen_sites_linnhe_2023-2024.csv",
+       sitefileEnd="D:/EtiveLice/data/pen_sites_etive_2023-2024.csv",
+       siteDensityPath="D:/EtiveLice/data/lice_daily_2023-01-01_2024-12-31.csv",
        # dynamics
        D_hVert=sim.i$D_hVert[.x],
        D_h=sim.i$D_h[.x],
        stepsPerStep=30,
+       stokesDrift="false",
        # biology
        fixDepth="false",
        startDepth=10,
@@ -138,7 +143,7 @@ walk(sim_seq,
        passiveSinkingIntercept=if_else(sim.i$passiveSinkRateSal[.x], 0.001527, sim.i$swimDownSpeedMean[.x]),
        passiveSinkingSlope=if_else(sim.i$passiveSinkRateSal[.x], -1.68e-5, 0),
        viableDegreeDays=sim.i$viableDegreeDays[.x],
-       connectivityThresh=sim.i$connectivityThresh[.x],
+       connectivityThresh=30,
        # recording
        verboseSetUp="true",
        recordConnectivity="true",
@@ -171,10 +176,16 @@ plan(sequential)
 # process output ----------------------------------------------------------
 
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
-pens_linnhe <- read_csv("data/pen_sites_linnhe_2023.csv")
-pens_etive <- read_csv("data/pen_sites_etive_2023.csv")
-etive_farms <- read_csv("data/pen_sites_etive_2023.csv") |>
+pens_linnhe <- read_csv("data/pen_sites_linnhe_2023-2024.csv")
+pens_etive <- read_csv("data/pen_sites_etive_2023-2024.csv")
+etive_farms <- read_csv("data/pen_sites_etive_2023-2024.csv") |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1])
+
+farm_dat <- read_csv("data/lice_biomass_2017-01-01_2024-12-31.csv") |>
+  filter(between(date, ymd(start_date), ymd(end_date))) |>
+  select(sepaSite, date, weeklyAverageAf, actualBiomassOnSiteTonnes, maximumBiomassAllowedTonnes)
+write_csv(farm_dat, "data/sim/inputs/farm_dat.csv")
+
 # Site conditions
 site_env_df <- dirf(glue("{dirs$out}/sim_01"), "siteConditions") |>
   map_dfr(~read_csv(.x, show_col_types=F,
