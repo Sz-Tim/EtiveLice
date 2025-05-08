@@ -24,7 +24,8 @@ make_compositional <- function(x, method="softmax") {
 
 
 
-make_stan_data <- function(dat_dir, dateRange=NULL, source="sim") {
+make_stan_data <- function(dat_dir, dateRange=NULL, source="sim", priors_only=FALSE,
+                           force_detect_priors=FALSE) {
   library(tidyverse)
   library(glue)
 
@@ -64,7 +65,7 @@ make_stan_data <- function(dat_dir, dateRange=NULL, source="sim") {
       temp_mx=readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
       temp_z_mx=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
       nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
-      sampledDays=readRDS(glue("{dat_dir}sampledDays.rds")),
+      sample_i=readRDS(glue("{dat_dir}sampledDays.rds")),
       nFishSampled_mx=readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,],
       y_attach=readRDS(glue("{dat_dir}y_attach.rds")),
       N_attach=readRDS(glue("{dat_dir}N_attach.rds")),
@@ -96,22 +97,39 @@ make_stan_data <- function(dat_dir, dateRange=NULL, source="sim") {
                           dimnames=list(c("int", "temp"),
                                         c("Pr", "Ad"),
                                         c("mu", "sd"))),
-      prior_logit_detect_p=cbind(c(-3, 1),
-                                 c(1, 0.5))
+      prior_mnDaysStage_F=array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
+                                  params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
+                                dim=c(2, nStages-1, 2),
+                                dimnames=list(c("int", "temp"),
+                                              c("Pr", "Ad"),
+                                              c("mu", "sd"))),
+      prior_logit_detect_p=cbind(c(-1, 1),
+                                 c(0.5, 0.5))
     )
 
     if(!is.null(dateRange)) {
       inRng <- stan_dat$sampledDays > min(dates) & stan_dat$sampledDays < max(dates)
-      stan_dat$sampledDays <- stan_dat$sampledDays[,colSums(inRng)==info$nFarms]
+      stan_dat$sampledDays <- stan_dat$sample_i[,colSums(inRng)==info$nFarms]
     }
-    stan_dat$nSamples <- ncol(stan_dat$sampledDays)
+    stan_dat$nSamples <- nrow(stan_dat$sample_i)
+    stan_dat$sample_ii <- stan_dat$sample_i |>
+      as_tibble() |>
+      mutate(index=row_number()) |>
+      group_by(sepaSite) |>
+      summarise(start=min(index),
+                end=max(index)) |>
+      select(-sepaSite) |>
+      as.matrix()
+  }
+  stan_dat$sample_prior_only <- as.numeric(priors_only)
+
+  if(force_detect_priors) {
+    stan_dat$prior_logit_detect_p <- cbind(qlogis(params$detect_p[1:2]),
+                                           c(1e-1, 1e-1))
   }
 
   return(list(dat=stan_dat, params=params))
 }
-
-
-
 
 
 

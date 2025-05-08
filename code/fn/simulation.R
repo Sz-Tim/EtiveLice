@@ -273,7 +273,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
 
   #---- transformed data
   # IP_mx[farm, day, sim]
-  IP_mx <- arrange(influx_df, sim, day, sepaSite, pen)$influx |>
+  IP_mx <- arrange(influx_df, sim, day, sepaSite, pen)$influx_pen |>
     array(dim=c(info$nFarms, info$nDays, info$nSims))
   # attach_env_mx[farm, day, (1, RW, sal, uv, uv^2)]
   farm_env <- farm_env |> arrange(day, sepaSite, pen)
@@ -292,10 +292,14 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   temp_z_mx <- matrix(farm_env$temperature_z, nrow=info$nDays, byrow=T)
   # nFish_mx[day, farm]
   nFish_mx <- matrix(farm_env$nFish_est, nrow=info$nDays, byrow=T)
-  # sampledDays[farm, day]
-  sampledDays <- (farm_env |> arrange(sepaSite, pen, day) |> filter(sampled))$day |>
-    matrix(nrow=info$nFarms, byrow=T)
-  sampledDays <- sampledDays[,-(1:4)] # 1 month burn-in
+  # sampledDays[sample, c(farm, day)] -- database-like structure for Stan
+  sampledDays <- farm_env |>
+    arrange(sepaSite, pen, day) |>
+    filter(sampled) |>
+    filter(day > 28) |> # 4 week burn-in
+    select(sepaSite, day) |>
+    mutate(sepaSite=as.numeric(sepaSite)) |>
+    as.matrix()
   # nFishSampled[day, farm]
   nFishSampled_mx <- matrix(as.numeric(farm_env$nFishSampled), nrow=info$nDays, byrow=T) *
     (nFish_mx > 0)
@@ -431,13 +435,11 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
 
   #--- Sample fish and calculate mean
   # y_bar_overdisp <- y_bar + rnorm(prod(dim(y_bar)), 0, params$nb_prec)
-  for(farm in 1:info$nFarms) {
-    for(day in sampledDays[farm,]) {
-      for(sex in 1:2) {
-        y[,sex, day, farm] <- rnbinom(info$nStages,
-                                      mu=y_bar[,sex, day, farm],
-                                      size=params$nb_prec)
-      }
+  for(i in 1:nrow(sampledDays)) {
+    for(sex in 1:2) {
+      y[, sex, sampledDays[i,2], sampledDays[i,1]] <- rnbinom(info$nStages,
+                                                             mu=y_bar[, sex, sampledDays[i,2], sampledDays[i,1]],
+                                                             size=params$nb_prec)
     }
   }
 
