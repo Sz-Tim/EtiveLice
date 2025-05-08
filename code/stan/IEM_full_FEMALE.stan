@@ -3,7 +3,6 @@
 // tim.szewczyk@sams.ac.uk
 // Integrated ensemble model
 
-// TODO: Modify to use mean per fish from the start instead of huge numbers
 functions {
 
 }
@@ -26,6 +25,7 @@ data {
   matrix[nDays, nFarms] nFish_mx;
   array[nFarms, nSamples] int sampledDays;
   matrix[nDays, nFarms] nFishSampled_mx;
+  int<lower=0,upper=1> sample_prior_only;
   // priors: [mean, sd]
   array[nAttachCov, 2] real prior_attach_beta;
   array[nSurvCov, nStages, 2] real prior_surv_beta;
@@ -36,15 +36,15 @@ data {
 }
 
 transformed data {
+  int nCohorts = nDays;
   int nSex = 1;
   array[2] int nStagesSex = {nStages, nStages-1};
-  array[nFarms, nDays] vector[nDays] cohort_GDD;
-  array[nDays, nStages, 2] int days_array = rep_array(nDays, nDays, nStages, 2);
-  array[nSex, nFarms, nDays] row_vector[nDays] cohort_zero_array;
-  array[nSex, nFarms, nDays, nStages, 2] int cohort_molts_init;
+  array[nFarms, nCohorts] vector[nDays] cohort_GDD;
+  array[nCohorts, nStages, 2] int days_array = rep_array(nDays, nCohorts, nStages, 2);
+  array[nSex, nFarms, nCohorts] row_vector[nDays] cohort_zero_array;
+  array[nSex, nFarms, nCohorts, nStages, 2] int cohort_molts_init;
   array[nSex, nFarms, nStages] row_vector[nDays] N_init;
   array[nSex, nFarms, nStages, nDays] int y2; // reshaped y
-  matrix[nFarms, nDays] t_nFish_mx = nFish_mx';
   matrix[nFarms, nDays] t_nFishSampled_mx = nFishSampled_mx';
   matrix[nDays, nFarms] nFishNoZero_mx = nFish_mx;
   matrix[nDays, nFarms] fishPresent;
@@ -60,12 +60,12 @@ transformed data {
   for(farm in 1:nFarms) {
     for(sex in 1:nSex) {
       cohort_molts_init[sex, farm, , , ] = days_array;
-      cohort_molts_init[sex, farm, , 1, 1] = linspaced_int_array(nDays, 1, nDays); // chalimus start index
-      for(cohort in 1:nDays) {
+      cohort_molts_init[sex, farm, , 1, 1] = linspaced_int_array(nCohorts, 1, nDays); // chalimus start index
+      for(cohort in 1:nCohorts) {
         cohort_zero_array[sex, farm, cohort] = zeros_row_vector(nDays);
       }
     }
-    for(cohort in 1:nDays) {
+    for(cohort in 1:nCohorts) {
       cohort_GDD[farm, cohort] = zeros_vector(nDays);
       cohort_GDD[farm, cohort, cohort:nDays] = cumulative_sum(temp_mx[cohort:nDays, farm]);
     }
@@ -162,11 +162,10 @@ profile("priors") {
 }
 
 model {
-  array[nSex, nFarms, nDays] row_vector[nDays] cohort_N; // cohort daily N
-  array[nSex, nFarms, nDays] row_vector[nDays] cohort_logSurv; // cohort daily s
+  array[nSex, nFarms, nCohorts] row_vector[nDays] cohort_N; // cohort daily N
+  array[nSex, nFarms, nCohorts] row_vector[nDays] cohort_logSurv; // cohort daily s
   array[nSex, nFarms] row_vector[nDays] cohort_cumSurv;
-  array[nSex, nFarms, nDays, nStages, 2] int cohort_molts; // day indexes for stages
-  // array[nSex, nFarms, nStages] row_vector[nDays] N; // total daily N
+  array[nSex, nFarms, nCohorts, nStages, 2] int cohort_molts; // day indexes for stages
   array[nSex, nFarms, nStages] row_vector[nDays] mu; // total daily mu
   array[nSex, nFarms, nStages] row_vector[nDays] y_bar; // expected mean accounting for detection
 
@@ -175,23 +174,25 @@ model {
   cohort_molts = cohort_molts_init;
   mu = N_init;
 
-profile("cohort_stage") {
-  for(sex in 1:nSex) {
-    for(farm in 1:nFarms) {
-      for(cohort in 1:nDays) {
-        int current_stage = 1;
-        for(day in (cohort+1):nDays) {
-          if(current_stage <= nStages) { // is it still alive?
-            if(cohort_GDD[farm, cohort, day] > lifespan || // has it reached its lifespan?
-                  !fishPresent[day, farm]) { // have the fish been harvested?
-              cohort_molts[sex, farm, cohort, current_stage:nStages, 2] = rep_array(day, nStages-current_stage+1);
-              current_stage = nStages + 1;
-            }
-            if(current_stage < nStages) { // is there another life stage?
-              if(cohort_GDD[farm, cohort, day] > thresh_GDD[current_stage, sex]) { // can it molt?
+  if(sample_prior_only==0) {
+  profile("cohort_stage") {
+    for(sex in 1:nSex) {
+      for(farm in 1:nFarms) {
+        for(cohort in 1:nCohorts) {
+          int current_stage = 1;
+          for(day in (cohort+1):nDays) {
+            if(current_stage <= nStages) { // is it still alive?
+              if(cohort_GDD[farm, cohort, day] > lifespan || // has it reached its lifespan?
+                  fishPresent[day, farm]==0) { // have the fish been harvested?
+                cohort_molts[sex, farm, cohort, current_stage:nStages, 2] = rep_array(day, nStages-current_stage+1);
+                current_stage = nStages + 1;
+              }
+              if(current_stage < nStages) { // is there another life stage?
+                if(cohort_GDD[farm, cohort, day] > thresh_GDD[current_stage, sex]) { // can it molt?
                   cohort_molts[sex, farm, cohort, current_stage, 2] = day;
-                current_stage += 1;
-                cohort_molts[sex, farm, cohort, current_stage, 1] = min(day+1, nDays);
+                  current_stage += 1;
+                  cohort_molts[sex, farm, cohort, current_stage, 1] = min(day+1, nDays);
+                }
               }
             }
           }
@@ -199,63 +200,63 @@ profile("cohort_stage") {
       }
     }
   }
-}
-profile("cohort_surv") {
-  for(farm in 1:nFarms) {
+  profile("cohort_surv") {
     for(sex in 1:nSex) {
-      for(cohort in 1:nDays) {
-        for(stage in 1:nStagesSex[sex]) {
-          cohort_logSurv[sex, farm, cohort, cohort_molts[sex, farm, cohort, stage, 1]:cohort_molts[sex, farm, cohort, stage, 2]] =
-            stage_logSurv[farm, stage, cohort_molts[sex, farm, cohort, stage, 1]:cohort_molts[sex, farm, cohort, stage, 2]];
+      for(farm in 1:nFarms) {
+        for(cohort in 1:nCohorts) {
+          for(stage in 1:nStagesSex[sex]) {
+            cohort_logSurv[sex, farm, cohort, cohort_molts[sex, farm, cohort, stage, 1]:cohort_molts[sex, farm, cohort, stage, 2]] =
+              stage_logSurv[farm, stage, cohort_molts[sex, farm, cohort, stage, 1]:cohort_molts[sex, farm, cohort, stage, 2]];
+          }
+          cohort_cumSurv[sex, farm, cohort:cohort_molts[sex, farm, cohort, nStages, 2]] =
+            exp(cumulative_sum(cohort_logSurv[sex, farm, cohort, cohort:cohort_molts[sex, farm, cohort, nStages, 2]]));
         }
-        cohort_cumSurv[sex, farm, cohort:cohort_molts[sex, farm, cohort, nStages, 2]] =
-          exp(cumulative_sum(cohort_logSurv[sex, farm, cohort, cohort:cohort_molts[sex, farm, cohort, nStages, 2]]));
       }
     }
   }
-}
-profile("cohort_N") {
-  for(sex in 1:nSex) {
-    for(farm in 1:nFarms) {
-      for(cohort in 1:nDays) {
+  profile("cohort_N") {
+    for(sex in 1:nSex) {
+      for(farm in 1:nFarms) {
+        for(cohort in 1:nCohorts) {
           cohort_N[sex, farm, cohort, cohort:cohort_molts[sex, farm, cohort, nStages, 2]] =
             N_attach[cohort, farm] * cohort_cumSurv[sex, farm, cohort:cohort_molts[sex, farm, cohort, nStages, 2]];
-      }
-    }
-  }
-}
-profile("N") {
-  for(sex in 1:nSex) {
-    for(farm in 1:nFarms) {
-      for(stage in 1:nStagesSex[sex]) {
-        for(cohort in 1:nDays) {
-          mu[sex, farm, stage, cohort_molts[sex, farm, cohort, stage, 1]:cohort_molts[sex, farm, cohort, stage, 2]] +=
-            cohort_N[sex, farm, cohort, cohort_molts[sex, farm, cohort, stage, 1]:cohort_molts[sex, farm, cohort, stage, 2]];
         }
       }
     }
   }
-}
-profile("observations") {
-  for(sex in 1:nSex) {
-    for(farm in 1:nFarms) {
-      for(stage in 1:nStagesSex[sex]) {
-        y_bar[sex, farm, stage] = mu[sex, farm, stage] .* t_nFishSampled_mx[farm, ] * detect_p[stage] + y_bar_minimum;
+  profile("N") {
+    for(sex in 1:nSex) {
+      for(farm in 1:nFarms) {
+        for(cohort in 1:nCohorts) {
+          for(stage in 1:nStagesSex[sex]) {
+            mu[sex, farm, stage, cohort_molts[sex, farm, cohort, stage, 1]:cohort_molts[sex, farm, cohort, stage, 2]] +=
+              cohort_N[sex, farm, cohort, cohort_molts[sex, farm, cohort, stage, 1]:cohort_molts[sex, farm, cohort, stage, 2]];
+          }
+        }
       }
     }
   }
-}
-profile("likelihood") {
-  for(sex in 1:nSex) {
-    for(farm in 1:nFarms) {
-      for(stage in 1:nStagesSex[sex]) {
-        target += neg_binomial_2_lpmf(y2[sex, farm, stage, sampledDays[farm]] |
-                                      y_bar[sex, farm, stage, sampledDays[farm]],
-                                      nb_prec);
+  profile("observations") {
+    for(sex in 1:nSex) {
+      for(farm in 1:nFarms) {
+        for(stage in 1:nStagesSex[sex]) {
+          y_bar[sex, farm, stage] = mu[sex, farm, stage] .* t_nFishSampled_mx[farm, ] * detect_p[stage] + y_bar_minimum;
+        }
       }
     }
   }
-}
+  profile("likelihood") {
+    for(sex in 1:nSex) {
+      for(farm in 1:nFarms) {
+        for(stage in 1:nStagesSex[sex]) {
+          target += neg_binomial_2_lpmf(y2[sex, farm, stage, sampledDays[farm]] |
+                                        y_bar[sex, farm, stage, sampledDays[farm]],
+                                        nb_prec);
+        }
+      }
+    }
+  }
+  }
   target += lprior;
 }
 
