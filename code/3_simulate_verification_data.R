@@ -8,7 +8,7 @@ library(tidyverse)
 library(glue)
 dir("code/fn", full.names=T) |> walk(source)
 
-n_sims <- 10
+n_sims <- 30
 
 
 for(i in 1:n_sims) {

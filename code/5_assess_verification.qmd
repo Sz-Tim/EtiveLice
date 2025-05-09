@@ -77,7 +77,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
 ```{r}
 #| message: false
 #| warning: false
-out_pop_df <- dir(sim_dir, "sim_")[11:15] |>
+out_pop_df <- dir(sim_dir, "sim_")[1:10] |>
   map_dfr(
     ~full_join(
       read_csv(glue("{sim_dir}/{.x}/posterior_summary_pop_5stage_forcedDet.csv"), show_col_types=F),
@@ -86,7 +86,7 @@ out_pop_df <- dir(sim_dir, "sim_")[11:15] |>
     ) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
       inner_join(param_key, by=join_by(name)))
-out_pop5s_df <- dir(sim_dir, "sim_")[11:15] |>
+out_pop5s_df <- dir(sim_dir, "sim_")[1:10] |>
   map_dfr(
     ~full_join(
       read_csv(glue("{sim_dir}/{.x}/posterior_summary_pop_5stage.csv"), show_col_types=F),
@@ -96,15 +96,15 @@ out_pop5s_df <- dir(sim_dir, "sim_")[11:15] |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
       inner_join(param_key, by=join_by(name)))
 
-out_full_df <- dir(sim_dir, "sim_")[1:3] |>
-  map_dfr(
-    ~full_join(
-      read_csv(glue("{sim_dir}/{.x}/posterior_summary_full_FEMALE_forcedDet.csv"), show_col_types=F),
-      read_csv(glue("{sim_dir}/{.x}/params_full.csv"), show_col_types=F), 
-      by=join_by(name)
-    ) |>
-      mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
-      inner_join(param_key, by=join_by(name)))
+# out_full_df <- dir(sim_dir, "sim_")[1:3] |>
+#   map_dfr(
+#     ~full_join(
+#       read_csv(glue("{sim_dir}/{.x}/posterior_summary_full_FEMALE_forcedDet.csv"), show_col_types=F),
+#       read_csv(glue("{sim_dir}/{.x}/params_full.csv"), show_col_types=F), 
+#       by=join_by(name)
+#     ) |>
+#       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
+#       inner_join(param_key, by=join_by(name)))
 out_df <- bind_rows(
   out_pop_df |> mutate(fit="forced"),
   out_pop5s_df |> mutate(fit="free")
@@ -389,7 +389,7 @@ out_df |>
 
 ```{r}
 full_sum_df <- out_df |>
-  filter(fit=="free") |>
+  # filter(fit=="free") |>
   filter(name != "IP_bg") |>
   mutate(name=if_else(name=="lifespan", "thresh_GDD[,4]", name)) |>
   mutate(param_type=str_split_fixed(name, "\\[", 2)[,1]) |>
@@ -402,21 +402,35 @@ lims_df <- full_sum_df |>
   summarise(lower=min(L25, value, na.rm=T),
             upper=max(L75, value, na.rm=T))
 full_sum_df |>
-  ggplot(aes(value, mn)) +
-  geom_line(stat="smooth", method="lm", formula=y~x, colour="steelblue", linewidth=1) +
-  geom_line(stat="smooth", method="lm", formula=y~x, colour="steelblue", linewidth=0.25, 
-            aes(group=name)) +
+  ggplot(aes(value, mn, colour=fit)) +
+  geom_line(stat="smooth", method="lm", formula=y~x, linewidth=1, se=F) +
+  geom_line(stat="smooth", method="lm", formula=y~x, linewidth=0.25, se=F,
+            aes(group=paste0(name, fit))) +
   geom_point(data=lims_df, aes(lower, lower), colour="white", size=0.2) +
   geom_point(data=lims_df, aes(upper, upper), colour="white", size=0.2) +
   geom_abline(linetype=3) +
   geom_point(shape=1, alpha=0.75) +
   geom_linerange(aes(ymin=L25, ymax=L75)) +
   facet_wrap(~param_type, scales="free", nrow=2) +
-  # coord_(xlim=lims, ylim=lims) +
   labs(x="True value",
        y="Posterior mean + 50% CI", 
        title="Verification across simulated datasets")
 ggsave("admin/project_meetings/figs_temp/pop_freeDet_performance.png", width=8, height=4.5, dpi=300)
+
+full_sum_df |>
+  ggplot(aes(value, mn, colour=fit)) +
+  geom_line(stat="smooth", method="lm", formula=y~x, linewidth=1, se=F) +
+  geom_line(stat="smooth", method="lm", formula=y~x, linewidth=0.25, se=F,
+            aes(group=paste0(name, fit))) +
+  # geom_point(data=lims_df, aes(lower, lower), colour="white", size=0.2) +
+  # geom_point(data=lims_df, aes(upper, upper), colour="white", size=0.2) +
+  geom_abline(linetype=3) +
+  geom_point(shape=1, alpha=0.75) +
+  geom_linerange(aes(ymin=L25, ymax=L75)) +
+  facet_wrap(~label, scales="free") +
+  labs(x="True value",
+       y="Posterior mean + 50% CI", 
+       title="Verification across simulated datasets")
 
 full_sum_df |>
   group_by(label) |>
@@ -433,7 +447,7 @@ full_sum_df |>
 ## Attachment
 
 ```{r}
-attach_rng <- apply(readRDS("data/sim/sim_11/attach_env_mx.rds"), 3, range)
+attach_rng <- apply(readRDS("data/sim/sim_01/attach_env_mx.rds"), 3, range)
 attach_df <- expand_grid(
   RW=qlogis(c(0.1, 0.2, 0.3, 0.4)),
   Sal=seq_range(attach_rng[,3], length.out=3),
@@ -482,13 +496,13 @@ pAttach_df |>
   scale_linetype_manual(values=c(3, 2, 1)) +
   ylim(0, NA) + 
   labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
-  facet_grid(sim~RW)
+  facet_grid(sim~RW, scales="free_y")
 ```
 
 ## Survival
 
 ```{r}
-S_range <- range(readRDS("data/sim/sim_11/sal_mx.rds"))
+S_range <- range(readRDS("data/sim/sim_01/sal_mx.rds"))
 S_df <- tibble(sal=seq_range(S_range, length.out=100))
 pSurv_df <- out_df |>
   # filter(sim %in% out_full_df$sim) |>
@@ -566,8 +580,8 @@ pSurv_df |>
 ## Development rate
 
 ```{r}
-T_range <- range(readRDS("data/sim/sim_11/temp_mx.rds"))
-T_z_range <- range(readRDS("data/sim/sim_11/temp_z_mx.rds"))
+T_range <- range(readRDS("data/sim/sim_01/temp_mx.rds"))
+T_z_range <- range(readRDS("data/sim/sim_01/temp_z_mx.rds"))
 
 T_df <- tibble(temp=seq_range(T_range, length.out=100),
                temp_z=seq_range(T_z_range, length.out=100))
@@ -582,7 +596,8 @@ pMolt_df <- out_df |>
   pivot_wider(names_from="beta", values_from="mn") |>
   mutate(T_df=list(T_df)) |>
   unnest(T_df) |>
-  mutate(pMolt=plogis(b1 + b2*temp_z) * 0.5,
+  mutate(pMolt=1/(b1 + b2*temp_z) * 0.5,
+         # pMolt=plogis(b1 + b2*temp_z) * 0.5,
          mnDays=1/pMolt,
          stage=factor(stage, levels=unique(stage)),
          GDD=temp*mnDays) |>
@@ -598,7 +613,7 @@ pMolt_df |>
   ggplot(aes(temp, pMolt, group=paste(sim, fit), colour=fit)) + 
   geom_line(alpha=0.5) +
   scale_colour_manual("Fit", values=c("#377eb8", "#4daf4a")) +
-  ylim(0, 1) + 
+  ylim(0, NA) + 
   labs(x="Temperature (C)", y="Daily Pr(Molt)") +
   facet_grid(sex~stage)
 ```

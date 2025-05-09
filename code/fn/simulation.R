@@ -277,11 +277,11 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
     array(dim=c(info$nFarms, info$nDays, info$nSims))
   # attach_env_mx[farm, day, (1, RW, sal, uv, uv^2)]
   farm_env <- farm_env |> arrange(day, sepaSite, pen)
-  attach_env_mx <- array(1, dim=c(info$nFarms, info$nDays, 5))
-  attach_env_mx[,,2] <- farm_env$RW_logit
-  attach_env_mx[,,3] <- farm_env$salinity_z
-  attach_env_mx[,,4] <- farm_env$uv
-  attach_env_mx[,,5] <- farm_env$uv_sq
+  attach_env_mx <- array(1, dim=c(info$nFarms, info$nDays, 4))
+  attach_env_mx[,,1] <- farm_env$RW_logit
+  attach_env_mx[,,2] <- farm_env$salinity_z
+  attach_env_mx[,,3] <- farm_env$uv_z
+  attach_env_mx[,,4] <- farm_env$uv_z_sq
   attach_env_mx <- attach_env_mx[,,1:length(params$attach_beta), drop=F]
   # sal_mx[day, farm, (1, sal)]
   sal_mx <- array(1, dim=c(info$nFarms, info$nDays, 2))
@@ -353,7 +353,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
     stage_survRate[farm,,] <- plogis(sal_mx[farm,,] %*% params$surv_beta)
   }
   # assume even sex ratio
-  N_attach <- ensIP * pr_attach / nFish_mx / 2
+  N_attach <- (ensIP^(1/params$IP_scale) * pr_attach)^params$IP_scale / nFish_mx / 2
   N_attach[nFish_mx==0] <- 0
   for(day in 1:info$nDays) {
     for(farm in 1:info$nFarms) {

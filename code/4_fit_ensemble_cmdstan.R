@@ -15,44 +15,42 @@ library(cowplot)
 source("code/fn/helpers.R")
 theme_set(theme_classic())
 
-pDet_forced <- TRUE
+pDet_forced <- FALSE
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch-PA", "PA-Ad")
-param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
+param_key <- tibble(name=c(paste0("attach_beta[", 1:4, "]"),
                            paste0("ensWts_p[", 1:6, "]"),
                            "IP_bg", "IP_bg_m3",
                            paste0("surv_beta[1,", 1:3, "]"),
                            paste0("surv_beta[2,", 1:3, "]"),
-                           paste0("pMoltF_beta[1,", 1:2, "]"),
-                           paste0("pMoltF_beta[2,", 1:2, "]"),
-                           paste0("pMoltM_beta[1,", 1:2, "]"),
-                           paste0("pMoltM_beta[2,", 1:2, "]"),
+                           paste0("mnDaysStage_beta[1,", 1:2, "]"),
+                           paste0("mnDaysStage_beta[2,", 1:2, "]"),
                            paste0("thresh_GDD[", 1:2, ",1]"),
                            paste0("thresh_GDD[", 1:2, ",2]"),
                            "lifespan",
                            paste0("detect_p[", 1:2, "]"),
-                           "nb_prec"),
-                    label=c(paste0("attach_", c("Int", "RW", "Sal", "UV", "UVsq")),
+                           "nb_prec",
+                           "IP_scale"),
+                    label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq")),
                             paste0("ensWt_", 1:6),
                             "IP_bg", "IP_bg_m3",
                             paste0("surv_Int_", stages),
                             paste0("surv_Sal_", stages),
-                            paste0("pMoltF_Int_", stage_trans),
-                            paste0("pMoltF_Temp_", stage_trans),
-                            paste0("pMoltM_Int_", stage_trans),
-                            paste0("pMoltM_Temp_", stage_trans),
+                            paste0("mnDaysStage_Int_", stages[1:2]),
+                            paste0("mnDaysStage_Temp_", stages[1:2]),
                             paste0("moltF_GDD_", stage_trans),
                             paste0("moltM_GDD_", stage_trans),
                             "lifespan_GDD",
                             paste0("p_detect_", stages[-3]),
-                            "neg_binom_prec"
+                            "neg_binom_prec",
+                            "IP_scale"
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
 
-for(sim in 1:10) {
+for(sim in 1:30) {
 
   dat_dir <- glue("data/sim/sim_{str_pad(sim, 2, 'left', '0')}/")
   stan_dat <- make_stan_data(dat_dir, force_detect_priors=pDet_forced)
@@ -66,16 +64,16 @@ for(sim in 1:10) {
     iter_warmup=iter, iter_sampling=iter,
     chains=n_chains, parallel_chains=n_chains
   )
-  fit_full$profiles()[[1]] |>
-    as_tibble() |>
-    select(name, total_time) |>
-    mutate(pct=total_time/sum(total_time)*100) |>
-    arrange(desc(pct)) |>
-    write_csv(glue("{dat_dir}profile_pop5stage.csv"))
+  # fit_full$profiles()[[1]] |>
+  #   as_tibble() |>
+  #   select(name, total_time) |>
+  #   mutate(pct=total_time/sum(total_time)*100) |>
+  #   arrange(desc(pct)) |>
+  #   write_csv(glue("{dat_dir}profile_pop5stage.csv"))
 
   out_full_df <- fit_full$draws(
-    variables=c("IP_bg", "IP_bg_m3", "ensWts_p", "attach_beta",
-                "surv_beta", "pMoltF_beta",
+    variables=c("IP_bg", "IP_bg_m3", "IP_scale", "ensWts_p", "attach_beta",
+                "surv_beta", "mnDaysStage_beta",
                 "detect_p", "nb_prec",
                 "mu", "y_pred"),
     format="df") |>
@@ -87,15 +85,15 @@ for(sim in 1:10) {
   write_csv(out_full_sum, glue("{dat_dir}posterior_summary_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}.csv"))
 
   dat_full_df <- tibble(
-    name=c(paste0("attach_beta[", 1:5, "]"),
-           "IP_bg", "IP_bg_m3",
+    name=c(paste0("attach_beta[", 1:4, "]"),
+           "IP_bg", "IP_bg_m3", "IP_scale",
            paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
            paste0("surv_beta[1,", 1:3, "]"), paste0("surv_beta[2,", 1:3, "]"),
            paste0("thresh_GDD[", 1:2, ",1]"), paste0("thresh_GDD[", 1:2, ",2]"),
            "lifespan",
            paste0("detect_p[", 1:stan_dat$dat$nStages, "]"), "nb_prec"),
     value=c(stan_dat$params$attach_beta,
-            stan_dat$params$IP_bg, stan_dat$params$IP_bg_m3,
+            stan_dat$params$IP_bg, stan_dat$params$IP_bg_m3, stan_dat$params$IP_scale,
             stan_dat$params$ensWts_p,
             t(stan_dat$params$surv_beta),
             stan_dat$params$thresh_GDD,
@@ -124,13 +122,13 @@ for(sim in 1:10) {
     geom_vline(xintercept=0, linetype=3)
 
   pMoltInt_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                     ~.x |> filter(grepl("pMolt.*_beta\\[1", name)) |>
+                     ~.x |> filter(grepl("mnDaysStage_beta\\[1", name)) |>
                        inner_join(param_key, by=join_by(name)))
   p_pMoltInt <- post_summary_plot(pMoltInt_ls, ncol=2, scales="free_y") +
     geom_vline(xintercept=0, linetype=3)
 
   pMoltTemp_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                      ~.x |> filter(grepl("pMolt.*_beta\\[2", name)) |>
+                      ~.x |> filter(grepl("mnDaysStage_beta\\[2", name)) |>
                         inner_join(param_key, by=join_by(name)))
   p_pMoltTemp <- post_summary_plot(pMoltTemp_ls, ncol=2, scales="free_y") +
     geom_vline(xintercept=0, linetype=3)
@@ -142,9 +140,9 @@ for(sim in 1:10) {
     xlim(0, 1)
 
   else_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                 ~.x |> filter(grepl("IP_bg|nb_prec", name)) |>
+                 ~.x |> filter(grepl("IP_bg|nb_prec|IP_scale", name)) |>
                    inner_join(param_key, by=join_by(name)))
-  p_else <- post_summary_plot(else_ls, ncol=3, scales="free")
+  p_else <- post_summary_plot(else_ls, ncol=4, scales="free")
 
   plot_grid(p_ensWts, p_attach, p_surv, p_pMoltInt, p_pMoltTemp, p_detectp, p_else,
             nrow=7, align="hv", axis="trbl", rel_heights=c(1, 1, 2, 1, 1, 1, 1))

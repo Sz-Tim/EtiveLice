@@ -4,31 +4,31 @@
 // Integrated ensemble model
 
 data {
-  int<lower=0> nDays;
-  int<lower=0> nFarms;
-  int<lower=0> nSims;
-  int<lower=0> nStages;
-  int<lower=1> nAttachCov;
-  int<lower=1> nSurvCov;
-  int<lower=1> nSamples;
-  real<lower=0> IP_volume;
-  real<lower=0> y_bar_minimum;
-  array[nFarms] int<lower=0> nPens;
-  array[nStages, 2, nDays, nFarms] int y;
-  array[nFarms] matrix<lower=0>[nDays, nSims] IP_mx;
-  array[nFarms] matrix[nDays, nAttachCov] attach_env_mx;
-  array[nFarms] matrix[nDays, nSurvCov] sal_mx;
-  matrix[nDays, nFarms] temp_z_mx;
-  matrix[nDays, nFarms] nFish_mx;
+  int<lower=0> nDays; // number of days from start to end
+  int<lower=0> nFarms; // number of farms
+  int<lower=0> nSims; // number of IP simulations for ensembling
+  int<lower=0> nStages; // number of on-fish stages: 3 = Ch, PA, Ad
+  int<lower=1> nAttachCov; // number of covariates for p(Attach)
+  int<lower=1> nSurvCov; // number of covariates for p(Surv) incl. intercept
+  int<lower=1> nSamples; // total number of sampling bouts across all farms
+  real<lower=0> IP_volume; // per-pen volume to use for scaling IP_m3 to N_copepodids
+  real<lower=0> y_bar_minimum; // minimum possible expected lice counts (0 not allowed)
+  array[nFarms] int<lower=0> nPens; // number of pens per farm
+  array[nStages, 2, nDays, nFarms] int y; // lice counts for each day 1:nDays
+  array[nFarms] matrix<lower=0>[nDays, nSims] IP_mx; // IP from particle tracking simulations
+  array[nFarms] matrix[nDays, nAttachCov] attach_env_mx; // covariates for p(Attach)
+  array[nFarms] matrix[nDays, nSurvCov] surv_env_mx; // covariates for p(Surv) incl. intercept
+  matrix[nDays, nFarms] temp_z_mx; // z-transformed temperature
+  matrix[nDays, nFarms] nFish_mx; // number of fish on each farm each day
   array[nSamples, 2] int sample_i; // rows: sample; cols: farm, day; sorted by farm, day
   array[nFarms, 2] int sample_ii; // start/end indexes for each farm in sample_i
-  matrix[nDays, nFarms] nFishSampled_mx;
-  int<lower=0,upper=1> sample_prior_only;
+  matrix[nDays, nFarms] nFishSampled_mx; // number of fish sampled on each farm each day
+  int<lower=0,upper=1> sample_prior_only; // 0: include likelihood, 1: prior only
   // priors: [mean, sd]
-  array[nAttachCov, 2] real prior_attach_beta;
-  array[nSurvCov, nStages, 2] real prior_surv_beta;
-  array[2, nStages-1, 2] real prior_mnDaysStage_F;
-  array[nStages-1, 2] real prior_logit_detect_p;
+  array[nAttachCov, 2] real prior_attach_beta; // p(attach) slopes
+  array[nSurvCov, nStages, 2] real prior_surv_beta; // p(surv) intercept & slopes
+  array[2, nStages-1, 2] real prior_mnDaysStage_F; // mean days per stage (Ch, PA)
+  array[nStages-1, 2] real prior_logit_detect_p; // detection probability
 }
 
 transformed data {
@@ -73,17 +73,18 @@ parameters {
   matrix[nSurvCov, nStages] surv_beta_z; // p(surv) [Int, sal][Ch, Pr, Ad, Gr]
   matrix[2, nStages-1] mnDaysStage_beta_z; // [Int, temp][Ch-Pr, Pr-Ad, Ad-Gr]
   vector[nStages] logit_detect_p; // p(detect) by stage
+  real<lower=1,upper=4> IP_scale; // scaling factor for IP -> N_attach
   real<lower=0> nb_prec; // neg_binom precision
 }
 
 transformed parameters {
   // parameters
   real lprior = 0;  // prior contributions to the log posterior
-  real<lower=0> IP_bg = IP_bg_m3 * IP_volume;
+  real<lower=0> IP_bg = IP_bg_m3 * IP_volume; // background N_copepodids per pen
   simplex[nSims] ensWts_p = softmax(ensWts_p_uc);  // mixture proportions
-  vector[nAttachCov] attach_beta; // p(attach) [Int, RW_logit, sal_z, uv, uv^2]
+  vector[nAttachCov] attach_beta; // p(attach) [RW_logit, sal_z, uv, uv^2]
   matrix[nSurvCov, nStages] surv_beta; // p(surv) [Int, sal][Ch, Pr, Ad]
-  matrix[2, nStages-1] pMoltF_beta; // [Int, temp][Ch-Pr, Pr-Ad]
+  matrix[2, nStages-1] mnDaysStage_beta; // [Int, temp][Ch-Pr, Pr-Ad]
   vector[nStages] detect_p;
   // intermediate quantities
   matrix[nDays, nFarms] ensIP;
@@ -95,7 +96,6 @@ transformed parameters {
   array[1, nFarms] matrix[nStages+2, nDays] mu; // latent daily mean lice per fish
   array[1, nStages] row_vector[nSamples] y_bar;
 
-profile("param_rescale") {
   // re-scale and de-center parameters
   for(i in 1:nAttachCov) {
     attach_beta[i] = fma(attach_beta_z[i],
@@ -109,9 +109,9 @@ profile("param_rescale") {
                                prior_surv_beta[i,stage,1]);
     }
   }
-  for(i in 1:2) {
+  for(i in 1:(nStages-1)) {
     for(stage in 1:(nStages-1)) {
-      pMoltF_beta[i,stage] = fma(mnDaysStage_beta_z[i,stage],
+      mnDaysStage_beta[i,stage] = fma(mnDaysStage_beta_z[i,stage],
                                    prior_mnDaysStage_F[i,stage,2],
                                    prior_mnDaysStage_F[i,stage,1]/2);
     }
@@ -122,23 +122,21 @@ profile("param_rescale") {
                                     prior_logit_detect_p[stage,1]));
   }
   detect_p[nStages] = 1;
-}
-profile("attachment") {
+
   // calculate ensIP, pr_attach, N_attach, stage_logSurv
   for(farm in 1:nFarms) {
     ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg * nPens[farm];
     pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
-    stage_Surv[farm] = inv_logit(sal_mx[farm] * surv_beta);
+    stage_Surv[farm] = inv_logit(surv_env_mx[farm] * surv_beta);
     for(stage in 1:(nStages-1)) {
-      pMolt[1, farm, , stage] = 1 / (temp_X[farm] * pMoltF_beta[, stage]);
+      pMolt[1, farm, , stage] = 1 / (temp_X[farm] * mnDaysStage_beta[, stage]);
     }
     for(stage in 1:nStages) {
       stage_Surv[farm, , stage] = stage_Surv[farm, , stage] .* fishPresent[, farm];
     }
   }
-  N_attach = ensIP .* pr_attach .* fishPresent * 0.5 ./ nFishNoZero_mx;
-}
-profile("trans_mx") {
+  N_attach = (ensIP.^(1/IP_scale) .* pr_attach).^IP_scale .* fishPresent * 0.5 ./ nFishNoZero_mx;
+
   trans_mx = trans_mx_init;
   for(farm in 1:nFarms) {
     for(day in 1:nDays) {
@@ -156,11 +154,8 @@ profile("trans_mx") {
       trans_mx[sex, farm, day, 5, 5] = stage_Surv[farm, day, 3];
     }
   }
-}
 
   mu = N_init;
-
-profile("N") {
   for(farm in 1:nFarms) {
     mu[sex, farm, 1, 1] = N_attach[1, farm];
     for(day in 1:(nDays-1)) {
@@ -168,8 +163,6 @@ profile("N") {
       mu[sex, farm, 1, day+1] += N_attach[day+1, farm];
     }
   }
-}
-profile("observations") {
   for(farm in 1:nFarms) {
     array[2] int farmInd = sample_ii[farm, ];
     // Chalimus: (mu[Ch1] + mu[Ch2]) * nFish * pDet[Ch]
@@ -188,8 +181,6 @@ profile("observations") {
       t_nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
       detect_p[3] + y_bar_minimum;
   }
-}
-profile("priors") {
   // priors
   lprior += normal_lpdf(IP_bg_m3 | 0, 0.5) - normal_lccdf(0 | 0, 0.5);
   lprior += std_normal_lpdf(ensWts_p_uc);
@@ -203,15 +194,11 @@ profile("priors") {
   lprior += std_normal_lpdf(logit_detect_p);
   lprior += normal_lpdf(nb_prec | 0, 2) - normal_lccdf(0 | 0, 2);
 }
-}
 
 model {
-
-profile("likelihood") {
   for(stage in 1:nStagesSex[sex]) {
     target += neg_binomial_2_lpmf(y2[sex, stage] | y_bar[sex, stage], nb_prec);
   }
-}
   target += lprior;
 }
 
