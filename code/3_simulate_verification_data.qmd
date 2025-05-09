@@ -15,11 +15,11 @@ editor_options:
 
 # Overview
 
-This document generates data for verification of the integrated ensemble model (IEM). The IEM is a multilevel Bayesian model that combines copepodid infection pressure (IP) from a set of particle tracking simulation variants, calculates ensemble IP as a weighted average across the simulation variants, estimates attachment rates, and models the on-fish progression of daily lice cohorts through time. Observed counts of each stage of lice each week are used as the response variable, with all model parameters estimated jointly. The IEM will be verified using data that is simulated using identical processes with known, realistic parameters to assess the ability of the IEM to accurately and precisely recover parameters.
+This document generates data for verification of the integrated ensemble model (IEM). The IEM is a multilevel Bayesian model that combines copepodid infestation pressure (IP) from a set of particle tracking simulation variants, calculates ensemble IP as a weighted average across the simulation variants, estimates attachment rates, and models the on-fish progression of daily lice cohorts through time. Observed counts of each stage of lice each week are used as the response variable, with all model parameters estimated jointly. The IEM will be verified using data that is simulated using identical processes with known, realistic parameters to assess the ability of the IEM to accurately and precisely recover parameters.
 
-This script can be modified to use final `biotracker` simulations, best available farm data and the final parameter sets. For the moment, it uses daily averages from `etive28` at each farm with a sample of six `biotracker` simulations, running from 2023-01-01 to 2023-12-31.
+This script can be modified to use final `biotracker` simulations, best available farm data and the final parameter sets. For the moment, it uses daily averages from `etive28` at each farm with a sample of six `biotracker` simulations, running from 2023-01-01 to 2024-12-31.
 
-Releases and infection pressure are currently being performed by pen rather than by farm. The final version may still use farm-level aggregation. However, the IP catchment area is more in line with reality by using a smaller radius (\~30m) around each pen as identified via satellite imagery compared to a larger radius (\~100m) around a reported point location. Since layouts tend to be 2 x n, a circular buffer fails to capture the correct area. For IP, `biotracker` internally sums the density of lice for all particles entering within the radius of each potential destination for each 120 s substep.
+Releases and infestation pressure are currently being performed by pen rather than by farm. The final version may still use farm-level aggregation. However, the IP catchment area is more in line with reality by using a smaller radius (\~30m) around each pen as identified via satellite imagery compared to a larger radius (\~100m) around a reported point location. Since layouts tend to be 2 x n, a circular buffer fails to capture the correct area. For IP, `biotracker` internally sums the density of lice for all particles entering within the radius of each potential destination for each 120 s substep.
 
 Parameters are based on previous literature, e.g., [@kragesteen2023; @kragesteen2021; @kragesteen2019; @kragesteen2018; @samsing2015; @samsing2016], or quick trial-and-error tuning to get plausible values.
 
@@ -40,7 +40,7 @@ proj_dir <- here()
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 
-farm_order <- c("FFMC84", "FFMC32", "APT1", "SAR1")#, "FFMC27")
+farm_order <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
 
 # mesh footprints
 mesh_dir <- glue("{proj_dir}/../03_packages/WeStCOMS/data")
@@ -70,7 +70,7 @@ cat("Sim", sim_num, "running with seed:", seed)
 `farm_i`: Farm metadata. Location, depth (`etive28`), surface area within 100m radius (excluding land, based on `etive28` mesh), and volume = area \* depth.
 
 ```{r}
-pen_df <- read_csv(glue("{inputs_dir}/pen_sites_etive_2023.csv"), show_col_types=F) |>
+pen_df <- read_csv(glue("{proj_dir}/data/pen_sites_etive_2023-2024.csv"), show_col_types=F) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
   filter(sepaSite %in% farm_order) |>
   group_by(sepaSite) |>
@@ -111,20 +111,40 @@ ggplot() +
 `farm_dat`: Daily interpolation of mean adult female lice per fish, reported fish biomass, estimated number of fish assuming 240 fish per tonne, estimated total adult female lice assuming 240 fish per tonne, area within 100m radius, receiving area ratio, logit-transformed receiving area ratio, and whether lice were sampled on a given day. Receiving area ratio is calculated following @kragesteen2023 as $R(W_i) = \sqrt{\frac{W_i}{DV_r}}$ (recommended Method 3), with biomass $W$ = `actualBiomassOnSiteTonnes * 1000` ($kg$), stocking density $D = 20 kg \cdot m^{-3}$, and receiving area $V_r$ = `vol` ($m^3$). I assume here a depth of 20m for the receiving area. Thus, $R(W_i)$ = `RW` is the proportion of copepodids that successfully attach.
 
 ```{r}
+mort_weekly <- 0.000878 # mean rate from Szewczyk et al 2024
+prod_cycles <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
+  select(sepaSite, date, actualBiomassOnSiteTonnes) |>
+  mutate(fishIn=actualBiomassOnSiteTonnes > 0) |>
+  group_by(sepaSite) |>
+  mutate(fishInID=consecutive_id(fishIn)) |>
+  filter(fishIn) |>
+  group_by(sepaSite, fishInID) |>
+  slice_head(n=1) |> # for consecutive 0s, select last day
+  group_by(sepaSite) |>
+  mutate(productionCycleNumber=row_number()) |>
+  ungroup() |>
+  select(sepaSite, date, productionCycleNumber)
 farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
   right_join(farm_i |> select(sepaSite, firstDay), 
              by=join_by(sepaSite)) |>
   right_join(pen_df |> select(sepaSite, pen, nPens), 
              by=join_by(sepaSite), 
              relationship="many-to-many") |>
-  # mutate(actualBiomassOnSiteTonnes=pmax(actualBiomassOnSiteTonnes, 200)) |>
+  left_join(prod_cycles, by=c("sepaSite", "date")) |>
+  fill(productionCycleNumber) |>
+  group_by(pen, productionCycleNumber) |>
+  mutate(prodDay=row_number()) |>
+  ungroup() |>
   mutate(sepaSite=factor(sepaSite, levels=farm_order),
-         nFish_est=actualBiomassOnSiteTonnes*240/nPens,
+         fishIn=actualBiomassOnSiteTonnes > 0,
+         nFish_est=fishIn * maximumBiomassAllowedTonnes*240/nPens * 
+           ((1-mort_weekly)^(1/7))^prodDay,
          total_AF=weeklyAverageAf * nFish_est,
-         RW=sqrt(actualBiomassOnSiteTonnes/nPens*1000/(20*20*pi*30^2)),
+         RW=sqrt(fishIn*maximumBiomassAllowedTonnes/nPens*1000/(20*20*pi*30^2)),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5)) |>
   group_by(sepaSite) |>
-  mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:52))) |>
+  mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:500)),
+         sampled=sampled & (nFish_est > 0)) |>
   ungroup() |>
   select(-firstDay, -nPens) |>
   mutate(nFishSampled=if_else(sampled, sample(20:25, 1), 0))
@@ -151,12 +171,6 @@ p_ls <- list(farm_dat_gg + geom_line(aes(y=nFish_est, group=pen)),
              farm_dat_gg + geom_line(aes(y=RW, group=pen)))
 cowplot::plot_grid(plotlist=p_ls, ncol=1, align="hv")
 ```
-
-::: callout-caution
-## TODO: Update to more realistic fish numbers
-
-Estimation of fish numbers is **terrible**, but will serve for now. I also need to deal with 0's in the model.
-:::
 
 ## Environmental data
 
@@ -191,7 +205,7 @@ farm_env_avg
 ```{r}
 #| fig-width: 10
 #| fig-height: 8
-#| fig-cap: "WeStCOMS2 at farm locations. Farms are ordered from uploch (light) to downloch (dark)."
+#| fig-cap: "Etive28 at farm locations. Farms are ordered from uploch (light) to downloch (dark)."
 #| fig-dpi: 400
 #| echo: false
 farm_env |>
@@ -205,16 +219,16 @@ farm_env |>
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
   facet_grid(variable~sepaSite, scales="free_y") +
   scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
-  labs(y="Daily mean, 0-30m (WeStCOMS2)") +
+  labs(y="Daily mean, 0-30m (Etive28)") +
   guides(colour=guide_legend(override.aes=list(linewidth=1))) + 
   theme(panel.grid.major.y=element_line(colour="grey85", linewidth=0.2),
         panel.grid.minor.y=element_blank(),
         axis.title.x=element_blank())
 ```
 
-## Infection pressure
+## Infestation pressure
 
-Copepodid infection pressure was taken from 6 `biotracker` simulations which randomly sampled from a plausible parameter space. The number of copepodids in the top 20m within a 30m radius of each pen was totaled each day. The number of simulations will increase as testing progresses. The parameters that varied were:
+Copepodid infestation pressure was taken from 6 `biotracker` simulations which randomly sampled from a plausible parameter space. The number of copepodids in the top 20m within a 30m radius of each pen was totaled each day. The number of simulations will increase as testing progresses. The parameters that varied were:
 
 ```{r}
 #| message: false
@@ -228,7 +242,7 @@ read_csv("D:/EtiveLice/out/biotracker/sim_i.csv") |>
 ```{r}
 influx_df <- read_csv(glue("{inputs_dir}/influx.csv"), show_col_types=F) |>
   filter(sepaSite %in% farm_order) |>
-  full_join(tibble(date=seq(ymd("2023-01-01"), ymd("2023-12-31"), by=1),
+  full_join(tibble(date=seq(ymd("2023-01-01"), ymd("2024-12-31"), by=1),
                    sepaSite=farm_order[1], pen=paste0(farm_order[1], "_01"), sim="01"),
             by=join_by(sepaSite, sim, pen, date)) |>
   complete(date, pen, sim, fill=list(influx=0, influx_m2=0)) |>
@@ -237,20 +251,21 @@ influx_df <- read_csv(glue("{inputs_dir}/influx.csv"), show_col_types=F) |>
          sepaSite=factor(sepaSite, levels=farm_order)) |>
   select(date, day, sepaSite, pen, sim, influx, influx_m2) |>
   arrange(sim, sepaSite, pen, day) |>
-  mutate(influx_m3=influx_m2/20)
+  mutate(influx_m3=influx_m2/20,
+         influx_pen=influx_m2*pi*30^2)
 glimpse(influx_df)
 ```
 
 ```{r}
 #| fig-width: 10
 #| fig-height: 6
-#| fig-cap: "Daily copepodid infection pressure by farm."
+#| fig-cap: "Daily copepodid infestation pressure by farm."
 #| fig-dpi: 400
 #| echo: false
 ggplot(influx_df, aes(date, influx_m3, colour=sepaSite, group=pen)) +
   geom_line(linewidth=0.1) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_y_continuous("Mean daily copepodids / m3 in top 20m") +
   facet_grid(sim~sepaSite) +
   theme(axis.title.x=element_blank())
@@ -259,19 +274,19 @@ ggplot(influx_df, aes(date, influx_m3, colour=sepaSite, group=pen)) +
 ```{r}
 #| fig-width: 10
 #| fig-height: 6
-#| fig-cap: "Daily copepodid infection pressure (4th root) by farm."
+#| fig-cap: "Daily copepodid infestation pressure (4th root) by farm."
 #| fig-dpi: 400
 #| echo: false
 ggplot(influx_df, aes(date, influx_m3^0.25, colour=sepaSite, group=pen)) +
   geom_line(linewidth=0.1) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_y_continuous("(Mean daily copepodids / m3)^0.25") +
   facet_grid(sim~sepaSite) +
   theme(axis.title.x=element_blank())
 ```
 
-The simulations vary quite a lot in the infection pressure, with considerable variation among pens as well.
+The simulations vary quite a lot in the infestation pressure, with considerable variation among pens as well.
 
 ## Population settings
 
@@ -280,13 +295,15 @@ The simulations vary quite a lot in the infection pressure, with considerable va
 #| echo: false
 # Generate realistic variability in parameters using Bayesian regression
 library(brms)
+library(plotly)
 
 # Pr(attach)
-attach_mn <- c(-3, .8, 0.2, 0.4, -0.01)
+# attach_mn <- c(-2.25, .8, 0.2, 0.2, -0.005)
+attach_mn <- c(0, 1, 0.2, 0.25, -0.1)
 attach_sigma <- 0.7
 attach_df <- expand_grid(
   salinity_z=seq_range(farm_env$salinity_z, length.out=100),
-  uv=seq_range(farm_env$uv, length.out=100),
+  uv=seq_range(farm_env$uv_z, length.out=100),
   RW=seq_range(farm_env$RW, length.out=100)
 ) |>
   filter(RW > 0) |>
@@ -299,7 +316,15 @@ attach_df <- expand_grid(
            attach_mn[4] * uv +
            attach_mn[5] * uv^2,
          obs=eta + rnorm(n(), 0, attach_sigma))
-attach_out <- brm(obs ~ RW_logit + salinity_z + uv + I(uv^2),
+ggplot(attach_df, aes(uv, plogis(eta), colour=RW)) + geom_point() + ylim(0, 1)
+ggplot(attach_df, aes(RW, plogis(eta), colour=uv)) + geom_point() + ylim(0, 1) + 
+  geom_abline() + scale_colour_viridis_c(option="turbo")
+plot_ly(attach_df, x=~uv, y=~RW, z=~salinity, color=~plogis(eta), type="scatter3d")
+summary(plogis(attach_df$eta))
+hist(plogis(attach_df$eta), xlim=c(0,1))
+
+
+attach_out <- brm(obs ~ 0 + RW_logit + salinity_z + uv + I(uv^2),
                   data=attach_df, cores=4)
 as_draws_df(attach_out) |>
   select(starts_with("b_")) |>
@@ -340,49 +365,57 @@ use_farm_avg <- TRUE # F: use pens
 info <- list(nDays=n_distinct(influx_df$date),
              nFarms=n_distinct(influx_df$pen),
              nSims=n_distinct(influx_df$sim),
-             nStages=4,
+             nStages=3,
              nPens=rep(1, n_distinct(influx_df$pen)),
              dateRange=range(influx_df$date))
 params <- list(
   # Ensemble proportional weight for each biotracker simulation
   ensWts_p=rlnorm(info$nSims, sdlog=0.75) |> make_compositional(),
+  # Pr(copepodid attachment): RW_logit, salinity, uv, uv^2
+  attach_beta=glue("{inputs_dir}/posterior_prAttach.csv") |>
+    read_csv() |> sample_n(1) |> unlist(),
+  # On-fish survival: chalimus, pre-adult, adult, gravid
+  #   logit(p) = f(salinity); intercept, slope by stage
+  surv_beta=glue("{inputs_dir}/posterior_prSurv.csv") |>
+    read_csv() |> sample_n(1) |> unlist() |> matrix(nrow=2, byrow=T),
   # Cumulative GDD post-attachment needed to transition to next stage
   thresh_GDD=cbind( 
     runif(3, min=c(125, 325, 525), max=c(175, 375, 575)), # F: Pr/Ad/Gr
     runif(3, min=c(105, 290, 5e3), max=c(155, 340, 5e3)) # M: Pr/Ad/NA
-  ),
+  )[1:(info$nStages-1),],
   lifespan=rnorm(1, 1500, 25),
   # Pr(detect) by stage
   detect_p=c(runif(3, 
-                   min=c(0, 0.5, 0.95),
+                   min=c(0, 0.5, 1),
                    max=c(0.5, 0.95, 1)),
-             1),
+             1)[1:info$nStages],
   # Precision parameter for fish-level lice counts ~negbinom(mu, phi)
   # Distribution tends toward poisson as phi -> Inf
-  nb_prec=runif(1, min=0.5, max=5),
-  # Background infection rate from wild fish (copepodids/m3/d)
-  IP_bg_m3=runif(1, min=0, max=0.2)
+  nb_prec=abs(rnorm(1, 0, 2)),
+  # Background infestation rate from wild fish (copepodids/m3/d)
+  IP_bg_m3=(runif(1, min=(1e-5)^0.5, max=(0.2)^0.5))^2,
+  # Scaling factor for IP -> attached: from linear to 4th root with mean = sq root 
+  IP_scale=rbeta(n=1, 1.5, 3)*3 + 1
 )
-
-# Pr(copepodid attachment): intercept, RW_logit, salinity, uv, uv^2
-if(rbinom(1, 1, 0.5)) {
-  params$attach_beta <- c(qlogis(0.4), 0.7, 0, 0, 0)
-} else {
-  params$attach_beta <- glue("{inputs_dir}/posterior_prAttach.csv") |>
-    read_csv() |> sample_n(1) |> unlist()
-}
-
-# On-fish survival: chalimus, pre-adult, adult, gravid female
-#   logit(p) = f(salinity); intercept, slope by stage
-if(rbinom(1, 1, 0.5)) {
-  params$surv_beta <- rbind(qlogis(c(0.95, 0.98, 0.99, 0.97)),
-                            c(0, 0, 0, 0))
-} else {
-  params$surv_beta <- glue("{inputs_dir}/posterior_prSurv.csv") |>
-    read_csv() |> sample_n(1) |> unlist() |> matrix(nrow=2, byrow=T)
-}
+# Randomly set salinity and uv effects to 0 for attachment
+params$attach_beta[2:4] <- params$attach_beta[2:4] * rbinom(2, 1, 0.75)[c(1,2,2)]
+# Randomly set salinity effects to 0 for survival
+params$surv_beta[2,] <- params$surv_beta[2,] * rbinom(4, 1, 0.75)
+params$surv_beta <- params$surv_beta[,1:info$nStages]
 # Background copepodid count per pen
 params$IP_bg <- params$IP_bg_m3*pi*30^2*20
+
+mnDaysStage_df <- expand_grid(Ch=seq(125, 175, length.out=100),
+            PA=seq(325, 375, length.out=100)) |>
+  mutate(PA=PA-Ch) |>
+  pivot_longer(everything(), names_to="stage", values_to="GDD") |>
+  rowwise() |>
+  mutate(temperature=list(seq_range(farm_env$temperature, length.out=100))) |>
+  unnest(temperature) |>
+  mutate(days=GDD/temperature,
+         temp_z=(temperature-farm_env_avg$temperature[1])/farm_env_avg$temperature[2])
+params$mnDaysStageCh=summary(lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="Ch")))$coefficients[,1:2] * rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
+params$mnDaysStagePA=summary(lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="PA")))$coefficients[,1:2] * rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
 ```
 
 In this particular simulation, the settings are:
@@ -400,18 +433,17 @@ map(params, ~signif(.x, 3))
 # attachment
 p_prAttach <- expand_grid(
   salinity_z=seq_range(farm_env$salinity_z, length.out=100),
-  uv=seq_range(farm_env$uv, length.out=100),
+  uv=seq_range(farm_env$uv_z, length.out=100),
   RW=seq(0.05, max(farm_env$RW), length.out=4)
 ) |>
   mutate(uv_sq=uv^2,
          salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
          RW_logit=brms::logit_scaled(RW, lb=-1e-5),
          RW_lab=paste("RW:", round(RW, 2))) |>
-  mutate(pr_attach=plogis(params$attach_beta[1] + 
-                            params$attach_beta[2] * RW_logit + 
-                            params$attach_beta[3] * salinity_z +
-                            params$attach_beta[4] * uv +
-                            params$attach_beta[5] * uv_sq)) |>
+  mutate(pr_attach=plogis(params$attach_beta[1] * RW_logit + 
+                            params$attach_beta[2] * salinity_z +
+                            params$attach_beta[3] * uv +
+                            params$attach_beta[4] * uv_sq)) |>
   ggplot(aes(salinity, uv, fill=pr_attach)) + 
   geom_raster() + 
   scale_fill_viridis_c("P(attach)", option="turbo", 
@@ -427,8 +459,10 @@ p_ensWts <- tibble(sim=unique(influx_df$sim),
                    p=params$ensWts_p) |>
   ggplot() +
   geom_bar(aes(x=sim, y=p, fill=sim), stat="identity", colour="grey30") +
-  annotate("text", x="01", y=0.9, parse=T, hjust=0, vjust=0,
-           label=paste0("IP[bg]: ", round(params$IP_bg_m3, 2), "~cop~m^-3~d^-1")) +
+  annotate("text", x="01", y=0.85, parse=T, hjust=0, vjust=0, size=3.5,
+           label=paste0("IP[bg]: ", round(params$IP_bg_m3, 3), "~cop~m^-3~d^-1")) +
+  annotate("text", x="01", y=0.75, parse=T, hjust=0, vjust=0, size=3.5,
+           label=paste0("N[attach]: (IP^", round(1/params$IP_scale, 2), " * p[attach])^", round(params$IP_scale, 2))) +
   scale_fill_viridis_d("Sim", option="turbo", guide="none") +
   scale_y_continuous("Ensemble weight p", limits=c(0, 1),
                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
@@ -436,14 +470,15 @@ p_ensWts <- tibble(sim=unique(influx_df$sim),
 # survival
 p_prSurv <- expand_grid(
   salinity=seq_range(farm_env$salinity_m30, length.out=100),
-  stage=1:4
+  stage=1:info$nStages
 ) |>
   mutate(pr_surv=plogis(params$surv_beta[1,stage] +
                           params$surv_beta[2,stage]*salinity),
-         stage=factor(stage, labels=c("chal", "pread", "adult", "gravid"))) |>
+         stage=factor(stage, 
+                      labels=c("Ch", "PA", "Ad", "Gr")[1:info$nStages])) |>
   ggplot(aes(salinity+30, pr_surv, colour=stage)) +
   geom_line() +
-  scale_colour_brewer(type="div") +
+  scale_colour_manual(values=RColorBrewer::brewer.pal(4, "Paired")[c(1,2,4)]) +
   labs(x="Salinity (psu)", y="P(survival)") +
   ylim(0, 1) +
   theme(legend.title=element_blank(),
@@ -452,10 +487,11 @@ p_prSurv <- expand_grid(
         legend.key.height=unit(0.2, "cm"),
         legend.background=element_blank())
 # development
-p_GDD <- tibble(Sex=rep(c("F", "M"), each=4),
-                Stage=rep(1:4, times=2),
+p_GDD <- tibble(Sex=rep(c("F", "M"), each=info$nStages),
+                Stage=rep(1:info$nStages, times=2),
                 GDD=c(rbind(params$thresh_GDD, rep(5e3, 2)))) |>
-  mutate(Stage=factor(Stage, labels=c("chal", "pread", "adult", "gravid"))) |>
+  mutate(Stage=factor(Stage, 
+                      labels=c("Ch", "PA", "Ad", "Gr")[1:info$nStages])) |>
   full_join(expand_grid(Sex=c("M", "F"), 
                         GDD=1:params$lifespan)) |>
   arrange(Sex, GDD) |>
@@ -472,8 +508,30 @@ p_GDD <- tibble(Sex=rep(c("F", "M"), each=4),
         legend.position.inside=c(0.8, 0.15),
         legend.key.height=unit(0.2, "cm"),
         legend.background=element_blank())
+p_daysStage <- tibble(Sex=rep(c("F", "M"), each=info$nStages-1),
+                Stage=rep(1:(info$nStages-1), times=2),
+                GDD=c(rbind(params$thresh_GDD))) |>
+  group_by(Sex) |>
+  mutate(GDD=GDD-cumsum(dplyr::lag(GDD, default=0))) |>
+  ungroup() |>
+  mutate(Stage=factor(Stage, labels=c("Ch", "PA"))) |>
+  mutate(temperature=list(seq_range(farm_env$temperature, length.out=100))) |>
+  unnest(temperature) |>
+  mutate(days=GDD/temperature) |>
+  ggplot(aes(temperature, days, colour=Stage, linetype=Sex)) + 
+  geom_line() +
+  scale_colour_manual("Transition", values=RColorBrewer::brewer.pal(3, "Paired")[1:2]) +
+  labs(x="Temperature (C)", y="Stage length (days)") +
+  ylim(0, 30) +
+  theme(legend.position="inside",
+        legend.position.inside=c(0.8, 0.75),
+        legend.spacing.y=unit(0.1, "mm"),
+        legend.title=element_blank(),
+        legend.key.height=unit(0.2, "cm"),
+        legend.background=element_blank())
 # detection
-p_detect <- tibble(Stage=factor(1:4, labels=c("chal", "pread", "adult", "gravid")),
+p_detect <- tibble(Stage=factor(1:info$nStages, 
+                                labels=c("Ch", "PA", "Ad", "Gr")[1:info$nStages]),
        pr_detect=params$detect_p) |>
   ggplot(aes(pr_detect, Stage)) + 
   geom_bar(stat="identity", fill="grey", colour="grey30") +
@@ -493,8 +551,8 @@ p_nb <- expand_grid(mu=c(0.01, 0.1, 0.5, 1, 5),
   scale_y_continuous("Probability") +
   facet_grid(.~mu_lab, labeller=label_parsed)
 cowplot::plot_grid(p_prAttach,
-                   cowplot::plot_grid(p_ensWts, p_prSurv, p_GDD, p_detect,
-                                      nrow=1, axis="tb", align="v"),
+                   cowplot::plot_grid(p_ensWts, p_prSurv, p_daysStage, p_detect,
+                                      nrow=1, axis="tb", align="h"),
                    p_nb, ncol=1, rel_heights=c(0.6, 0.5, 0.55))
 ```
 
@@ -518,13 +576,14 @@ if(use_farm_avg) {
               sampled=first(sampled),
               across(all_of(c("RW_logit", "temperature", "temperature_z", 
                               "salinity", "salinity_z", "salinity_m30",
-                              "uv", "uv_sq")), mean),
+                              "uv", "uv_sq", "uv_z")), mean),
               across(all_of(c("nFish_est", "nFishSampled")), sum)) |>
-    ungroup() 
+    ungroup() |>
+    mutate(uv_z_sq=uv_z^2)
   influx_df <- influx_df |> 
     group_by(date, day, sepaSite, sim) |>
     summarise(pen=first(pen),
-              influx=sum(influx)) |>
+              influx_pen=sum(influx_pen)) |>
     ungroup()
   info$nFarms <- n_distinct(influx_df$sepaSite)
   info$nPens <- farm_i$nPens
@@ -536,19 +595,20 @@ To run it:
 ```{r}
 #| warning: false
 #| message: false
-out_df <- simulate_farm_pops(params, info, influx_df, farm_env, out_dir)
+out_df <- simulate_farm_pops_mn_lpf(params, info, influx_df, farm_env, out_dir)
+saveRDS(farm_env_avg, glue("{out_dir}/farm_env_avg.rds"))
 ```
 
 In addition to the dataframe returned (daily mean lice per fish: latent (`mu`) and observed(`y`)), all processed inputs, intermediate structures, and output is stored in `{r} out_dir`.
 
 # Results
 
-## Ensemble infection pressure
+## Ensemble infestation pressure
 
 ```{r}
 #| fig-width: 10
-#| fig-height: 10
-#| fig-cap: "Ensemble daily copepodid infection pressure. Farms are ordered from uploch (light) to downloch (dark). Thin lines are individual pens with thick lines as farm-level averages."
+#| fig-height: 8
+#| fig-cap: "Ensemble daily copepodid infestation pressure. Farms are ordered from uploch (light) to downloch (dark). Thin lines are individual pens with thick lines as farm-level averages."
 #| fig-dpi: 400
 #| echo: false
 #| message: false
@@ -581,19 +641,19 @@ if(use_farm_avg) {
 }
 
 p_ls <- list(
-  ggplot(ensIP_df, aes(date, influx_m3, colour=sepaSite)) +
+  ggplot(ensIP_df, aes(date, influx_m3/24, colour=sepaSite)) +
     geom_line(aes(group=pen), linewidth=0.1, alpha=0.5) +
     geom_line(data=ensIP_farm, linewidth=0.5) +
-    scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
-    scale_y_continuous("Ensemble daily copepodids / m3 / d") +
+    scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
+    scale_y_continuous("Ensemble daily copepodids / m3 / h") +
     scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
     facet_grid(.~sepaSite) +
     theme(axis.title.x=element_blank()),
-  ggplot(ensIP_df, aes(date, influx_m3^0.25, colour=sepaSite)) +
+  ggplot(ensIP_df, aes(date, (influx_m3/24)^0.25, colour=sepaSite)) +
     geom_line(aes(group=pen), linewidth=0.1, alpha=0.5) +
     geom_line(data=ensIP_farm, linewidth=0.5) +
-    scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
-    scale_y_continuous("(Daily copepodids / m3 / d)^0.25") +
+    scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
+    scale_y_continuous("(Daily copepodids / m3 / h)^0.25") +
     scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
     facet_grid(.~sepaSite) +
     theme(axis.title.x=element_blank()))
@@ -605,8 +665,8 @@ cowplot::plot_grid(plotlist=p_ls, ncol=1, align="hv")
 
 ```{r}
 #| fig-width: 10
-#| fig-height: 4
-#| fig-cap: "Daily copepodid infection pressure by simulation. Farms are ordered from uploch (light) to downloch (dark). Thin lines are individual pens with thick lines as farm-level averages."
+#| fig-height: 3.5
+#| fig-cap: "Daily copepodid infestation pressure by simulation. Farms are ordered from uploch (light) to downloch (dark). Thin lines are individual pens with thick lines as farm-level averages."
 #| fig-dpi: 400
 #| echo: false
 pr_attach <- readRDS(glue("{out_dir}/pr_attach.rds"))
@@ -636,7 +696,7 @@ ggplot(pr_attach_df, aes(date, pr_attach, colour=sepaSite)) +
   geom_line(aes(group=pen), linewidth=0.1, alpha=0.5) +
   geom_line(data=pr_attach_farm, linewidth=0.5) +
   scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
-  scale_y_continuous("Attachment probability (RW)", limits=c(0, 1)) +
+  scale_y_continuous("Attachment probability", limits=c(0, 1)) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
   facet_grid(.~sepaSite) +
   theme(axis.title.x=element_blank())
@@ -645,21 +705,6 @@ ggplot(pr_attach_df, aes(date, pr_attach, colour=sepaSite)) +
 ## Lice per fish
 
 We can look at both the latent mean lice per fish (`mu`) and the observed mean lice per fish (`y`). The latent mean is recorded each day, with observations taken once each week on the corresponding day (`farm_i$firstDay`) as the average of `farm_env$nFishSample[farm,day]` fish.
-
-::: callout-note
-There are several challenges to appropriately dealing with pens within a farm. Currently, we assume a point location with a 100-200m radius defining the catchment area for copepodids and ignore the existence of separate pens.
-
--   If pens are treated separately:
-    -   Pens could be implemented as functionally separate sites, with all variables, parameters, and lice estimates tracked independently by pen (FFMC84_1, FFMC84_2, etc).
-    -   Relocation of fish among pens would need to be accounted for.
-    -   Catchment areas would overlap. Allowing double counting would over-estimate infection pressure as the same lice represented by a given particle could infect multiple pens. Options for dealing with this:
-        -   Ignore it, assuming a louse has a \~20% chance of infecting pen 1 and \~20% chance of infecting pen 2 and calculate totals independently
-        -   Do something complicated where we calculate the proportion of overlapping area and reduce attachment accordingly
-        -   Keep catchment areas small enough to be non-overlapping and simulate more particles to compensate
--   If pens are ignored:
-    -   A 100-200m catchment radius does not actually capture the footprint of the farm; pens are typically in a 2 x n grid and pens are directionally excluded from the catchment area. Extending the circular radius to include the full pen would also include a large area beyond the footprint in the shorter dimension. Non-circular catchment areas are not currently supported in `biotracker`, but could be implemented by reading in shapefiles or using convex hulls.
-    -   Replication is ignored which could help improve the parameterization.
-:::
 
 ```{r}
 #| fig-width: 10
@@ -673,23 +718,23 @@ mu_df <- out_df |>
   pivot_longer(c(starts_with("mu_"))) |>
   mutate(type=str_split_fixed(name, "_", 2)[,1],
          stage=str_split_fixed(name, "_", 2)[,2]) |>
-  mutate(stage=factor(stage, levels=c("chal", "prea", "am", "af", "af_gr", "af_ng"))) 
+  mutate(stage=factor(stage, levels=c("chal", "prea", "am", "af"))) 
 ybar_df <- out_df |>
   filter(sampled) |>
-  mutate(across(starts_with("ybar_"), ~.x/nFishSampled)) |>
+  # mutate(across(starts_with("ybar_"), ~.x/nFishSampled)) |>
   select(date, sepaSite, pen, starts_with("ybar_")) |>
   pivot_longer(c(starts_with("ybar_"))) |>
   mutate(type=str_split_fixed(name, "_", 2)[,1],
          stage=str_split_fixed(name, "_", 2)[,2]) |>
-  mutate(stage=factor(stage, levels=c("chal", "prea", "am", "af", "af_gr", "af_ng"))) 
+  mutate(stage=factor(stage, levels=c("chal", "prea", "am", "af"))) 
 y_df <- out_df |>
   filter(sampled) |>
-  mutate(across(starts_with("y_"), ~.x/nFishSampled)) |>
+  # mutate(across(starts_with("y_"), ~.x/nFishSampled)) |>
   select(date, sepaSite, pen, starts_with("y_")) |>
   pivot_longer(c(starts_with("y_"))) |>
   mutate(type=str_split_fixed(name, "_", 2)[,1],
          stage=str_split_fixed(name, "_", 2)[,2]) |>
-  mutate(stage=factor(stage, levels=c("chal", "prea", "am", "af", "af_gr", "af_ng"))) 
+  mutate(stage=factor(stage, levels=c("chal", "prea", "am", "af"))) 
 
 ggplot(mu_df, aes(date, value, colour=stage, group=paste(stage, pen))) + 
   geom_line() +
@@ -708,11 +753,10 @@ ggplot(mu_df, aes(date, value, colour=stage, group=paste(stage, pen))) +
 #| echo: false
 #| message: false
 mu_df |>
-  filter(stage != "af") |>
   ggplot(aes(date, value, fill=stage)) +
   geom_area(position="fill", colour="grey30", linewidth=0.1) +
   scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
-  scale_fill_manual(values=RColorBrewer::brewer.pal(n=6, name="Paired")[-4]) +
+  scale_fill_brewer(type="qual", palette="Paired") +
   labs(y="Proportion of population") +
   facet_grid(sepaSite~., scales="free_y") + 
   theme(axis.title.x=element_blank())
