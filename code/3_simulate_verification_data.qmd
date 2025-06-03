@@ -15,7 +15,7 @@ editor_options:
 
 # Overview
 
-This document generates data for verification of the integrated ensemble model (IEM). The IEM is a multilevel Bayesian model that combines copepodid infestation pressure (IP) from a set of particle tracking simulation variants, calculates ensemble IP as a weighted average across the simulation variants, estimates attachment rates, and models the on-fish progression of daily lice cohorts through time. Observed counts of each stage of lice each week are used as the response variable, with all model parameters estimated jointly. The IEM will be verified using data that is simulated using identical processes with known, realistic parameters to assess the ability of the IEM to accurately and precisely recover parameters.
+This document generates data for verification of the joint population model (JPM). The JPM is a multilevel Bayesian model that combines copepodid infestation pressure (IP) from a set of particle tracking simulation variants, calculates ensemble IP as a weighted average across the simulation variants, estimates attachment rates, and models the on-fish progression of daily lice cohorts through time. Observed counts of each stage of lice each week are used as the response variable, with all model parameters estimated jointly. The JPM will be verified using data that is simulated using identical processes with known, realistic parameters to assess the ability of the JPM to accurately and precisely recover parameters.
 
 This script can be modified to use final `biotracker` simulations, best available farm data and the final parameter sets. For the moment, it uses daily averages from `etive28` at each farm with a sample of six `biotracker` simulations, running from 2023-01-01 to 2024-12-31.
 
@@ -35,12 +35,12 @@ The final output is stored in a directory created within `./data/sim` along with
 library(tidyverse)
 library(sf)
 library(glue)
-library(here)
-proj_dir <- here()
+library(rprojroot)
+proj_dir <- find_root()
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 
-farm_order <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
+farm_order <- c("FFMC27", "SAR1", "APT1", "FFMC32", "FFMC84")
 
 # mesh footprints
 mesh_dir <- glue("{proj_dir}/../03_packages/WeStCOMS/data")
@@ -105,7 +105,8 @@ ggplot() +
   geom_sf_text(data=farm_sf, aes(label=sepaSite), hjust=0, nudge_x=100, size=3) +
   scale_x_continuous(limits=c(184000, 211000), oob=scales::oob_keep) + 
   scale_y_continuous(limits=c(732000, 745000), oob=scales::oob_keep) +
-  theme(axis.title=element_blank())
+  theme(axis.title=element_blank(),
+        axis.text=element_blank())
 ```
 
 `farm_dat`: Daily interpolation of mean adult female lice per fish, reported fish biomass, estimated number of fish assuming 240 fish per tonne, estimated total adult female lice assuming 240 fish per tonne, area within 100m radius, receiving area ratio, logit-transformed receiving area ratio, and whether lice were sampled on a given day. Receiving area ratio is calculated following @kragesteen2023 as $R(W_i) = \sqrt{\frac{W_i}{DV_r}}$ (recommended Method 3), with biomass $W$ = `actualBiomassOnSiteTonnes * 1000` ($kg$), stocking density $D = 20 kg \cdot m^{-3}$, and receiving area $V_r$ = `vol` ($m^3$). I assume here a depth of 20m for the receiving area. Thus, $R(W_i)$ = `RW` is the proportion of copepodids that successfully attach.
@@ -159,9 +160,9 @@ glimpse(farm_dat)
 #| echo: false
 
 farm_dat_gg <- ggplot(farm_dat, aes(x=date)) + 
-  geom_rug(aes(colour=sampled), sides="b") +
+  geom_rug(aes(colour=sampled), sides="b", linewidth=0.1) +
   scale_colour_manual(values=c(NA, "black"), na.value=NA, guide="none") +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+    scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   ylim(0, NA) + 
   facet_wrap(~sepaSite, nrow=1) +
   theme(axis.title.x=element_blank())
@@ -170,6 +171,15 @@ p_ls <- list(farm_dat_gg + geom_line(aes(y=nFish_est, group=pen)),
              farm_dat_gg + geom_line(aes(y=total_AF, group=pen)),
              farm_dat_gg + geom_line(aes(y=RW, group=pen)))
 cowplot::plot_grid(plotlist=p_ls, ncol=1, align="hv")
+
+# cowplot::plot_grid(farm_dat_gg + 
+#                      geom_line(aes(y=nFish_est, group=pen)) +
+#                      ylab("Number of fish"), 
+#                    farm_dat_gg + 
+#                      geom_line(aes(y=weeklyAverageAf * (nFish_est > 0), group=pen)) +
+#                      ylab("Mean lice per fish (AF)"),
+#                    ncol=1, align="hv")
+# ggsave("admin/project_meetings/figs_temp/dataExamp_farm_dat.png", width=10, height=4)
 ```
 
 ## Environmental data
@@ -216,14 +226,31 @@ farm_env |>
                          levels=c("salinity", "temperature", "u", "v", "w", "uv"))) |>
   ggplot(aes(date, value, colour=sepaSite, group=pen)) +
   geom_line() +
-  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
+  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
   facet_grid(variable~sepaSite, scales="free_y") +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+    scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   labs(y="Daily mean, 0-30m (Etive28)") +
-  guides(colour=guide_legend(override.aes=list(linewidth=1))) + 
   theme(panel.grid.major.y=element_line(colour="grey85", linewidth=0.2),
         panel.grid.minor.y=element_blank(),
         axis.title.x=element_blank())
+
+# farm_env |>
+#   select(-ends_with("_z"), -"salinity_m30") |>
+#   pivot_longer(cols=c("u", "v", "w", "uv", "salinity", "temperature"),
+#                names_to="variable", values_to="value") |>
+#   mutate(variable=factor(variable,
+#                          levels=c("salinity", "temperature", "u", "v", "w", "uv"))) |>
+#   filter(variable %in% c("uv", "salinity", "temperature")) |>
+#   ggplot(aes(date, value, colour=sepaSite, group=pen)) +
+#   geom_line() +
+#   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
+#   facet_grid(variable~sepaSite, scales="free_y") +
+#     scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
+#   labs(y="Daily mean, 0-30m (Etive28)") +
+#   theme(panel.grid.major.y=element_line(colour="grey85", linewidth=0.2),
+#         panel.grid.minor.y=element_blank(),
+#         axis.title.x=element_blank())
+# ggsave("admin/project_meetings/figs_temp/dataExamp_farm_env.png", width=10, height=6)
 ```
 
 ## Infestation pressure
@@ -264,7 +291,7 @@ glimpse(influx_df)
 #| echo: false
 ggplot(influx_df, aes(date, influx_m3, colour=sepaSite, group=pen)) +
   geom_line(linewidth=0.1) +
-  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
+  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_y_continuous("Mean daily copepodids / m3 in top 20m") +
   facet_grid(sim~sepaSite) +
@@ -279,11 +306,12 @@ ggplot(influx_df, aes(date, influx_m3, colour=sepaSite, group=pen)) +
 #| echo: false
 ggplot(influx_df, aes(date, influx_m3^0.25, colour=sepaSite, group=pen)) +
   geom_line(linewidth=0.1) +
-  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
+  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_y_continuous("(Mean daily copepodids / m3)^0.25") +
   facet_grid(sim~sepaSite) +
   theme(axis.title.x=element_blank())
+# ggsave("admin/project_meetings/figs_temp/dataExamp_IP.png", width=10, height=6)
 ```
 
 The simulations vary quite a lot in the infestation pressure, with considerable variation among pens as well.
@@ -433,16 +461,17 @@ map(params, ~signif(.x, 3))
 # attachment
 p_prAttach <- expand_grid(
   salinity_z=seq_range(farm_env$salinity_z, length.out=100),
-  uv=seq_range(farm_env$uv_z, length.out=100),
+  uv_z=seq_range(farm_env$uv_z, length.out=100),
   RW=seq(0.05, max(farm_env$RW), length.out=4)
 ) |>
-  mutate(uv_sq=uv^2,
+  mutate(uv_sq=uv_z^2,
+         uv=uv_z*farm_env_avg$uv[2] + farm_env_avg$uv[1],
          salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
          RW_logit=brms::logit_scaled(RW, lb=-1e-5),
          RW_lab=paste("RW:", round(RW, 2))) |>
   mutate(pr_attach=plogis(params$attach_beta[1] * RW_logit + 
                             params$attach_beta[2] * salinity_z +
-                            params$attach_beta[3] * uv +
+                            params$attach_beta[3] * uv_z +
                             params$attach_beta[4] * uv_sq)) |>
   ggplot(aes(salinity, uv, fill=pr_attach)) + 
   geom_raster() + 
@@ -554,6 +583,7 @@ cowplot::plot_grid(p_prAttach,
                    cowplot::plot_grid(p_ensWts, p_prSurv, p_daysStage, p_detect,
                                       nrow=1, axis="tb", align="h"),
                    p_nb, ncol=1, rel_heights=c(0.6, 0.5, 0.55))
+ggsave("admin/project_meetings/figs_temp/dataExamp_params.png", width=10, height=8)
 ```
 
 # Simulation
@@ -646,7 +676,7 @@ p_ls <- list(
     geom_line(data=ensIP_farm, linewidth=0.5) +
     scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
     scale_y_continuous("Ensemble daily copepodids / m3 / h") +
-    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
+    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
     facet_grid(.~sepaSite) +
     theme(axis.title.x=element_blank()),
   ggplot(ensIP_df, aes(date, (influx_m3/24)^0.25, colour=sepaSite)) +
@@ -654,7 +684,7 @@ p_ls <- list(
     geom_line(data=ensIP_farm, linewidth=0.5) +
     scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
     scale_y_continuous("(Daily copepodids / m3 / h)^0.25") +
-    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
+    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
     facet_grid(.~sepaSite) +
     theme(axis.title.x=element_blank()))
 
@@ -695,9 +725,9 @@ if(use_farm_avg) {
 ggplot(pr_attach_df, aes(date, pr_attach, colour=sepaSite)) +
   geom_line(aes(group=pen), linewidth=0.1, alpha=0.5) +
   geom_line(data=pr_attach_farm, linewidth=0.5) +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_y_continuous("Attachment probability", limits=c(0, 1)) +
-  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1, guide="none") +
+  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
   facet_grid(.~sepaSite) +
   theme(axis.title.x=element_blank())
 ```
@@ -738,7 +768,7 @@ y_df <- out_df |>
 
 ggplot(mu_df, aes(date, value, colour=stage, group=paste(stage, pen))) + 
   geom_line() +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_colour_brewer(type="qual", palette="Paired") +
   labs(y="Latent mean lice per fish") +
   facet_grid(sepaSite~., scales="free_y") + 
@@ -755,11 +785,13 @@ ggplot(mu_df, aes(date, value, colour=stage, group=paste(stage, pen))) +
 mu_df |>
   ggplot(aes(date, value, fill=stage)) +
   geom_area(position="fill", colour="grey30", linewidth=0.1) +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_fill_brewer(type="qual", palette="Paired") +
   labs(y="Proportion of population") +
   facet_grid(sepaSite~., scales="free_y") + 
-  theme(axis.title.x=element_blank())
+  theme(axis.title.x=element_blank(),
+        legend.position="bottom")
+# ggsave("admin/project_meetings/figs_temp/dataExamp_lice_popDistr.png", width=5, height=7)
 ```
 
 ```{r}
@@ -771,10 +803,11 @@ mu_df |>
 ggplot(mu_df, aes(date, value, group=pen)) + 
   geom_line(colour="cadetblue", alpha=0.5) +
   geom_jitter(data=y_df, shape=1, size=0.8, width=0.2, height=0) +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   labs(y="Lice per fish") +
   facet_grid(stage~sepaSite, scales="free_y") + 
   theme(axis.title.x=element_blank())
+# ggsave("admin/project_meetings/figs_temp/dataExamp_lice_mu_y.png", width=7, height=6)
 ```
 
 ```{r}
@@ -800,10 +833,22 @@ ggplot(mu_df |> filter(stage %in% af), aes(date, value)) +
   geom_jitter(data=y_df |> filter(stage %in% af), 
               shape=1, size=0.8, width=0.2, height=0) +
   geom_point(data=y_farm |> filter(stage %in% af), shape=4, size=2) +
-  scale_x_date(date_breaks="2 months", date_labels="%b", date_minor_breaks="1 month") +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   labs(y="Lice per fish") +
   facet_grid(sepaSite~stage, scales="free_y") + 
   theme(axis.title.x=element_blank())
+ggplot(mu_df |> filter(stage %in% af), aes(date, value)) + 
+  geom_line(aes(group=pen), colour="cadetblue", alpha=0.5, linewidth=0.1) +
+  geom_line(data=mu_farm |> filter(stage %in% af), 
+            colour="cadetblue", linewidth=0.9) +
+  # geom_jitter(data=y_df |> filter(stage %in% af), 
+  #             shape=1, size=0.8, width=0.2, height=0) +
+  geom_point(data=y_farm |> filter(stage %in% af), shape=4, size=2) +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
+  labs(y="Simulated mean AF lice per fish\n(line: population;  points: counts)") +
+  facet_grid(.~sepaSite) + 
+  theme(axis.title.x=element_blank())
+# ggsave("admin/project_meetings/figs_temp/dataExamp_lice_mu_y_AF.png", width=9, height=4)
 ```
 
 Note that these are simulated with arbitrary and randomized model parameters and would not be expected to fully conform with observed values.
