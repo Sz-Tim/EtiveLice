@@ -207,8 +207,8 @@ pr_in_CI_plot <- function(df) {
   #   facet_grid(.~fit) +
   #   theme(axis.title.y=element_blank())
   ggplot(df, aes(y=fit, fill=inCI)) +
-    geom_bar(position="fill") +
-    scale_fill_manual(values=c("grey", "green3"), guide="none") +
+    geom_bar(position="fill", colour="grey30") +
+    scale_fill_manual(values=c("FALSE"="grey", "TRUE"="green3"), guide="none") +
     scale_x_continuous("Proportion of parameters in 95% CIs") +
     # facet_grid(.~fit) +
     theme(axis.title.y=element_blank())
@@ -224,5 +224,5 @@ scatter_post_mean_plot <- function(df) {
     scale_colour_manual("Fit", values=c("#377eb8", "#4daf4a")) +
     facet_grid(.~fit) +
     coord_fixed(xlim=lims, ylim=lims) +
-    labs(x="Posterior mean", y="True value")
+    labs(x="Posterior mean & 50% CI", y="True value")
 }
