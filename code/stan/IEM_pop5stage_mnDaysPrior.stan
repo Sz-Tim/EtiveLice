@@ -196,8 +196,10 @@ transformed parameters {
 }
 
 model {
-  for(stage in 1:nStagesSex[sex]) {
-    target += neg_binomial_2_lpmf(y2[sex, stage] | y_bar[sex, stage], nb_prec);
+  if(sample_prior_only==0) {
+    for(stage in 1:nStagesSex[sex]) {
+      target += neg_binomial_2_lpmf(y2[sex, stage] | y_bar[sex, stage], nb_prec);
+    }
   }
   target += lprior;
 }
