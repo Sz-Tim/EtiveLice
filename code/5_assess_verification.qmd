@@ -3,8 +3,6 @@ title: "E(tive)Lice verification assessment"
 author: "Tim Szewczyk"
 format: html
 theme: litera
-mainfont: Garamond
-monofont: Lucida Console
 editor: visual
 toc: true
 number-sections: true
@@ -28,11 +26,11 @@ library(tidyverse)
 library(sf)
 library(glue)
 library(here)
-proj_dir <- here()
+proj_dir <- "~/EtiveLice/"
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 
-farm_order <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
+farm_order <- c("FFMC27", "SAR1", "APT1", "FFMC32", "FFMC84")
 sim_dir <- glue("{proj_dir}/data/sim/")
 ```
 
@@ -40,29 +38,25 @@ sim_dir <- glue("{proj_dir}/data/sim/")
 #| echo: false
 stages <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch-PA", "PA-Ad")
-param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
+param_key <- tibble(name=c(paste0("attach_beta[", 1:4, "]"),
                            paste0("ensWts_p[", 1:6, "]"),
-                           "IP_bg", "IP_bg_m3",
+                           "IP_bg", "IP_bg_m3", "IP_scale",
                            paste0("surv_beta[1,", 1:3, "]"),
                            paste0("surv_beta[2,", 1:3, "]"),
-                           paste0("pMoltF_beta[1,", 1:2, "]"),
-                           paste0("pMoltF_beta[2,", 1:2, "]"),
-                           paste0("pMoltM_beta[1,", 1:2, "]"),
-                           paste0("pMoltM_beta[2,", 1:2, "]"),
+                           paste0("mnDaysStage_beta[1,", 1:2, "]"),
+                           paste0("mnDaysStage_beta[2,", 1:2, "]"),
                            paste0("thresh_GDD[", 1:2, ",1]"),
                            paste0("thresh_GDD[", 1:2, ",2]"),
                            "lifespan",
                            paste0("detect_p[", 1:3, "]"),
                            "nb_prec"),
-                    label=c(paste0("attach_", c("Int", "RW", "Sal", "UV", "UVsq")),
+                    label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq")),
                             paste0("ensWt_", 1:6),
-                            "IP_bg", "IP_bg_m3",
+                            "IP_bg", "IP_bg_m3", "IP_scale",
                             paste0("surv_Int_", stages),
                             paste0("surv_Sal_", stages),
-                            paste0("pMoltF_Int_", stage_trans),
-                            paste0("pMoltF_Temp_", stage_trans),
-                            paste0("pMoltM_Int_", stage_trans),
-                            paste0("pMoltM_Temp_", stage_trans),
+                            paste0("mnDaysStage_Int_", stages[1:2]),
+                            paste0("mnDaysStage_Temp_", stages[1:2]),
                             paste0("moltF_GDD_", stage_trans),
                             paste0("moltM_GDD_", stage_trans),
                             "lifespan_GDD",
@@ -77,16 +71,16 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
 ```{r}
 #| message: false
 #| warning: false
-out_pop_df <- dir(sim_dir, "sim_")[1:10] |>
-  map_dfr(
-    ~full_join(
-      read_csv(glue("{sim_dir}/{.x}/posterior_summary_pop_5stage_forcedDet.csv"), show_col_types=F),
-      read_csv(glue("{sim_dir}/{.x}/params_pop_5stage_forcedDet.csv"), show_col_types=F), 
-      by=join_by(name)
-    ) |>
-      mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
-      inner_join(param_key, by=join_by(name)))
-out_pop5s_df <- dir(sim_dir, "sim_")[1:10] |>
+# out_pop_df <- dir(sim_dir, "sim_")[1:2] |>
+#   map_dfr(
+#     ~full_join(
+#       read_csv(glue("{sim_dir}/{.x}/posterior_summary_pop_5stage_forcedDet.csv"), show_col_types=F),
+#       read_csv(glue("{sim_dir}/{.x}/params_pop_5stage_forcedDet.csv"), show_col_types=F), 
+#       by=join_by(name)
+#     ) |>
+#       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
+#       inner_join(param_key, by=join_by(name)))
+out_pop5s_df <- dir(sim_dir, "sim_") |>
   map_dfr(
     ~full_join(
       read_csv(glue("{sim_dir}/{.x}/posterior_summary_pop_5stage.csv"), show_col_types=F),
@@ -106,8 +100,8 @@ out_pop5s_df <- dir(sim_dir, "sim_")[1:10] |>
 #       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
 #       inner_join(param_key, by=join_by(name)))
 out_df <- bind_rows(
-  out_pop_df |> mutate(fit="forced"),
-  out_pop5s_df |> mutate(fit="free")
+  # out_pop_df |> mutate(fit="forced"),
+  out_pop5s_df |> mutate(fit="model")
   # out_full_df |> mutate(fit="in_full")
 )
 ```
@@ -174,7 +168,7 @@ p_IP
 #| fig-height: 2
 #| echo: false
 out_df |>
-  filter(grepl("IP_bg", name)) |>
+  filter(grepl("IP_bg_m3", name)) |>
   mutate(inCI=between(value, L025, L975)) |>
   pr_in_CI_plot()
 ```
@@ -187,7 +181,6 @@ out_df |>
 #| echo: false
 out_df |>
   filter(grepl("IP_bg_m3", name)) |>
-  mutate(inCI=between(value, L025, L975)) |>
   scatter_post_mean_plot()
 ```
 
@@ -225,11 +218,7 @@ out_df |>
 #| fig-height: 3
 #| echo: false
 out_df |>
-  filter(grepl("attach_beta\\[[2-9]", name)) |>
-  mutate(inCI=between(value, L025, L975)) |>
-  scatter_post_mean_plot()
-out_df |>
-  filter(grepl("attach_beta\\[1", name)) |>
+  filter(grepl("attach_beta", name)) |>
   mutate(inCI=between(value, L025, L975)) |>
   scatter_post_mean_plot()
 ```
@@ -245,7 +234,7 @@ out_df |>
 #| fig-height: 6
 #| echo: false
 p_surv <- out_df |> filter(grepl("surv_beta", name)) |>
-  verification_plot(ncol=4, scales="free_x") +
+  verification_plot(ncol=3, scales="free_x") +
   geom_vline(xintercept=0, linetype=3)
 p_surv
 ```
@@ -268,14 +257,15 @@ out_df |>
 #| fig-width: 8
 #| fig-height: 2
 #| echo: false
-out_df |>
-  filter(grepl("surv_beta\\[1", name)) |>
-  mutate(inCI=between(value, L025, L975)) |>
-  scatter_post_mean_plot()
-out_df |>
-  filter(grepl("surv_beta\\[2", name)) |>
-  mutate(inCI=between(value, L025, L975)) |>
-  scatter_post_mean_plot()
+cowplot::plot_grid(out_df |>
+                     filter(grepl("surv_beta\\[1", name)) |>
+                     mutate(inCI=between(value, L025, L975)) |>
+                     scatter_post_mean_plot(),
+                   out_df |>
+                     filter(grepl("surv_beta\\[2", name)) |>
+                     mutate(inCI=between(value, L025, L975)) |>
+                     scatter_post_mean_plot(), 
+                   nrow=1)
 ```
 
 ### P(molt) intercept
@@ -287,11 +277,9 @@ out_df |>
 #| fig-height: 3
 #| echo: false
 p_pMoltInt <- out_df |> 
-  filter(grepl("pMolt.*_beta\\[1", name)) |>
-  mutate(across(where(is.numeric), plogis)) |>
+  filter(grepl("mnDaysStage_beta\\[1", name)) |>
   verification_plot(ncol=5) +
-  geom_vline(xintercept=0, linetype=3) +
-  scale_x_continuous(limits=c(0, 0.1), breaks=c(0, 0.05, 0.1))
+  geom_vline(xintercept=0, linetype=3)
 p_pMoltInt
 ```
 
@@ -304,7 +292,7 @@ p_pMoltInt
 #| fig-height: 3
 #| echo: false
 p_pMoltTemp <- out_df |> 
-  filter(grepl("pMolt.*_beta\\[2", name)) |>
+  filter(grepl("mnDaysStage_beta\\[2", name)) |>
   verification_plot(ncol=5) +
   geom_vline(xintercept=0, linetype=3)
 p_pMoltTemp
@@ -388,21 +376,24 @@ out_df |>
 ## All parameters
 
 ```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 6
+#| echo: false
 full_sum_df <- out_df |>
-  # filter(fit=="free") |>
   filter(name != "IP_bg") |>
   mutate(name=if_else(name=="lifespan", "thresh_GDD[,4]", name)) |>
   mutate(param_type=str_split_fixed(name, "\\[", 2)[,1]) |>
-  mutate(param_type=case_when(name=="attach_beta[1]" ~ "attach_int",
-                              grepl("surv_beta\\[1", name) ~ "surv_int",
+  mutate(param_type=case_when(grepl("surv_beta\\[1", name) ~ "surv_int",
                               .default=param_type)) |>
   drop_na()
 lims_df <- full_sum_df |>
   group_by(param_type) |>
   summarise(lower=min(L25, value, na.rm=T),
             upper=max(L75, value, na.rm=T))
-full_sum_df |>
-  ggplot(aes(value, mn, colour=fit)) +
+p <- full_sum_df |>
+  ggplot(aes(value, mn)) +
   geom_line(stat="smooth", method="lm", formula=y~x, linewidth=1, se=F) +
   geom_line(stat="smooth", method="lm", formula=y~x, linewidth=0.25, se=F,
             aes(group=paste0(name, fit))) +
@@ -415,10 +406,19 @@ full_sum_df |>
   labs(x="True value",
        y="Posterior mean + 50% CI", 
        title="Verification across simulated datasets")
-ggsave("admin/project_meetings/figs_temp/pop_freeDet_performance.png", width=8, height=4.5, dpi=300)
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/pop_freeDet_performance.png"), p,
+       width=8, height=4.5, dpi=300)
+p
+```
 
-full_sum_df |>
-  ggplot(aes(value, mn, colour=fit)) +
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 8
+#| echo: false
+p <- full_sum_df |>
+  ggplot(aes(value, mn)) +
   geom_line(stat="smooth", method="lm", formula=y~x, linewidth=1, se=F) +
   geom_line(stat="smooth", method="lm", formula=y~x, linewidth=0.25, se=F,
             aes(group=paste0(name, fit))) +
@@ -427,11 +427,13 @@ full_sum_df |>
   geom_abline(linetype=3) +
   geom_point(shape=1, alpha=0.75) +
   geom_linerange(aes(ymin=L25, ymax=L75)) +
-  facet_wrap(~label, scales="free") +
+  facet_wrap(~label, scales="free", nrow=4) +
   labs(x="True value",
        y="Posterior mean + 50% CI", 
        title="Verification across simulated datasets")
-
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/pop_freeDet_performance_all.png"), p,
+       width=10, height=8, dpi=300)
+p
 full_sum_df |>
   group_by(label) |>
   summarise(r=cor(mn, value)) |>
@@ -447,11 +449,16 @@ full_sum_df |>
 ## Attachment
 
 ```{r}
-attach_rng <- apply(readRDS("data/sim/sim_01/attach_env_mx.rds"), 3, range)
+#| message: false
+#| warning: false
+#| fig-width: 6
+#| fig-height: 15
+#| echo: false
+attach_rng <- apply(readRDS(glue("{proj_dir}/data/sim/sim_01/attach_env_mx.rds")), 3, range)
 attach_df <- expand_grid(
   RW=qlogis(c(0.1, 0.2, 0.3, 0.4)),
-  Sal=seq_range(attach_rng[,3], length.out=3),
-  UV=seq_range(attach_rng[,4], length.out=20)
+  Sal=seq_range(attach_rng[,2], length.out=3),
+  UV=seq_range(attach_rng[,3], length.out=20)
 ) |>
   mutate(UV_sq=UV^2)
 pAttach_df <- out_df |>
@@ -459,63 +466,70 @@ pAttach_df <- out_df |>
   mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
   select(beta, mn, value, sim, fit) |>
   pivot_longer(2:3, names_to="src", values_to="value") |>
-  filter(! (src=="value" & fit=="forced")) |>
   mutate(fit=case_when(src=="value"~"True",
-                       src!="value" & fit=="forced" ~ "Forced",
-                       src!="value" & fit=="free" ~ "Free")) |>
+                       src!="value" & fit=="model" ~ "Model")) |>
   select(-src) |>
   pivot_wider(names_from="beta", values_from="value") |>
   mutate(attach_df=list(attach_df)) |>
   unnest(attach_df) |>
-  mutate(pAttach=plogis(b1 + b2*RW + b3*Sal + b4*UV + b5*UV_sq),
-         salinity=Sal*3.94 + 26.3,
+  mutate(pAttach=plogis(b1*RW + b2*Sal + b3*UV + b4*UV_sq),
+         salinity=Sal*4.01 + 26.2,
+         UV_raw=UV*6.14 + 14.2,
          RW=plogis(RW))
 
-pAttach_df |> 
-  select(sim, fit, pAttach, salinity, RW, UV) |> 
-  pivot_wider(names_from=fit, values_from=pAttach) |> 
-  mutate(err_Forced=Forced-True, err_Free=Free-True) |> 
-  group_by(sim) |>
-  summarise(across(starts_with("err_"), ~sqrt(mean(.x^2)))) |>
-  ungroup()
-pAttach_df |> 
-  select(sim, fit, pAttach, salinity, RW, UV) |> 
-  pivot_wider(names_from=fit, values_from=pAttach) |> 
-  mutate(err_Forced=Forced-True, err_Free=Free-True) |> 
-  group_by(sim) |>
-  summarise(across(starts_with("err_"), ~sqrt(mean(.x^2)))) |>
-  ungroup() |>
-  summarise(pNewBetter=mean(err_new < err_old))
 ```
 
 ```{r}
-pAttach_df |>
-  ggplot(aes(UV, pAttach, group=paste(RW,salinity,fit), colour=salinity, linetype=fit)) + 
+#| message: false
+#| warning: false
+#| fig-width: 14
+#| fig-height: 15
+#| echo: false
+p1 <- pAttach_df |>
+  filter(sim %in% unique(pAttach_df$sim)[1:15]) |>
+  ggplot(aes(UV_raw, pAttach, group=paste(RW,salinity,fit), colour=salinity, linetype=fit)) + 
   geom_line() +
   scale_colour_viridis_c(option="mako", end=0.9) +
-  scale_linetype_manual(values=c(3, 2, 1)) +
+  scale_linetype_manual(values=c(2, 1)) +
   ylim(0, NA) + 
   labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
   facet_grid(sim~RW, scales="free_y")
+
+p2 <- pAttach_df |>
+  filter(sim %in% unique(pAttach_df$sim)[16:30]) |>
+  ggplot(aes(UV_raw, pAttach, group=paste(RW,salinity,fit), colour=salinity, linetype=fit)) + 
+  geom_line() +
+  scale_colour_viridis_c(option="mako", end=0.9) +
+  scale_linetype_manual(values=c(2, 1)) +
+  ylim(0, NA) + 
+  labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
+  facet_grid(sim~RW, scales="free_y")
+ggpubr::ggarrange(p1, p2, nrow=1, common.legend=TRUE, legend="right")
+
+# pAttach_df |>
+#   filter(sim %in% unique(pAttach_df$sim)[1:10]) |>
+#   ggplot(aes(UV_raw, pAttach, group=paste(RW,salinity,fit), colour=salinity, linetype=fit)) + 
+#   geom_line() +
+#   scale_colour_viridis_c(option="mako", end=0.9) +
+#   scale_linetype_manual(values=c(2, 1)) +
+#   ylim(0, NA) + 
+#   labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
+#   facet_grid(sim~RW, scales="free_y")
 ```
 
 ## Survival
 
 ```{r}
-S_range <- range(readRDS("data/sim/sim_01/sal_mx.rds"))
+S_range <- range(readRDS(glue("{proj_dir}/data/sim/sim_01/sal_mx.rds")))
 S_df <- tibble(sal=seq_range(S_range, length.out=100))
 pSurv_df <- out_df |>
-  # filter(sim %in% out_full_df$sim) |>
   filter(grepl("surv_beta", name)) |>
   mutate(stage=str_sub(label, -2, -1),
          beta=paste0("b", str_sub(name, -4, -4))) |>
   select(stage, beta, mn, value, sim, fit) |>
   pivot_longer(3:4, names_to="src", values_to="value") |>
-  filter(! (src=="value" & fit=="forced")) |>
   mutate(fit=case_when(src=="value"~"True",
-                       src!="value" & fit=="forced" ~ "Forced",
-                       src!="value" & fit=="free" ~ "Free")) |>
-  # mutate(fit=if_else(src=="value", "True", fit)) |>
+                       src!="value" & fit=="model" ~ "Model")) |>
   select(-src) |>
   pivot_wider(names_from="beta", values_from="value") |>
   mutate(S_df=list(S_df)) |>
@@ -524,111 +538,115 @@ pSurv_df <- out_df |>
          salinity=sal+30,
          stage=factor(stage, levels=unique(stage)))
 
-pSurv_df |> 
-  select(stage, sim, fit, pSurv, salinity) |> 
-  pivot_wider(names_from=fit, values_from=pSurv) |> 
-  mutate(err_Forced=Forced-True, err_Free=Free-True) |> 
-  group_by(stage, sim) |>
-  summarise(across(starts_with("err_"), ~sqrt(mean(.x^2)))) |>
-  ungroup()
-pSurv_df |> 
-  select(stage, sim, fit, pSurv, salinity) |> 
-  pivot_wider(names_from=fit, values_from=pSurv) |> 
-  mutate(err_Forced=Forced-True, err_Free=Free-True) |> 
-  group_by(stage, sim) |>
-  summarise(across(starts_with("err_"), ~sqrt(mean(.x^2)))) |>
-  ungroup() |>
-  summarise(pForcedBetter=mean(err_Forced < err_Free, na.rm=T))
-pSurv_df |> 
-  select(stage, sim, fit, pSurv, salinity) |> 
-  pivot_wider(names_from=fit, values_from=pSurv) |> 
-  mutate(err_Forced=Forced-True, err_Free=Free-True) |> 
-  group_by(stage, sim) |>
-  summarise(across(starts_with("err_"), ~sqrt(mean(.x^2)))) |>
-  ungroup() |>
-  pivot_longer(starts_with("err_")) |>
-  ggplot(aes(name, value, colour=stage, group=paste(stage, sim))) + 
-  geom_point() +
-  geom_line() +
-  scale_colour_manual(values=RColorBrewer::brewer.pal(n=6, name="Paired")[c(1,2,4,6)])
-
 ```
 
 ```{r}
-pSurv_df |>
+#| message: false
+#| warning: false
+#| fig-width: 15
+#| fig-height: 15
+#| echo: false
+p1 <- pSurv_df |>
+  filter(sim %in% unique(pAttach_df$sim)[1:15]) |>
   ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
   geom_line() +
-  scale_colour_manual(values=RColorBrewer::brewer.pal(n=6, name="Paired")[c(1,2,4,6)]) +
-  scale_linetype_manual(values=c(3, 2, 1)) +
+  scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
+  scale_linetype_manual(values=c(2, 1)) +
   ylim(0, 1) + 
   labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
-  # facet_wrap(~sim)
   facet_grid(stage~sim)
-```
-
-```{r}
-pSurv_df |>
+p2 <- pSurv_df |>
+  filter(sim %in% unique(pAttach_df$sim)[16:30]) |>
   ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
   geom_line() +
-  scale_linetype_manual(values=c(3, 2, 1)) +
-  scale_colour_manual(values=RColorBrewer::brewer.pal(n=6, name="Paired")[c(1,2,4,6)]) +
+  scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
+  scale_linetype_manual(values=c(2, 1)) +
   ylim(0, 1) + 
   labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
-  facet_wrap(~sim)
+  facet_grid(stage~sim)
+
+ggpubr::ggarrange(p1, p2, nrow=2, common.legend=TRUE, legend="right")
+
+pSurv_df |>
+  filter(sim %in% unique(pAttach_df$sim)[1:7]) |>
+  ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
+  geom_line() +
+  scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
+  scale_linetype_manual(values=c(2, 1)) +
+  ylim(0, 1) + 
+  labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
+  facet_grid(stage~sim) +
+  theme(legend.position="bottom")
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/dataExamp_fittedSalReg.png"),
+       width=12, height=6)
 ```
 
 ## Development rate
 
 ```{r}
-T_range <- range(readRDS("data/sim/sim_01/temp_mx.rds"))
-T_z_range <- range(readRDS("data/sim/sim_01/temp_z_mx.rds"))
+T_range <- range(readRDS(glue("{proj_dir}/data/sim/sim_01/temp_mx.rds")))
+T_z_range <- range(readRDS(glue("{proj_dir}/data/sim/sim_01/temp_z_mx.rds")))
 
 T_df <- tibble(temp=seq_range(T_range, length.out=100),
                temp_z=seq_range(T_z_range, length.out=100))
 pMolt_df <- out_df |>
-  # filter(sim %in% out_full_df$sim) |>
-  # filter(fit=="pop") |>
-  filter(grepl("pMolt.*_beta\\[", name)) |>
-  mutate(sex=if_else(grepl("F", name), "F", "M"),
-         stage=str_sub(label, -5, -1),
+  filter(grepl("mnDaysStage_beta\\[", name)) |>
+  mutate(sex="F",
+         stage=str_sub(label, -2, -1),
          beta=paste0("b", str_sub(name, -4, -4))) |>
   select(sex, stage, beta, mn, sim, fit) |>
   pivot_wider(names_from="beta", values_from="mn") |>
   mutate(T_df=list(T_df)) |>
   unnest(T_df) |>
   mutate(pMolt=1/(b1 + b2*temp_z) * 0.5,
-         # pMolt=plogis(b1 + b2*temp_z) * 0.5,
          mnDays=1/pMolt,
          stage=factor(stage, levels=unique(stage)),
          GDD=temp*mnDays) |>
   left_join(out_df |> 
               filter(grepl("GDD.*,1]", name)) |>
               mutate(sex=if_else(grepl("F", label), "F", "M"),
-                     stage=str_sub(label, -5, -1)) |> 
-              select(fit, sex, stage, sim, value))
+                     stage=str_sub(label, -5, -4)) |> 
+              select(fit, sex, stage, sim, value)) |>
+  mutate(trueDays=value/temp)
 ```
 
 ```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 4
+#| echo: false
 pMolt_df |>
   ggplot(aes(temp, pMolt, group=paste(sim, fit), colour=fit)) + 
   geom_line(alpha=0.5) +
   scale_colour_manual("Fit", values=c("#377eb8", "#4daf4a")) +
   ylim(0, NA) + 
   labs(x="Temperature (C)", y="Daily Pr(Molt)") +
-  facet_grid(sex~stage)
+  facet_grid(.~stage)
 ```
 
 ```{r}
+#| message: false
+#| warning: false
+#| fig-width: 10
+#| fig-height: 4
+#| echo: false
 pMolt_df |>
   ggplot(aes(temp, mnDays, group=paste(sim, fit), colour=fit)) + 
   geom_line(alpha=0.5) +
+  geom_line(aes(y=trueDays), colour="grey30") +
   scale_colour_manual("Fit", values=c("#377eb8", "#4daf4a")) +
   ylim(0, NA) +
   labs(x="Temperature (C)", y="Mean days per stage") +
-  facet_grid(sex~stage)
+  facet_grid(.~stage)
 ```
 
+Ch and PA might be mis-estimated, but the requirements for reaching the adult stage (Ch + PA) might be better. In the model fit, the GDD is dependent on temperature. This is in contrast to the simulated data.
+
 ```{r}
+#| message: false
+#| warning: false
+#| echo: false
 pMolt_df |>
   group_by(temp, sim, fit) |>
   summarise(mnDays=sum(mnDays)) |>
@@ -639,14 +657,48 @@ pMolt_df |>
   labs(x="Temperature (C)", y="Mean days to adulthood")
 ```
 
+Generally about the right magnitude for total GDD to the adult stage, though the model tends to estimate a bit lower GDD requirements (i.e., faster development) overall. Estimates are slightly too slow for chalimus and too fast for pre-adults.
+
 ```{r}
-pMolt_df |>
-  ggplot(aes(value, GDD, colour=temp)) + 
+#| message: false
+#| warning: false
+#| fig-width: 12
+#| fig-height: 4
+#| echo: false
+pMolt_withAd <- pMolt_df |>
+  bind_rows(pMolt_df |>
+              group_by(temp, sim, fit) |>
+              summarise(mnDays=sum(mnDays),
+                        GDD=sum(GDD),
+                        value=sum(value)) |>
+              mutate(stage="Ad")) |>
+  mutate(stage=factor(stage, levels=c("Ch", "PA", "Ad")))
+
+pMolt_withAd |>
+  ggplot(aes(value, GDD, colour=temp, group=sim)) + 
   geom_abline() +
-  geom_point(alpha=0.3) +
+  geom_path() +
   scale_colour_viridis_c("Temperature (C)", option="turbo") +
   labs(x="True (GDD)", y="Temp * Mean days per stage") +
-  facet_grid(fit~stage)
+  coord_equal() +
+  facet_grid(.~stage)
+```
+
+Below, the true values are shown as the rug on the y-axis
+
+```{r}
+#| message: false
+#| warning: false
+#| fig-width: 12
+#| fig-height: 4
+#| echo: false
+pMolt_withAd |>
+  ggplot(aes(temp, GDD, group=sim)) + 
+  geom_line(alpha=0.8) +
+  geom_rug(data=pMolt_withAd |> slice_head(n=1, by=c(stage, sim)), 
+           aes(y=value), sides="l", alpha=0.8) +
+  labs(x="Temperature (C)", y="GGD") +
+  facet_grid(.~stage)
 ```
 
 ```{r}
@@ -657,40 +709,21 @@ pMolt_df |>
   geom_abline() +
   geom_point(alpha=0.3) +
   scale_colour_viridis_c("Temperature (C)", option="turbo") +
-  labs(x="True (GDD)", y="Temp * Mean days per stage") + 
-  xlim(300, 950) + ylim(300, 950) + 
-  coord_equal() +
-  facet_wrap(~fit)
+  labs(x="True (GDD)", y="Temp * Mean days to adulthood") + 
+  xlim(285, 660) + ylim(285, 660) + 
+  coord_equal()
 ```
 
 ```{r}
-daysToMolt <- rep(0, 100000)
-p_molt <- 1/27 
-i <- 1
-while(any(daysToMolt==0)) {
-  to_molt <- daysToMolt==0
-  daysToMolt[to_molt] <- rbinom(sum(to_molt), 1, p_molt) * i
-  i <- i+1
-}
-summary(daysToMolt)
-hist(daysToMolt)
-summary(1/daysToMolt)
-hist(1/daysToMolt)
-
-daysToMolt1 <- rep(0, 100000)
-daysToMolt2 <- rep(0, 100000)
-p_molt <- 1/27 * 2
-i <- 1
-while(any(daysToMolt2==0)) {
-  to_molt1 <- daysToMolt1==0
-  to_molt2 <- daysToMolt2==0 & !to_molt1
-  daysToMolt1[to_molt1] <- rbinom(sum(to_molt1), 1, p_molt) * i
-  daysToMolt2[to_molt2] <- rbinom(sum(to_molt2), 1, p_molt) * i
-  i <- i+1
-}
-summary(daysToMolt2)
-hist(daysToMolt2)
-summary(1/daysToMolt2)
-hist(1/daysToMolt2)
-
+pMolt_df |>
+  mutate(dMean=abs(temp - 14.3)) |>
+  slice_min(dMean) |>
+  group_by(sim, fit, temp) |>
+  summarise(value=sum(value), GDD=sum(GDD)) |>
+  ggplot(aes(value, GDD)) + 
+  geom_abline() +
+  geom_point(alpha=0.9) +
+  labs(x="True (GDD)", y="Mean days to adulthood at 14.3C (mean 2023-2024)") + 
+  xlim(400, 600) + ylim(400, 600) + 
+  coord_equal()
 ```
