@@ -6,14 +6,14 @@
 
 library(tidyverse)
 library(glue)
-dir("code/fn", full.names=T) |> walk(source)
+dir("code/fn", ".R$", full.names=T) |> walk(source)
 
-n_sims <- 30
+n_sims <- 10
 
 
 for(i in 1:n_sims) {
   sim_number <- str_pad(length(dir("data/sim", "sim"))+1, 2, 'left', '0')
-  render_qmd("code/3_simulate_verification_data_noGravid.qmd",
+  render_qmd("code/3_simulate_verification_data.qmd",
              output_path=glue("data/sim/sim_{sim_number}/"),
              file_ext="pdf")
 }
