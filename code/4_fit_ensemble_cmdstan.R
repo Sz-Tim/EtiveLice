@@ -3,7 +3,8 @@
 # tim.szewczyk@sams.ac.uk
 # Fit integrated ensemble
 
-
+# TODO: Simplify data inputs based on final structure; calculate from real data
+# TODO: Confirm all priors -- hard code in make_stan_data()?
 
 # setup -------------------------------------------------------------------
 
@@ -21,7 +22,7 @@ prior_only <- TRUE
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch-PA", "PA-Ad")
-param_key <- tibble(name=c(paste0("attach_beta[", 1:4, "]"),
+param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            paste0("ensWts_p[", 1:6, "]"),
                            "IP_bg", "IP_bg_m3",
                            paste0("surv_beta[1,", 1:3, "]"),
@@ -33,8 +34,9 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:4, "]"),
                            "lifespan",
                            paste0("detect_p[", 1:2, "]"),
                            "nb_prec",
-                           "IP_scale"),
-                    label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq")),
+                           "IP_scale",
+                           "treatEfficacy"),
+                    label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq", "Temp")),
                             paste0("ensWt_", 1:6),
                             "IP_bg", "IP_bg_m3",
                             paste0("surv_Int_", stages),
@@ -46,12 +48,13 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:4, "]"),
                             "lifespan_GDD",
                             paste0("p_detect_", stages[-3]),
                             "neg_binom_prec",
-                            "IP_scale"
+                            "IP_scale",
+                            "treatEfficacy"
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
 
-for(sim in 1:30) {
+for(sim in 1:10) {
 
   dat_dir <- glue("data/sim/sim_{str_pad(sim, 2, 'left', '0')}/")
   stan_dat <- make_stan_data(dat_dir, force_detect_priors=pDet_forced, priors_only=prior_only)
@@ -59,7 +62,7 @@ for(sim in 1:30) {
   # IEM: full model pop -----------------------------------------------------
 
   iter <- 1000
-  mod_full <- cmdstan_model("code/stan/IEM_pop5stage_mnDaysPrior.stan")
+  mod_full <- cmdstan_model("code/stan/joint_population_model.stan")
   fit_full <- mod_full$sample(
     data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
     iter_warmup=iter, iter_sampling=iter,
@@ -75,7 +78,7 @@ for(sim in 1:30) {
   out_full_df <- fit_full$draws(
     variables=c("IP_bg", "IP_bg_m3", "IP_scale", "ensWts_p", "attach_beta",
                 "surv_beta", "mnDaysStage_beta",
-                "detect_p", "nb_prec",
+                "detect_p", "nb_prec", "treatEfficacy",
                 "mu", "y_pred"),
     format="df") |>
     pivot_longer(-starts_with("."))
@@ -86,13 +89,14 @@ for(sim in 1:30) {
   write_csv(out_full_sum, glue("{dat_dir}posterior_summary_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.csv"))
 
   dat_full_df <- tibble(
-    name=c(paste0("attach_beta[", 1:4, "]"),
+    name=c(paste0("attach_beta[", 1:5, "]"),
            "IP_bg", "IP_bg_m3", "IP_scale",
            paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
            paste0("surv_beta[1,", 1:3, "]"), paste0("surv_beta[2,", 1:3, "]"),
            paste0("thresh_GDD[", 1:2, ",1]"), paste0("thresh_GDD[", 1:2, ",2]"),
            "lifespan",
-           paste0("detect_p[", 1:stan_dat$dat$nStages, "]"), "nb_prec"),
+           paste0("detect_p[", 1:stan_dat$dat$nStages, "]"), "nb_prec",
+           "treatEfficacy"),
     value=c(stan_dat$params$attach_beta,
             stan_dat$params$IP_bg, stan_dat$params$IP_bg_m3, stan_dat$params$IP_scale,
             stan_dat$params$ensWts_p,
@@ -100,7 +104,8 @@ for(sim in 1:30) {
             stan_dat$params$thresh_GDD,
             stan_dat$params$lifespan,
             stan_dat$params$detect_p,
-            stan_dat$params$nb_prec)
+            stan_dat$params$nb_prec,
+            stan_dat$params$treat_efficacy)
   )
   write_csv(dat_full_df, glue("{dat_dir}params_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.csv"))
 
@@ -141,19 +146,20 @@ for(sim in 1:30) {
     xlim(0, 1)
 
   else_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                 ~.x |> filter(grepl("IP_bg|nb_prec|IP_scale", name)) |>
+                 ~.x |> filter(grepl("IP_bg|nb_prec|IP_scale|treat", name)) |>
                    inner_join(param_key, by=join_by(name)))
-  p_else <- post_summary_plot(else_ls, ncol=4, scales="free")
+  p_else <- post_summary_plot(else_ls, ncol=5, scales="free")
 
-  plot_grid(p_ensWts, p_attach, p_surv, p_pMoltInt, p_pMoltTemp, p_detectp, p_else,
+  p <- plot_grid(p_ensWts, p_attach, p_surv, p_pMoltInt, p_pMoltTemp, p_detectp, p_else,
             nrow=7, align="hv", axis="trbl", rel_heights=c(1, 1, 2, 1, 1, 1, 1))
-  ggsave(glue("{dat_dir}/fig_pars_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), width=10, height=12)
+  ggsave(glue("{dat_dir}/fig_pars_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=12)
 
 
   mu_df <- out_full_df |>
     filter(grepl("mu", name)) |>
-    separate_wider_delim(name, delim=",", names=c("var", "farm", "stage5", "day")) |>
-    mutate(day=as.numeric(str_sub(day, 1, -2)),
+    separate_wider_delim(name, delim=",", names=c("farm", "stage5", "day")) |>
+    mutate(farm=str_sub(farm, 4, -1),
+           day=as.numeric(str_sub(day, 1, -2)),
            stage=case_when(stage5 %in% 1:2 ~ "Ch",
                            stage5 %in% 3:4 ~ "PA",
                            stage5 == 5 ~ "Ad"),
@@ -193,7 +199,7 @@ for(sim in 1:30) {
     labs(x="Date", y="Mean adult female lice per fish (latent)") +
     scale_x_date(date_labels="%b") +
     facet_grid(farm~., scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_AF{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
+  ggsave(glue("{dat_dir}/fig_pop_5stage_mu_AF{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
 
   # mu_df <- mu_df |>
   #   mutate(sepaSite=factor(farm, labels=rev(farm_order))) |>
@@ -228,9 +234,9 @@ for(sim in 1:30) {
                  mutate(farm=str_sub(farm, 2, -1)))
   y_df <- out_full_df |>
     filter(grepl("y_pred", name)) |>
-    separate_wider_delim(name, delim=",", names=c("var", "stage", "sample")) |>
+    separate_wider_delim(name, delim=",", names=c("stage", "sample")) |>
     mutate(sample=as.numeric(str_sub(sample, 1, -2)),
-           stage=factor(stage, levels=1:3, labels=c("Ch", "PA", "Ad"))) |>
+           stage=factor(stage, levels=paste0("y_pred[", 1:3), labels=c("Ch", "PA", "Ad"))) |>
     group_by(.chain, .iteration, .draw, stage, sample) |>
     summarise(value=sum(value, na.rm=T)) |>
     group_by(stage, sample) |>

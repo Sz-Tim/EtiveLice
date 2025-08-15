@@ -36,7 +36,7 @@ library(tidyverse)
 library(sf)
 library(glue)
 library(rprojroot)
-proj_dir <- find_root()
+proj_dir <- find_rstudio_root_file()
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 
@@ -327,32 +327,38 @@ library(plotly)
 
 # Pr(attach)
 # attach_mn <- c(-2.25, .8, 0.2, 0.2, -0.005)
-attach_mn <- c(0, 1, 0.2, 0.25, -0.1)
+attach_mn <- c(0, 1, 0.2, 0.25, -0.1, 0.1)
 attach_sigma <- 0.7
 attach_df <- expand_grid(
   salinity_z=seq_range(farm_env$salinity_z, length.out=100),
   uv=seq_range(farm_env$uv_z, length.out=100),
-  RW=seq_range(farm_env$RW, length.out=100)
+  RW=seq_range(farm_env$RW, length.out=100),
+  temp_z=seq_range(farm_env$temperature_z, length.out=100)
 ) |>
   filter(RW > 0) |>
   slice_sample(n=50) |>
   mutate(RW_logit=brms::logit_scaled(RW, lb=-1e-5),
-         salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1]) |>
+         salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
+         temp=temp_z*farm_env_avg$temperature[2] + farm_env_avg$temperature[1]) |>
   mutate(eta=attach_mn[1] + 
            attach_mn[2] * RW_logit + 
            attach_mn[3] * salinity_z +
            attach_mn[4] * uv +
-           attach_mn[5] * uv^2,
+           attach_mn[5] * uv^2 +
+           attach_mn[6] * temp_z,
          obs=eta + rnorm(n(), 0, attach_sigma))
 ggplot(attach_df, aes(uv, plogis(eta), colour=RW)) + geom_point() + ylim(0, 1)
+ggplot(attach_df, aes(temp, plogis(eta), colour=RW)) + geom_point() + ylim(0, 1)
 ggplot(attach_df, aes(RW, plogis(eta), colour=uv)) + geom_point() + ylim(0, 1) + 
+  geom_abline() + scale_colour_viridis_c(option="turbo")
+ggplot(attach_df, aes(RW, plogis(eta), colour=temp)) + geom_point() + ylim(0, 1) + 
   geom_abline() + scale_colour_viridis_c(option="turbo")
 plot_ly(attach_df, x=~uv, y=~RW, z=~salinity, color=~plogis(eta), type="scatter3d")
 summary(plogis(attach_df$eta))
 hist(plogis(attach_df$eta), xlim=c(0,1))
 
 
-attach_out <- brm(obs ~ 0 + RW_logit + salinity_z + uv + I(uv^2),
+attach_out <- brm(obs ~ 0 + RW_logit + salinity_z + uv + I(uv^2) + temp_z,
                   data=attach_df, cores=4)
 as_draws_df(attach_out) |>
   select(starts_with("b_")) |>
@@ -423,10 +429,13 @@ params <- list(
   # Background infestation rate from wild fish (copepodids/m3/d)
   IP_bg_m3=(runif(1, min=(1e-5)^0.5, max=(0.2)^0.5))^2,
   # Scaling factor for IP -> attached: from linear to 4th root with mean = sq root 
-  IP_scale=rbeta(n=1, 1.5, 3)*3 + 1
+  IP_scale=rbeta(n=1, 1.5, 3)*3 + 1,
+  # Treatment threshold for AF
+  treat_thresh=sample(c(0.5, 1), 1),
+  treat_efficacy=rbeta(1, 4, 2)
 )
 # Randomly set salinity and uv effects to 0 for attachment
-params$attach_beta[2:4] <- params$attach_beta[2:4] * rbinom(2, 1, 0.75)[c(1,2,2)]
+params$attach_beta[2:5] <- params$attach_beta[2:5] * rbinom(3, 1, 0.75)[c(1,2,2,3)]
 # Randomly set salinity effects to 0 for survival
 params$surv_beta[2,] <- params$surv_beta[2,] * rbinom(4, 1, 0.75)
 params$surv_beta <- params$surv_beta[,1:info$nStages]
@@ -442,8 +451,12 @@ mnDaysStage_df <- expand_grid(Ch=seq(125, 175, length.out=100),
   unnest(temperature) |>
   mutate(days=GDD/temperature,
          temp_z=(temperature-farm_env_avg$temperature[1])/farm_env_avg$temperature[2])
-params$mnDaysStageCh=summary(lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="Ch")))$coefficients[,1:2] * rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
-params$mnDaysStagePA=summary(lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="PA")))$coefficients[,1:2] * rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
+params$mnDaysStageCh <- summary(
+  lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="Ch")))$coefficients[,1:2] * 
+  rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
+params$mnDaysStagePA <- summary(
+  lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="PA")))$coefficients[,1:2] * 
+  rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
 ```
 
 In this particular simulation, the settings are:
@@ -462,22 +475,26 @@ map(params, ~signif(.x, 3))
 p_prAttach <- expand_grid(
   salinity_z=seq_range(farm_env$salinity_z, length.out=100),
   uv_z=seq_range(farm_env$uv_z, length.out=100),
-  RW=seq(0.05, max(farm_env$RW), length.out=4)
+  RW=seq(0.05, max(farm_env$RW), length.out=4),
+  temp_z=seq_range(farm_env$temperature_z, length.out=100)[c(5,95)]
 ) |>
   mutate(uv_sq=uv_z^2,
          uv=uv_z*farm_env_avg$uv[2] + farm_env_avg$uv[1],
          salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
+         temp=temp_z*farm_env_avg$temperature[2] + farm_env_avg$temperature[1],
+         temp_lab=paste(round(temp, 1), " C"),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5),
          RW_lab=paste("RW:", round(RW, 2))) |>
   mutate(pr_attach=plogis(params$attach_beta[1] * RW_logit + 
                             params$attach_beta[2] * salinity_z +
                             params$attach_beta[3] * uv_z +
-                            params$attach_beta[4] * uv_sq)) |>
+                            params$attach_beta[4] * uv_sq +
+                            params$attach_beta[5] * temp_z)) |>
   ggplot(aes(salinity, uv, fill=pr_attach)) + 
   geom_raster() + 
   scale_fill_viridis_c("P(attach)", option="turbo", 
                        limits=c(0, 0.75), breaks=seq(0, 1, by=0.25)) +
-  facet_grid(.~RW_lab) +
+  facet_grid(temp_lab~RW_lab) +
   scale_x_continuous("Salinity (psu)", breaks=c(10, 20, 30)) +
   labs(y="Water speed (cm/s)") +
   theme(legend.position="right",
@@ -582,8 +599,8 @@ p_nb <- expand_grid(mu=c(0.01, 0.1, 0.5, 1, 5),
 cowplot::plot_grid(p_prAttach,
                    cowplot::plot_grid(p_ensWts, p_prSurv, p_daysStage, p_detect,
                                       nrow=1, axis="tb", align="h"),
-                   p_nb, ncol=1, rel_heights=c(0.6, 0.5, 0.55))
-ggsave("admin/project_meetings/figs_temp/dataExamp_params.png", width=10, height=8)
+                   p_nb, ncol=1, rel_heights=c(0.9, 0.5, 0.55))
+# ggsave("admin/project_meetings/figs_temp/dataExamp_params.png", width=10, height=9)
 ```
 
 # Simulation
@@ -744,7 +761,7 @@ We can look at both the latent mean lice per fish (`mu`) and the observed mean l
 #| echo: false
 #| message: false
 mu_df <- out_df |>
-  select(date, sepaSite, pen, starts_with("mu_")) |>
+  select(date, sepaSite, pen, treat, starts_with("mu_")) |>
   pivot_longer(c(starts_with("mu_"))) |>
   mutate(type=str_split_fixed(name, "_", 2)[,1],
          stage=str_split_fixed(name, "_", 2)[,2]) |>
@@ -752,7 +769,7 @@ mu_df <- out_df |>
 ybar_df <- out_df |>
   filter(sampled) |>
   # mutate(across(starts_with("ybar_"), ~.x/nFishSampled)) |>
-  select(date, sepaSite, pen, starts_with("ybar_")) |>
+  select(date, sepaSite, pen, treat, starts_with("ybar_")) |>
   pivot_longer(c(starts_with("ybar_"))) |>
   mutate(type=str_split_fixed(name, "_", 2)[,1],
          stage=str_split_fixed(name, "_", 2)[,2]) |>
@@ -760,14 +777,15 @@ ybar_df <- out_df |>
 y_df <- out_df |>
   filter(sampled) |>
   # mutate(across(starts_with("y_"), ~.x/nFishSampled)) |>
-  select(date, sepaSite, pen, starts_with("y_")) |>
+  select(date, sepaSite, pen, treat, starts_with("y_")) |>
   pivot_longer(c(starts_with("y_"))) |>
   mutate(type=str_split_fixed(name, "_", 2)[,1],
          stage=str_split_fixed(name, "_", 2)[,2]) |>
   mutate(stage=factor(stage, levels=c("chal", "prea", "am", "af"))) 
 
-ggplot(mu_df, aes(date, value, colour=stage, group=paste(stage, pen))) + 
-  geom_line() +
+ggplot(mu_df, aes(date)) + 
+  geom_line(aes(y=value, colour=stage, group=paste(stage, pen))) +
+  geom_rug(data=out_df |> filter(treat==1), sides="b", colour="black") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_colour_brewer(type="qual", palette="Paired") +
   labs(y="Latent mean lice per fish") +
@@ -783,8 +801,9 @@ ggplot(mu_df, aes(date, value, colour=stage, group=paste(stage, pen))) +
 #| echo: false
 #| message: false
 mu_df |>
-  ggplot(aes(date, value, fill=stage)) +
-  geom_area(position="fill", colour="grey30", linewidth=0.1) +
+  ggplot(aes(date)) +
+  geom_area(aes(y=value, fill=stage), position="fill", colour="grey30", linewidth=0.1) +
+  geom_rug(data=out_df |> filter(treat==1), sides="b", colour="black") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   scale_fill_brewer(type="qual", palette="Paired") +
   labs(y="Proportion of population") +
@@ -800,9 +819,10 @@ mu_df |>
 #| fig-cap: "Daily mean lice per fish, including latent (mu, lines) and observed (y, points)."
 #| fig-dpi: 400
 #| echo: false
-ggplot(mu_df, aes(date, value, group=pen)) + 
-  geom_line(colour="cadetblue", alpha=0.5) +
-  geom_jitter(data=y_df, shape=1, size=0.8, width=0.2, height=0) +
+ggplot(mu_df, aes(date)) + 
+  geom_line(aes(y=value, group=pen), colour="cadetblue", alpha=0.5) +
+  geom_jitter(data=y_df, aes(y=value), shape=1, size=0.8, width=0.2, height=0) +
+  geom_rug(data=out_df |> filter(treat==1), sides="b", colour="black") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   labs(y="Lice per fish") +
   facet_grid(stage~sepaSite, scales="free_y") + 
@@ -826,24 +846,26 @@ y_farm <- y_df |>
   summarise(value=mean(value)) |>
   ungroup()
 af <- c("af")
-ggplot(mu_df |> filter(stage %in% af), aes(date, value)) + 
-  geom_line(aes(group=pen), colour="cadetblue", alpha=0.5, linewidth=0.1) +
-  geom_line(data=mu_farm |> filter(stage %in% af), 
+ggplot(mu_df |> filter(stage %in% af), aes(date)) + 
+  geom_line(aes(y=value, group=pen), colour="cadetblue", alpha=0.5, linewidth=0.1) +
+  geom_line(data=mu_farm |> filter(stage %in% af), aes(y=value),
             colour="cadetblue", linewidth=0.9) +
-  geom_jitter(data=y_df |> filter(stage %in% af), 
+  geom_jitter(data=y_df |> filter(stage %in% af), aes(y=value),
               shape=1, size=0.8, width=0.2, height=0) +
-  geom_point(data=y_farm |> filter(stage %in% af), shape=4, size=2) +
+  geom_point(data=y_farm |> filter(stage %in% af), aes(y=value), shape=4, size=2) +
+  geom_rug(data=out_df |> filter(treat==1), sides="b", colour="black") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   labs(y="Lice per fish") +
   facet_grid(sepaSite~stage, scales="free_y") + 
   theme(axis.title.x=element_blank())
-ggplot(mu_df |> filter(stage %in% af), aes(date, value)) + 
-  geom_line(aes(group=pen), colour="cadetblue", alpha=0.5, linewidth=0.1) +
-  geom_line(data=mu_farm |> filter(stage %in% af), 
+ggplot(mu_df |> filter(stage %in% af), aes(date)) + 
+  geom_line(aes(y=value, group=pen), colour="cadetblue", alpha=0.5, linewidth=0.1) +
+  geom_line(data=mu_farm |> filter(stage %in% af), aes(y=value),
             colour="cadetblue", linewidth=0.9) +
   # geom_jitter(data=y_df |> filter(stage %in% af), 
   #             shape=1, size=0.8, width=0.2, height=0) +
-  geom_point(data=y_farm |> filter(stage %in% af), shape=4, size=2) +
+  geom_point(data=y_farm |> filter(stage %in% af), aes(y=value), shape=4, size=2) +
+  geom_rug(data=out_df |> filter(treat==1), sides="b", colour="black") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
   labs(y="Simulated mean AF lice per fish\n(line: population;  points: counts)") +
   facet_grid(.~sepaSite) + 

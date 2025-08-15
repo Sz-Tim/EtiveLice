@@ -38,7 +38,7 @@ sim_dir <- glue("{proj_dir}/data/sim/")
 #| echo: false
 stages <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch-PA", "PA-Ad")
-param_key <- tibble(name=c(paste0("attach_beta[", 1:4, "]"),
+param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            paste0("ensWts_p[", 1:6, "]"),
                            "IP_bg", "IP_bg_m3", "IP_scale",
                            paste0("surv_beta[1,", 1:3, "]"),
@@ -49,8 +49,8 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:4, "]"),
                            paste0("thresh_GDD[", 1:2, ",2]"),
                            "lifespan",
                            paste0("detect_p[", 1:3, "]"),
-                           "nb_prec"),
-                    label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq")),
+                           "nb_prec", "treatEfficacy"),
+                    label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq", "Temp")),
                             paste0("ensWt_", 1:6),
                             "IP_bg", "IP_bg_m3", "IP_scale",
                             paste0("surv_Int_", stages),
@@ -61,7 +61,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:4, "]"),
                             paste0("moltM_GDD_", stage_trans),
                             "lifespan_GDD",
                             paste0("p_detect_", stages),
-                            "neg_binom_prec"
+                            "neg_binom_prec", "treatEfficacy"
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 ```
@@ -461,6 +461,67 @@ attach_df <- expand_grid(
   UV=seq_range(attach_rng[,3], length.out=20)
 ) |>
   mutate(UV_sq=UV^2)
+
+```
+
+```{r}
+post_df <- dir(sim_dir, "sim_") |>
+  map_dfr(
+      ~bind_rows(
+        read_csv(glue("{sim_dir}/{.x}/posterior_pop5stage.csv"), show_col_types=F) |>
+          filter(grepl("attach_beta", name)) |>
+          select(-.iteration, -.chain) |>
+          mutate(fit="Model"),
+        read_csv(glue("{sim_dir}/{.x}/params_pop_5stage.csv"), show_col_types=F) |>
+          filter(grepl("attach_beta", name)) |>
+          mutate(fit="True", .draw=1)) |>
+      mutate(sim=paste0("dat_", str_sub(.x, -2, -1))))
+pAttach_post <- post_df |>
+  mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
+  select(-name) |>
+  pivot_wider(names_from="beta", values_from="value") |>
+  mutate(attach_df=list(attach_df)) |>
+  unnest(attach_df) |>
+  mutate(pAttach=plogis(b1*RW + b2*Sal + b3*UV + b4*UV_sq),
+         salinity=Sal*4.01 + 26.2,
+         UV_raw=UV*6.14 + 14.2,
+         RW=plogis(RW))
+pAttach_quantiles <- pAttach_post |>
+  filter(sim %in% paste0("dat_0", 1)) |>
+  group_by(.draw, fit, sim, RW, salinity, UV_raw) |>
+  sevcheck::get_intervals(pAttach)
+```
+
+```{r}
+
+ pAttach_post |>
+  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 1000))) |>
+  filter(sim %in% unique(pAttach_post$sim)[1]) |>
+  ggplot(aes(UV_raw, pAttach, alpha=fit, linewidth=fit,
+             group=paste(RW, salinity, .draw, fit), colour=salinity)) + 
+  geom_line() +
+  scale_colour_viridis_c(option="mako", end=0.9) +
+  scale_alpha_manual(values=c(0.1, 1)) +
+  scale_linewidth_manual(values=c(0.2, 1)) +
+  ylim(0, NA) + 
+  labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
+  facet_grid(salinity~RW, scales="free_y")
+ 
+ pAttach_post |>
+  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 10))) |>
+  filter(sim %in% unique(pAttach_post$sim)[1:15]) |>
+  ggplot(aes(UV_raw, pAttach, alpha=fit, linewidth=fit,
+             group=paste(RW, salinity, .draw, fit), colour=salinity)) + 
+  geom_line() +
+  scale_colour_viridis_c(option="mako", end=0.9) +
+  scale_alpha_manual(values=c(0.2, 1)) +
+  scale_linewidth_manual(values=c(0.2, 1)) +
+  ylim(0, NA) + 
+  labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
+  facet_grid(sim~RW, scales="free_y")
+```
+
+```{r}
 pAttach_df <- out_df |>
   filter(grepl("attach_beta", name)) |>
   mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
@@ -547,7 +608,7 @@ pSurv_df <- out_df |>
 #| fig-height: 15
 #| echo: false
 p1 <- pSurv_df |>
-  filter(sim %in% unique(pAttach_df$sim)[1:15]) |>
+  filter(sim %in% unique(pSurv_df$sim)[1:15]) |>
   ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
   geom_line() +
   scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +

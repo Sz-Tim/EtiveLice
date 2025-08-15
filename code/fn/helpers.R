@@ -24,110 +24,71 @@ make_compositional <- function(x, method="softmax") {
 
 
 
-make_stan_data <- function(dat_dir, dateRange=NULL, source="sim", priors_only=FALSE,
-                           force_detect_priors=FALSE) {
+make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
   library(tidyverse)
   library(glue)
 
-  if(source=="sim") {
-    info <- readRDS(glue("{dat_dir}info.rds"))
-    params <- readRDS(glue("{dat_dir}params.rds"))
-    if(!is.null(dateRange)) {
-      dates <- seq_range(info$dateRange, by=1) |>
-        between(dateRange[1], dateRange[2]) |>
-        which()
-      info$nDays <- length(dates)
-    } else {
-      dates <- 1:info$nDays
-    }
+  info <- readRDS(glue("{dat_dir}info.rds"))
+  params <- readRDS(glue("{dat_dir}params.rds"))
+  dates <- 1:info$nDays
 
-    nDays <- info$nDays
-    nFarms <- info$nFarms
-    nSims <- info$nSims
-    nStages <- info$nStages
-    nAttachCov <- length(params$attach_beta)
-    nSurvCov <- nrow(params$surv_beta)
-
-    stan_dat <- list(
-      nDays=nDays,
-      nFarms=nFarms,
-      nSims=nSims,
-      nStages=nStages,
-      nPens=info$nPens,
-      IP_volume=pi*30^2*20,
-      y_bar_minimum=1e-5,
-      nAttachCov=nAttachCov,
-      nSurvCov=nSurvCov,
-      y=readRDS(glue("{dat_dir}y.rds"))[,,dates,],
-      IP_mx=readRDS(glue("{dat_dir}IP_mx.rds"))[,dates,],
-      attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,dates,],
-      surv_env_mx=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates,],
-      temp_mx=readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
-      temp_z_mx=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
-      nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
-      sample_i=readRDS(glue("{dat_dir}sampledDays.rds")),
-      nFishSampled_mx=readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,],
-      y_attach=readRDS(glue("{dat_dir}y_attach.rds")),
-      N_attach=readRDS(glue("{dat_dir}N_attach.rds")),
-      ensIP=readRDS(glue("{dat_dir}ensIP.rds")),
-      mu_true=readRDS(glue("{dat_dir}mu.rds")),
-      detect_p=params$detect_p,
-      prior_attach_beta=cbind(c(1, rep(0.25, nAttachCov-2), -0.1),
-                              c(rep(0.25, nAttachCov-1), 0.1)),
-      # prior_attach_beta=cbind(c(-2.5, rep(0.25, nAttachCov-2), -0.01),
-      #                         c(1, rep(0.25, nAttachCov-2), 0.02)),
-      prior_surv_beta=array(c(rep(c(4, rep(0.2, nSurvCov-1)), nStages),
-                              rep(c(0.5, rep(0.1, nSurvCov-1)), nStages)),
-                            dim=c(nSurvCov, nStages, 2),
-                            dimnames=list(c("int", "temp"),
-                                          c("Ch", "Pr", "Ad"),
-                                          c("mu", "sd"))),
-      prior_thresh_GDD_F=cbind(c(130, 325),
-                               c(10, 30)),
-      prior_thresh_GDD_M=cbind(c(130, 325),
-                               c(10, 30)),
-      prior_lifespan=c(1500, 20),
-      prior_pMolt_F=array(c(qlogis(1/15), 0.5, qlogis(1/20), 0.5,
-                            rep(c(0.25, 0.25), 2)),
-                          dim=c(2, nStages-1, 2),
+  stan_dat <- list(
+    nDays = info$nDays,
+    nFarms = info$nFarms,
+    nSims = info$nSims,
+    nStages = info$nStages,
+    nPens = info$nPens,
+    nAttachCov = length(params$attach_beta),
+    nSurvCov = nrow(params$surv_beta),
+    IP_volume = pi*30^2*20,
+    y_bar_minimum = 1e-5,
+    # farm counts, treatments, sampling info
+    y = readRDS(glue("{dat_dir}y.rds"))[,,dates,],
+    sample_i = readRDS(glue("{dat_dir}sampledDays.rds")),
+    nFishSampled_mx = readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,],
+    nFish_mx = readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
+    treatDays = readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
+    # IP from biotracker
+    IP_mx = readRDS(glue("{dat_dir}IP_mx.rds"))[,dates,],
+    # farm environment
+    attach_env_mx = readRDS(glue("{dat_dir}attach_env_mx.rds"))[,dates,],
+    surv_env_mx = readRDS(glue("{dat_dir}sal_mx.rds"))[,dates,],
+    temp_mx = readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
+    temp_z_mx = readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
+    # priors
+    sample_prior_only = as.numeric(priors_only),
+    prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), -0.1),
+                            c(rep(0.25, length(params$attach_beta)-1), 0.1)),
+    prior_surv_beta = array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
+                            rep(c(0.5, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
+                          dim=c(nrow(params$surv_beta), info$nStages, 2),
                           dimnames=list(c("int", "temp"),
-                                        c("Pr", "Ad"),
+                                        c("Ch", "Pr", "Ad"),
                                         c("mu", "sd"))),
-      prior_pMolt_M=array(c(qlogis(1/15), 0.5, qlogis(1/20), 0.5,
-                            rep(c(0.25, 0.25), 2)),
-                          dim=c(2, nStages-1, 2),
-                          dimnames=list(c("int", "temp"),
-                                        c("Pr", "Ad"),
-                                        c("mu", "sd"))),
-      prior_mnDaysStage_F=array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
-                                  params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
-                                dim=c(2, nStages-1, 2),
-                                dimnames=list(c("int", "temp"),
-                                              c("Pr", "Ad"),
-                                              c("mu", "sd"))),
-      prior_logit_detect_p=cbind(c(-1, 1),
-                                 c(0.5, 0.5))
-    )
-
-    if(!is.null(dateRange)) {
-      inRng <- stan_dat$sampledDays > min(dates) & stan_dat$sampledDays < max(dates)
-      stan_dat$sampledDays <- stan_dat$sample_i[,colSums(inRng)==info$nFarms]
-    }
-    stan_dat$nSamples <- nrow(stan_dat$sample_i)
-    stan_dat$sample_ii <- stan_dat$sample_i |>
-      as_tibble() |>
-      mutate(index=row_number()) |>
-      group_by(sepaSite) |>
-      summarise(start=min(index),
-                end=max(index)) |>
-      select(-sepaSite) |>
-      as.matrix()
-  }
-  stan_dat$sample_prior_only <- as.numeric(priors_only)
-
-  if(force_detect_priors) {
-    stan_dat$prior_logit_detect_p <- cbind(qlogis(params$detect_p[1:2]),
-                                           c(1e-1, 1e-1))
+    prior_mnDaysStage_F = array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
+                                params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
+                              dim=c(2, info$nStages-1, 2),
+                              dimnames=list(c("int", "temp"),
+                                            c("Pr", "Ad"),
+                                            c("mu", "sd"))),
+    prior_logit_detect_p = cbind(c(-1, 1),
+                               c(0.5, 0.5))
+  )
+  # reformat sample info for Stan
+  stan_dat$nSamples <- nrow(stan_dat$sample_i)
+  stan_dat$sample_ii <- stan_dat$sample_i |>
+    as_tibble() |>
+    mutate(index=row_number()) |>
+    group_by(sepaSite) |>
+    summarise(start=min(index),
+              end=max(index)) |>
+    select(-sepaSite) |>
+    as.matrix()
+  if(type=="sim") {
+    # add male Ch/PA, assume 50:50 ratio
+    stan_dat$y_F <- stan_dat$y[,1,,]
+    stan_dat$y_F[1,,] <- round((stan_dat$y_F[1,,] + stan_dat$y[1,2,,])/2)
+    stan_dat$y_F[2,,] <- round((stan_dat$y_F[2,,] + stan_dat$y[2,2,,])/2)
   }
 
   return(list(dat=stan_dat, params=params))

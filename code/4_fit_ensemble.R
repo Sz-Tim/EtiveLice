@@ -16,54 +16,54 @@ rstan_options(threads_per_chain = 1) # reduce_sum() or map_rect() in .stan
 source("code/fn/helpers.R")
 
 
+stages <- c("Ch", "PA", "Ad")
+stage_trans <- c("Ch-PA", "PA-Ad")
+param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
+                           paste0("ensWts_p[", 1:6, "]"),
+                           "IP_bg", "IP_bg_m3",
+                           paste0("surv_beta[1,", 1:3, "]"),
+                           paste0("surv_beta[2,", 1:3, "]"),
+                           paste0("mnDaysStage_beta[1,", 1:2, "]"),
+                           paste0("mnDaysStage_beta[2,", 1:2, "]"),
+                           paste0("thresh_GDD[", 1:2, ",1]"),
+                           paste0("thresh_GDD[", 1:2, ",2]"),
+                           "lifespan",
+                           paste0("detect_p[", 1:2, "]"),
+                           "nb_prec",
+                           "IP_scale",
+                           "treatEfficacy"),
+                    label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq", "Temp")),
+                            paste0("ensWt_", 1:6),
+                            "IP_bg", "IP_bg_m3",
+                            paste0("surv_Int_", stages),
+                            paste0("surv_Sal_", stages),
+                            paste0("mnDaysStage_Int_", stages[1:2]),
+                            paste0("mnDaysStage_Temp_", stages[1:2]),
+                            paste0("moltF_GDD_", stage_trans),
+                            paste0("moltM_GDD_", stage_trans),
+                            "lifespan_GDD",
+                            paste0("p_detect_", stages[-3]),
+                            "neg_binom_prec",
+                            "IP_scale",
+                            "treatEfficacy"
+                    )) |>
+  mutate(label=factor(label, levels=unique(label)))
+
 for(sim in 1:10) {
 
   dat_dir <- glue("data/sim/sim_{str_pad(sim, 2, 'left', '0')}/")
-  stan_dat <- make_stan_data(dat_dir, priors_only=F, force_detect_priors=T)
-
-  stages <- c("Ch", "PA", "Ad")
-  stage_trans <- c("Ch-PA", "PA-Ad")
-  param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
-                             paste0("ensWts_p[", 1:6, "]"),
-                             "IP_bg", "IP_bg_m3",
-                             paste0("surv_beta[1,", 1:3, "]"),
-                             paste0("surv_beta[2,", 1:3, "]"),
-                             paste0("pMoltF_beta[1,", 1:2, "]"),
-                             paste0("pMoltF_beta[2,", 1:2, "]"),
-                             paste0("pMoltM_beta[1,", 1:2, "]"),
-                             paste0("pMoltM_beta[2,", 1:2, "]"),
-                             paste0("thresh_GDD[", 1:2, ",1]"),
-                             paste0("thresh_GDD[", 1:2, ",2]"),
-                             "lifespan",
-                             paste0("detect_p[", 1:3, "]"),
-                             "nb_prec"),
-                      label=c(paste0("attach_", c("Int", "RW", "Sal", "UV", "UVsq")),
-                              paste0("ensWt_sim_", 1:6),
-                              "IP_bg", "IP_bg_m3",
-                              paste0("surv_Int_", stages),
-                              paste0("surv_Sal_", stages),
-                              paste0("pMoltF_Int_", stage_trans),
-                              paste0("pMoltF_Temp_", stage_trans),
-                              paste0("pMoltM_Int_", stage_trans),
-                              paste0("pMoltM_Temp_", stage_trans),
-                              paste0("moltF_GDD_", stage_trans),
-                              paste0("moltM_GDD_", stage_trans),
-                              "lifespan_GDD",
-                              paste0("p_detect_", stages),
-                              "neg_binom_prec"
-                      )) |>
-    mutate(label=factor(label, levels=unique(label)))
-
+  stan_dat <- make_stan_data(dat_dir, priors_only=F)
 
   # IEM: full model ---------------------------------------------------------
 
-  out_full <- stan(file="code/stan/CopyOfIEM_full_FEMALE.stan",
-                   data=stan_dat$dat, chains=3, cores=3, iter=30, refresh=1,
+  out_full <- stan(file="code/stan/joint_population_model.stan",
+                   data=stan_dat$dat, chains=1, cores=1, iter=10, refresh=1,
                    control=list(max_treedepth=20),
                    init=0, seed=101,
-                   pars=c("attach_beta", "IP_bg", "IP_bg_m3", "ensWts_p",
-                          "surv_beta", "thresh_GDD", "lifespan",
-                          "detect_p", "nb_prec"))
+                   pars=c("IP_bg", "IP_bg_m3", "IP_scale", "ensWts_p", "attach_beta",
+                          "surv_beta", "mnDaysStage_beta",
+                          "detect_p", "nb_prec", "treatEfficacy"))#,
+                          # "mu", "y_pred"))
   saveRDS(out_full, glue("{dat_dir}/out_full_stanfit.rds"))
 
   out_full_df <- as.data.frame(out_full) |>
@@ -74,7 +74,7 @@ for(sim in 1:10) {
     group_by(name) |>
     sevcheck::get_intervals(value, type="qi")
   dat_full_df <- tibble(
-    name=c(paste0("attach_beta[", 1:5, "]"),
+    name=c(paste0("attach_beta[", 1:stan_dat$dat$nAttachCov, "]"),
            "IP_bg", "IP_bg_m3",
            paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
            paste0("surv_beta[1,", 1:stan_dat$dat$nStages, "]"),

@@ -17,11 +17,12 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
     array(dim=c(info$nFarms, info$nDays, info$nSims))
   # attach_env_mx[farm, day, (1, RW, sal, uv, uv^2)]
   farm_env <- farm_env |> arrange(day, sepaSite, pen)
-  attach_env_mx <- array(1, dim=c(info$nFarms, info$nDays, 4))
+  attach_env_mx <- array(1, dim=c(info$nFarms, info$nDays, 5))
   attach_env_mx[,,1] <- farm_env$RW_logit
   attach_env_mx[,,2] <- farm_env$salinity_z
   attach_env_mx[,,3] <- farm_env$uv_z
   attach_env_mx[,,4] <- farm_env$uv_z_sq
+  attach_env_mx[,,5] <- farm_env$temperature_z
   attach_env_mx <- attach_env_mx[,,1:length(params$attach_beta), drop=F]
   # sal_mx[day, farm, (1, sal)]
   sal_mx <- array(1, dim=c(info$nFarms, info$nDays, 2))
@@ -32,6 +33,8 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   temp_z_mx <- matrix(farm_env$temperature_z, nrow=info$nDays, byrow=T)
   # nFish_mx[day, farm]
   nFish_mx <- matrix(farm_env$nFish_est, nrow=info$nDays, byrow=T)
+  # treatDays_mx[day, farm]
+  treatDays_mx <- matrix(0, nrow=info$nDays, ncol=info$nFarms)
   # sampledDays[sample, c(farm, day)] -- database-like structure for Stan
   sampledDays <- farm_env |>
     arrange(sepaSite, pen, day) |>
@@ -137,9 +140,9 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
     }
   }
 
-  #---- Cohort abundance progression
-  for(cohort in 1:info$nDays) {
-    for(day in cohort:info$nDays) {
+  #---- Daily abundance progression
+  for(day in 1:info$nDays) {
+    for(cohort in 1:day) {
       if(cohort == day) {
         # initialize cohort
         cohort_N[cohort, day, , ] <- N_attach[day,]
@@ -164,28 +167,34 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
         }
       }
     }
-  }
-
-  #--- Calculate latent mean lice per fish for each day, farm, stage, and sex
-  for(stage in 1:info$nStages) {
-    for(sex in 1:2) {
-      y_bar[stage, sex, , ] <- mu[stage, sex, , ] * nFishSampled_mx * params$detect_p[stage]
+    #--- Calculate latent mean lice per fish for each day, farm, stage, and sex
+    for(stage in 1:info$nStages) {
+      for(sex in 1:2) {
+        y_bar[stage, sex, day, ] <- mu[stage, sex, day, ] * nFishSampled_mx[day,] * params$detect_p[stage]
+      }
     }
-  }
-
-  #--- Sample fish and calculate mean
-  # y_bar_overdisp <- y_bar + rnorm(prod(dim(y_bar)), 0, params$nb_prec)
-  for(i in 1:nrow(sampledDays)) {
-    for(sex in 1:2) {
-      y[, sex, sampledDays[i,2], sampledDays[i,1]] <- rnbinom(info$nStages,
-                                                             mu=y_bar[, sex, sampledDays[i,2], sampledDays[i,1]],
-                                                             size=params$nb_prec)
+    #--- Sample fish and calculate mean
+    for(farm in 1:info$nFarms) {
+      if(day %in% sampledDays[sampledDays[,1]==farm,2]) {
+        for(sex in 1:2) {
+          y[, sex, day, farm] <- rnbinom(info$nStages,
+                                       mu=y_bar[, sex, day, farm],
+                                       size=params$nb_prec)
+        }
+        #--- Treat if AF > threshold
+        if((y[info$nStages, 1, day, farm]/nFishSampled_mx[day, farm] > params$treat_thresh) &
+            day < info$nDays)  {
+          treatDays_mx[day+1, farm] = 1
+          stage_survRate[farm, day,] <- stage_survRate[farm, day,] * (1 - params$treat_efficacy)
+        }
+      }
     }
   }
 
   out_df <- farm_env |>
     select(date, sepaSite, pen, sampled, nFishSampled) |>
     arrange(day, sepaSite, pen) |>
+    mutate(treat=c(treatDays_mx)) |>
     mutate(mu_chal=c(apply(mu[1,,,], 2:3, sum)),
            mu_prea=c(apply(mu[2,,,], 2:3, sum)),
            mu_af=c(mu[3,1,,]),
@@ -213,6 +222,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   saveRDS(temp_mx, glue("{out_dir}/temp_mx.rds"))
   saveRDS(temp_z_mx, glue("{out_dir}/temp_z_mx.rds"))
   saveRDS(nFish_mx, glue("{out_dir}/nFish_mx.rds"))
+  saveRDS(treatDays_mx, glue("{out_dir}/treatDays_mx.rds"))
   saveRDS(nFishSampled_mx, glue("{out_dir}/nFishSampled_mx.rds"))
   saveRDS(sampledDays, glue("{out_dir}/sampledDays.rds"))
 
