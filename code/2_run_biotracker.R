@@ -54,7 +54,7 @@ mort_post <- list(constant=tibble(b=plogis(rnorm(4000, qlogis(0.01), 0.25))),
   map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
         unite("all", everything(), sep=",") %>%
         .$all)
-n_sim <- 6
+n_sim <- 20
 swim_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
 light_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
 salMin_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.6, 0.6, 1), nrow=2))
