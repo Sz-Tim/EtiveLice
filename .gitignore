@@ -1,6 +1,11 @@
 # Compiled rstan models
 /code/stan/*.rds
 
+# directories
+/Teams/
+/ms/
+/admin/
+
 # History files
 .Rhistory
 .Rapp.history
