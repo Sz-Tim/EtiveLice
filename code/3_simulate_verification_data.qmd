@@ -43,7 +43,9 @@ dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 farm_order <- c("FFMC27", "SAR1", "APT1", "FFMC32", "FFMC84")
 
 # mesh footprints
-mesh_dir <- glue("{proj_dir}/../03_packages/WeStCOMS/data")
+mesh_dir <- ifelse(get_os()=="windows",
+                   glue("{proj_dir}/../03_packages/WeStCOMS/data"),
+                   "~/hydro/meshes")
 wc_fp <- st_read(glue("{mesh_dir}/WeStCOMS2_meshFootprint.gpkg"))
 etive_fp <- st_read(glue("{mesh_dir}/etive28_mesh_footprint.gpkg"))
 ```
