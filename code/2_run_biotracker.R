@@ -17,8 +17,8 @@ set.seed(1001)
 
 # define parameters -------------------------------------------------------
 
-cores_per_sim <- 18
-parallel_sims <- 1
+cores_per_sim <- 20
+parallel_sims <- 4
 start_date <- "2023-01-01"
 end_date <- "2024-12-31"
 nDays <- length(seq(ymd(start_date), ymd(end_date), by=1))
@@ -30,8 +30,8 @@ dirs <- switch(
              mesh="/home/sa04ts/hydro/meshes",
              hf0="/home/sa04ts/hydro/etive28/Archive",
              hf1="/home/sa04ts/hydro/WeStCOMS2/Archive",
-             jdk="/usr/local/java/jre1.8.0_211/bin/java",
-             jar="/home/sa04ts/biotracker/biotracker.jar",
+             jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
+             jar="/home/sa04ts/biotracker/biotracker_v2-0-0.jar",
              out=glue("{getwd()}/out/biotracker")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
