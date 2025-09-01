@@ -5,47 +5,41 @@
 
 
 simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir) {
-  # In this version, attachment is immediately translated to 'mean per fish'
+  # Attached copepodids are immediately translated to 'mean per fish'
   library(tidyverse)
 
   cat(format(now(), "%F %T"), "Initializing", out_dir, "\n")
   dir.create(out_dir, recursive=T)
+  cat(format(now(), "%F %T"), "  Creating and storing inputs \n")
+  saveRDS(info, glue("{out_dir}/info.rds"))
+  saveRDS(params, glue("{out_dir}/params.rds"))
+
 
   #---- transformed data
   # IP_mx[farm, day, sim]
-  IP_mx <- arrange(influx_df, sim, day, sepaSite, pen)$influx_pen |>
-    array(dim=c(info$nFarms, info$nDays, info$nSims))
+  IP_mx <- make_IP_mx(influx_df, info, out_dir)
+
   # attach_env_mx[farm, day, (1, RW, sal, uv, uv^2)]
-  farm_env <- farm_env |> arrange(day, sepaSite, pen)
-  attach_env_mx <- array(1, dim=c(info$nFarms, info$nDays, 5))
-  attach_env_mx[,,1] <- farm_env$RW_logit
-  attach_env_mx[,,2] <- farm_env$salinity_z
-  attach_env_mx[,,3] <- farm_env$uv_z
-  attach_env_mx[,,4] <- farm_env$uv_z_sq
-  attach_env_mx[,,5] <- farm_env$temperature_z
-  attach_env_mx <- attach_env_mx[,,1:length(params$attach_beta), drop=F]
+  attach_env_mx <- make_attach_env_mx(farm_env, info, params, out_dir)
+
   # sal_mx[day, farm, (1, sal)]
-  sal_mx <- array(1, dim=c(info$nFarms, info$nDays, 2))
-  sal_mx[,,2] <- farm_env$salinity_m30
-  sal_mx <- sal_mx[,,1:nrow(params$surv_beta), drop=F]
+  sal_mx <- make_sal_mx(farm_env, info, params, out_dir)
+
   # temp_mx[day, farm, (1, temp)]
-  temp_mx <- matrix(farm_env$temperature, nrow=info$nDays, byrow=T)
-  temp_z_mx <- matrix(farm_env$temperature_z, nrow=info$nDays, byrow=T)
+  temp_mx <- make_temp_mx(farm_env, info, out_dir)
+  temp_z_mx <- make_temp_z_mx(farm_env, info, out_dir)
+
   # nFish_mx[day, farm]
-  nFish_mx <- matrix(farm_env$nFish_est, nrow=info$nDays, byrow=T)
-  # treatDays_mx[day, farm]
-  treatDays_mx <- matrix(0, nrow=info$nDays, ncol=info$nFarms)
+  nFish_mx <- make_nFish_mx(farm_env, info, out_dir)
+
   # sampledDays[sample, c(farm, day)] -- database-like structure for Stan
-  sampledDays <- farm_env |>
-    arrange(sepaSite, pen, day) |>
-    filter(sampled) |>
-    filter(day > 28) |> # 4 week burn-in
-    select(sepaSite, day) |>
-    mutate(sepaSite=as.numeric(sepaSite)) |>
-    as.matrix()
+  sampledDays <- make_sampledDays(farm_env, out_dir)
+
   # nFishSampled[day, farm]
-  nFishSampled_mx <- matrix(as.numeric(farm_env$nFishSampled), nrow=info$nDays, byrow=T) *
-    (nFish_mx > 0)
+  nFishSampled_mx <- make_nFishSampled_mx(farm_env, info, nFish_mx, out_dir)
+
+  # treatDays_mx[day, farm] -- initialize as 0s
+  treatDays_mx <- matrix(0, nrow=info$nDays, ncol=info$nFarms, out_dir)
 
 
   #---- Data structures
@@ -212,21 +206,8 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
 
   cat(format(now(), "%F %T"), "Writing simulation to", out_dir, "\n")
 
-  cat(format(now(), "%F %T"), "  Storing inputs \n")
-  saveRDS(info, glue("{out_dir}/info.rds"))
-  saveRDS(params, glue("{out_dir}/params.rds"))
-  saveRDS(IP_mx, glue("{out_dir}/IP_mx.rds"))
-  saveRDS(attach_env_mx, glue("{out_dir}/attach_env_mx.rds"))
-  saveRDS(IP_mx, glue("{out_dir}/IP_mx.rds"))
-  saveRDS(sal_mx, glue("{out_dir}/sal_mx.rds"))
-  saveRDS(temp_mx, glue("{out_dir}/temp_mx.rds"))
-  saveRDS(temp_z_mx, glue("{out_dir}/temp_z_mx.rds"))
-  saveRDS(nFish_mx, glue("{out_dir}/nFish_mx.rds"))
-  saveRDS(treatDays_mx, glue("{out_dir}/treatDays_mx.rds"))
-  saveRDS(nFishSampled_mx, glue("{out_dir}/nFishSampled_mx.rds"))
-  saveRDS(sampledDays, glue("{out_dir}/sampledDays.rds"))
-
   cat(format(now(), "%F %T"), "  Storing calculated variables  \n")
+  saveRDS(treatDays_mx, glue("{out_dir}/treatDays_mx.rds"))
   saveRDS(ensIP, glue("{out_dir}/ensIP.rds"))
   saveRDS(pr_attach, glue("{out_dir}/pr_attach.rds"))
   saveRDS(stage_survRate, glue("{out_dir}/stage_survRate.rds"))

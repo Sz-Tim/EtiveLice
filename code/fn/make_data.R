@@ -1,0 +1,159 @@
+make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
+  library(tidyverse)
+  library(glue)
+
+  info <- readRDS(glue("{dat_dir}info.rds"))
+  params <- readRDS(glue("{dat_dir}params.rds"))
+  dates <- 1:info$nDays
+
+  stan_dat <- list(
+    nDays = info$nDays,
+    nFarms = info$nFarms,
+    nSims = info$nSims,
+    nStages = info$nStages,
+    nPens = info$nPens,
+    nAttachCov = length(params$attach_beta),
+    nSurvCov = nrow(params$surv_beta),
+    IP_volume = pi*30^2*20,
+    y_bar_minimum = 1e-5,
+    # farm counts, treatments, sampling info
+    y = readRDS(glue("{dat_dir}y.rds"))[,,dates,],
+    sample_i = readRDS(glue("{dat_dir}sampledDays.rds")),
+    nFishSampled_mx = readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,],
+    nFish_mx = readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
+    treatDays = readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
+    # IP from biotracker
+    IP_mx = readRDS(glue("{dat_dir}IP_mx.rds"))[,dates,],
+    # farm environment
+    attach_env_mx = readRDS(glue("{dat_dir}attach_env_mx.rds"))[,dates,],
+    surv_env_mx = readRDS(glue("{dat_dir}sal_mx.rds"))[,dates,],
+    temp_mx = readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
+    temp_z_mx = readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
+    # priors
+    sample_prior_only = as.numeric(priors_only),
+    prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), -0.1),
+                              c(rep(0.25, length(params$attach_beta)-1), 0.1)),
+    prior_surv_beta = array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
+                              rep(c(0.5, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
+                            dim=c(nrow(params$surv_beta), info$nStages, 2),
+                            dimnames=list(c("int", "temp"),
+                                          c("Ch", "Pr", "Ad"),
+                                          c("mu", "sd"))),
+    prior_mnDaysStage_F = array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
+                                  params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
+                                dim=c(2, info$nStages-1, 2),
+                                dimnames=list(c("int", "temp"),
+                                              c("Pr", "Ad"),
+                                              c("mu", "sd"))),
+    prior_logit_detect_p = cbind(c(-1, 1),
+                                 c(0.5, 0.5))
+  )
+  # reformat sample info for Stan
+  stan_dat$nSamples <- nrow(stan_dat$sample_i)
+  stan_dat$sample_ii <- stan_dat$sample_i |>
+    as_tibble() |>
+    mutate(index=row_number()) |>
+    group_by(sepaSite) |>
+    summarise(start=min(index),
+              end=max(index)) |>
+    select(-sepaSite) |>
+    as.matrix()
+  if(source=="sim") {
+    # add male Ch/PA, assume 50:50 ratio
+    stan_dat$y_F <- stan_dat$y[,1,,]
+    stan_dat$y_F[1,,] <- round((stan_dat$y_F[1,,] + stan_dat$y[1,2,,])/2)
+    stan_dat$y_F[2,,] <- round((stan_dat$y_F[2,,] + stan_dat$y[2,2,,])/2)
+  }
+
+  return(list(dat=stan_dat, params=params))
+}
+
+
+
+
+make_IP_mx <- function(influx_df, info, out_dir=NULL) {
+  IP_mx <- arrange(influx_df, sim, day, sepaSite, pen)$influx_pen |>
+    array(dim=c(info$nFarms, info$nDays, info$nSims))
+  if(!is.null(out_dir)) {
+    saveRDS(IP_mx, glue("{out_dir}/IP_mx.rds"))
+  }
+  return(IP_mx)
+}
+
+
+
+make_attach_env_mx <- function(farm_env, info, params, out_dir=NULL) {
+  farm_env <- farm_env |> arrange(day, sepaSite, pen)
+  attach_env_mx <- array(1, dim=c(info$nFarms, info$nDays, 5))
+  attach_env_mx[,,1] <- farm_env$RW_logit
+  attach_env_mx[,,2] <- farm_env$salinity_z
+  attach_env_mx[,,3] <- farm_env$uv_z
+  attach_env_mx[,,4] <- farm_env$uv_z_sq
+  attach_env_mx[,,5] <- farm_env$temperature_z
+  attach_env_mx <- attach_env_mx[,,1:length(params$attach_beta), drop=F]
+  if(!is.null(out_dir)) {
+    saveRDS(attach_env_mx, glue("{out_dir}/attach_env_mx.rds"))
+  }
+  return(attach_env_mx)
+}
+
+make_sal_mx <- function(farm_env, info, params, out_dir=NULL) {
+  sal_mx <- array(1, dim=c(info$nFarms, info$nDays, 2))
+  sal_mx[,,2] <- farm_env$salinity_m30
+  sal_mx <- sal_mx[,,1:nrow(params$surv_beta), drop=F]
+  if(!is.null(out_dir)) {
+    saveRDS(sal_mx, glue("{out_dir}/sal_mx.rds"))
+  }
+  return(sal_mx)
+}
+
+make_temp_mx <- function(farm_env, info, out_dir=NULL) {
+  temp_mx <- matrix(farm_env$temperature, nrow=info$nDays, byrow=T)
+  if(!is.null(out_dir)) {
+    saveRDS(temp_mx, glue("{out_dir}/temp_mx.rds"))
+  }
+  return(temp_mx)
+}
+
+
+make_temp_z_mx <- function(farm_env, info, out_dir=NULL) {
+  temp_z_mx <- matrix(farm_env$temperature_z, nrow=info$nDays, byrow=T)
+  if(!is.null(out_dir)) {
+    saveRDS(temp_z_mx, glue("{out_dir}/temp_z_mx.rds"))
+  }
+  return(temp_z_mx)
+}
+
+
+make_nFish_mx <- function(farm_env, info, out_dir=NULL) {
+  nFish_mx <- matrix(farm_env$nFish_est, nrow=info$nDays, byrow=T)
+  if(!is.null(out_dir)) {
+    saveRDS(nFish_mx, glue("{out_dir}/nFish_mx.rds"))
+  }
+  return(nFish_mx)
+}
+
+make_sampledDays <- function(farm_env, out_dir=NULL) {
+  sampledDays <- farm_env |>
+    arrange(sepaSite, pen, day) |>
+    filter(sampled) |>
+    filter(day > 28) |> # 4 week burn-in
+    select(sepaSite, day) |>
+    mutate(sepaSite=as.numeric(sepaSite)) |>
+    as.matrix()
+  if(!is.null(out_dir)) {
+    saveRDS(sampledDays, glue("{out_dir}/sampledDays.rds"))
+  }
+  return(sampledDays)
+}
+
+make_nFishSampled_mx <- function(farm_env, info, nFish_mx, out_dir=NULL) {
+  nFishSampled_mx <- matrix(as.numeric(farm_env$nFishSampled), nrow=info$nDays, byrow=T) *
+    (nFish_mx > 0)
+  if(!is.null(out_dir)) {
+    saveRDS(nFishSampled_mx, glue("{out_dir}/nFishSampled_mx.rds"))
+  }
+  return(nFishSampled_mx)
+}
+
+
