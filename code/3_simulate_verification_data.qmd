@@ -40,6 +40,7 @@ library(sevcheck)
 proj_dir <- find_rstudio_root_file()
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
+save_figs <- F
 
 farm_order <- c("FFMC27", "SAR1", "APT1", "FFMC32", "FFMC84")
 
@@ -175,14 +176,16 @@ p_ls <- list(farm_dat_gg + geom_line(aes(y=nFish_est, group=pen)),
              farm_dat_gg + geom_line(aes(y=RW, group=pen)))
 cowplot::plot_grid(plotlist=p_ls, ncol=1, align="hv")
 
-# cowplot::plot_grid(farm_dat_gg + 
-#                      geom_line(aes(y=nFish_est, group=pen)) +
-#                      ylab("Number of fish"), 
-#                    farm_dat_gg + 
-#                      geom_line(aes(y=weeklyAverageAf * (nFish_est > 0), group=pen)) +
-#                      ylab("Mean lice per fish (AF)"),
-#                    ncol=1, align="hv")
-# ggsave("admin/project_meetings/figs_temp/dataExamp_farm_dat.png", width=10, height=4)
+if(save_figs) {
+  cowplot::plot_grid(farm_dat_gg +
+                       geom_line(aes(y=nFish_est, group=pen)) +
+                       ylab("Number of fish"),
+                     farm_dat_gg +
+                       geom_line(aes(y=weeklyAverageAf * (nFish_est > 0), group=pen)) +
+                       ylab("Mean lice per fish (AF)"),
+                     ncol=1, align="hv")
+  ggsave("admin/project_meetings/figs_temp/dataExamp_farm_dat.png", width=10, height=4)
+}
 ```
 
 ## Environmental data
@@ -237,23 +240,25 @@ farm_env |>
         panel.grid.minor.y=element_blank(),
         axis.title.x=element_blank())
 
-# farm_env |>
-#   select(-ends_with("_z"), -"salinity_m30") |>
-#   pivot_longer(cols=c("u", "v", "w", "uv", "salinity", "temperature"),
-#                names_to="variable", values_to="value") |>
-#   mutate(variable=factor(variable,
-#                          levels=c("salinity", "temperature", "u", "v", "w", "uv"))) |>
-#   filter(variable %in% c("uv", "salinity", "temperature")) |>
-#   ggplot(aes(date, value, colour=sepaSite, group=pen)) +
-#   geom_line() +
-#   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
-#   facet_grid(variable~sepaSite, scales="free_y") +
-#     scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
-#   labs(y="Daily mean, 0-30m (Etive28)") +
-#   theme(panel.grid.major.y=element_line(colour="grey85", linewidth=0.2),
-#         panel.grid.minor.y=element_blank(),
-#         axis.title.x=element_blank())
-# ggsave("admin/project_meetings/figs_temp/dataExamp_farm_env.png", width=10, height=6)
+if(save_figs) {
+  farm_env |>
+    select(-ends_with("_z"), -"salinity_m30") |>
+    pivot_longer(cols=c("u", "v", "w", "uv", "salinity", "temperature"),
+                 names_to="variable", values_to="value") |>
+    mutate(variable=factor(variable,
+                           levels=c("salinity", "temperature", "u", "v", "w", "uv"))) |>
+    filter(variable %in% c("uv", "salinity", "temperature")) |>
+    ggplot(aes(date, value, colour=sepaSite, group=pen)) +
+    geom_line() +
+    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
+    facet_grid(variable~sepaSite, scales="free_y") +
+    scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
+    labs(y="Daily mean, 0-30m (Etive28)") +
+    theme(panel.grid.major.y=element_line(colour="grey85", linewidth=0.2),
+          panel.grid.minor.y=element_blank(),
+          axis.title.x=element_blank())
+  ggsave("admin/project_meetings/figs_temp/dataExamp_farm_env.png", width=10, height=6)
+  }
 ```
 
 ## Infestation pressure
@@ -263,7 +268,7 @@ Copepodid infestation pressure was taken from 6 `biotracker` simulations which r
 ```{r}
 #| message: false
 #| echo: false
-read_csv("out/biotracker/sim_i.csv") |>
+read_csv(glue("{proj_dir}/out/biotracker/sim_i.csv")) |>
   select(-i, -outDir, -ends_with("_b")) |>
   mutate(across(where(is.numeric), ~signif(.x, 3))) |>
   glimpse()
@@ -314,7 +319,9 @@ ggplot(influx_df, aes(date, influx_m3^0.25, colour=sepaSite, group=pen)) +
   scale_y_continuous("(Mean daily copepodids / m3)^0.25") +
   facet_grid(sim~sepaSite) +
   theme(axis.title.x=element_blank())
-# ggsave("admin/project_meetings/figs_temp/dataExamp_IP.png", width=10, height=6)
+if(save_figs) {
+  ggsave("admin/project_meetings/figs_temp/dataExamp_IP.png", width=10, height=6)
+}
 ```
 
 The simulations vary quite a lot in the infestation pressure, with considerable variation among pens as well.
@@ -603,7 +610,9 @@ cowplot::plot_grid(p_prAttach,
                    cowplot::plot_grid(p_ensWts, p_prSurv, p_daysStage, p_detect,
                                       nrow=1, axis="tb", align="h"),
                    p_nb, ncol=1, rel_heights=c(0.9, 0.5, 0.55))
-# ggsave("admin/project_meetings/figs_temp/dataExamp_params.png", width=10, height=9)
+if(save_figs) {
+  ggsave("admin/project_meetings/figs_temp/dataExamp_params.png", width=10, height=9)
+}
 ```
 
 # Simulation
@@ -813,7 +822,9 @@ mu_df |>
   facet_grid(sepaSite~., scales="free_y") + 
   theme(axis.title.x=element_blank(),
         legend.position="bottom")
-# ggsave("admin/project_meetings/figs_temp/dataExamp_lice_popDistr.png", width=5, height=7)
+if(save_figs) {
+  ggsave("admin/project_meetings/figs_temp/dataExamp_lice_popDistr.png", width=5, height=7)
+}
 ```
 
 ```{r}
@@ -830,7 +841,9 @@ ggplot(mu_df, aes(date)) +
   labs(y="Lice per fish") +
   facet_grid(stage~sepaSite, scales="free_y") + 
   theme(axis.title.x=element_blank())
-# ggsave("admin/project_meetings/figs_temp/dataExamp_lice_mu_y.png", width=7, height=6)
+if(save_figs) {
+  ggsave("admin/project_meetings/figs_temp/dataExamp_lice_mu_y.png", width=7, height=6)
+}
 ```
 
 ```{r}
@@ -873,7 +886,9 @@ ggplot(mu_df |> filter(stage %in% af), aes(date)) +
   labs(y="Simulated mean AF lice per fish\n(line: population;  points: counts)") +
   facet_grid(.~sepaSite) + 
   theme(axis.title.x=element_blank())
-# ggsave("admin/project_meetings/figs_temp/dataExamp_lice_mu_y_AF.png", width=9, height=4)
+if(save_figs) {
+  ggsave("admin/project_meetings/figs_temp/dataExamp_lice_mu_y_AF.png", width=9, height=4)
+}
 ```
 
 Note that these are simulated with arbitrary and randomized model parameters and would not be expected to fully conform with observed values.
