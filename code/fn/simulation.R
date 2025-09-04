@@ -39,7 +39,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   nFishSampled_mx <- make_nFishSampled_mx(farm_env, info, nFish_mx, out_dir)
 
   # treatDays_mx[day, farm] -- initialize as 0s
-  treatDays_mx <- matrix(0, nrow=info$nDays, ncol=info$nFarms, out_dir)
+  treatDays_mx <- matrix(0, nrow=info$nDays, ncol=info$nFarms)
 
 
   #---- Data structures
