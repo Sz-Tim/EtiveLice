@@ -13,17 +13,16 @@ library(glue)
 library(cmdstanr)
 library(ggdist)
 library(cowplot)
-source("code/fn/helpers.R")
+dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
-pDet_forced <- FALSE
-prior_only <- TRUE
+prior_only <- FALSE
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch-PA", "PA-Ad")
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
-                           paste0("ensWts_p[", 1:6, "]"),
+                           paste0("ensWts_p[", 1:20, "]"),
                            "IP_bg", "IP_bg_m3",
                            paste0("surv_beta[1,", 1:3, "]"),
                            paste0("surv_beta[2,", 1:3, "]"),
@@ -37,7 +36,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            "IP_scale",
                            "treatEfficacy"),
                     label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq", "Temp")),
-                            paste0("ensWt_", 1:6),
+                            paste0("ensWt_", 1:20),
                             "IP_bg", "IP_bg_m3",
                             paste0("surv_Int_", stages),
                             paste0("surv_Sal_", stages),
@@ -54,10 +53,10 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
   mutate(label=factor(label, levels=unique(label)))
 
 
-for(sim in 1:10) {
+for(sim in 1:2) {
 
   dat_dir <- glue("data/sim/sim_{str_pad(sim, 2, 'left', '0')}/")
-  stan_dat <- make_stan_data(dat_dir, force_detect_priors=pDet_forced, priors_only=prior_only)
+  stan_dat <- make_stan_data(dat_dir, priors_only=prior_only)
 
   # IEM: full model pop -----------------------------------------------------
 
@@ -82,11 +81,11 @@ for(sim in 1:10) {
                 "mu", "y_pred"),
     format="df") |>
     pivot_longer(-starts_with("."))
-  write_csv(out_full_df, glue("{dat_dir}posterior_pop5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.csv"))
+  write_csv(out_full_df, glue("{dat_dir}posterior_pop5stage{ifelse(prior_only, '_PRIORS', '')}.csv"))
   out_full_sum <- out_full_df |>
     group_by(name) |>
     sevcheck::get_intervals(value, type="qi")
-  write_csv(out_full_sum, glue("{dat_dir}posterior_summary_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.csv"))
+  write_csv(out_full_sum, glue("{dat_dir}posterior_summary_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.csv"))
 
   dat_full_df <- tibble(
     name=c(paste0("attach_beta[", 1:5, "]"),
@@ -107,12 +106,12 @@ for(sim in 1:10) {
             stan_dat$params$nb_prec,
             stan_dat$params$treat_efficacy)
   )
-  write_csv(dat_full_df, glue("{dat_dir}params_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.csv"))
+  write_csv(dat_full_df, glue("{dat_dir}params_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.csv"))
 
   ensWts_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
                    ~.x |> filter(grepl("ensWts", name)) |>
                      inner_join(param_key, by=join_by(name)))
-  p_ensWts <- post_summary_plot(ensWts_ls, scales="free_y") +
+  p_ensWts <- post_summary_plot(ensWts_ls, scales="free_y", ncol=9) +
     xlim(0, 1)
 
   attach_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
@@ -152,7 +151,7 @@ for(sim in 1:10) {
 
   p <- plot_grid(p_ensWts, p_attach, p_surv, p_pMoltInt, p_pMoltTemp, p_detectp, p_else,
             nrow=7, align="hv", axis="trbl", rel_heights=c(1, 1, 2, 1, 1, 1, 1))
-  ggsave(glue("{dat_dir}/fig_pars_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=12)
+  ggsave(glue("{dat_dir}/fig_pars_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=12)
 
 
   mu_df <- out_full_df |>
@@ -178,7 +177,7 @@ for(sim in 1:10) {
     mutate(day=ymd("2023-01-01") + day - 1,
            farm=paste("Farm", farm))
   mu_df |>
-    saveRDS(glue("{dat_dir}/mu_sim_fitted_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.rds"))
+    saveRDS(glue("{dat_dir}/mu_sim_fitted_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.rds"))
 
   p <- mu_df |>
     ggplot(aes(day, mu)) +
@@ -188,7 +187,7 @@ for(sim in 1:10) {
     labs(x="Date", y="Mean lice per fish (latent)") +
     scale_x_date(date_labels="%b") +
     facet_grid(stage~farm, scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_mu{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
+  ggsave(glue("{dat_dir}/fig_pop_5stage_mu{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
 
   p <- mu_df |>
     filter(stage=="Ad") |>
@@ -199,7 +198,7 @@ for(sim in 1:10) {
     labs(x="Date", y="Mean adult female lice per fish (latent)") +
     scale_x_date(date_labels="%b") +
     facet_grid(farm~., scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_mu_AF{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
+  ggsave(glue("{dat_dir}/fig_pop_5stage_mu_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
 
   # mu_df <- mu_df |>
   #   mutate(sepaSite=factor(farm, labels=rev(farm_order))) |>
@@ -219,7 +218,7 @@ for(sim in 1:10) {
   #   facet_wrap(~sepaSite, nrow=2) +
   #   theme(legend.position=c(0.8, 0.2),
   #         axis.title.x=element_blank())
-  # ggsave(glue("{dat_dir}/fig_pop_5stage_AF{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}_ALT.png"),
+  # ggsave(glue("{dat_dir}/fig_pop_5stage_AF{ifelse(prior_only, '_PRIORS', '')}_ALT.png"),
   #        p, width=10, height=6)
 
   sampledDays <- readRDS(glue("{dat_dir}/sampledDays.rds")) |>
@@ -255,7 +254,7 @@ for(sim in 1:10) {
            farm=paste("Farm", farm),
            y_perFish=y/nFishSampled)
   y_df |>
-    saveRDS(glue("{dat_dir}/y_sim_fitted_pop_5stage{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.rds"))
+    saveRDS(glue("{dat_dir}/y_sim_fitted_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.rds"))
 
   p <- y_df |>
     ggplot(aes(day, y_perFish)) +
@@ -266,7 +265,7 @@ for(sim in 1:10) {
     labs(x="Date", y="Mean lice per fish (observed)") +
     scale_x_date(date_labels="%b") +
     facet_grid(stage~farm, scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_y{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
+  ggsave(glue("{dat_dir}/fig_pop_5stage_y{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
 
   p <- y_df |>
     filter(stage=="Ad") |>
@@ -278,7 +277,7 @@ for(sim in 1:10) {
     labs(x="Date", y="Mean adult female lice per fish (observed)") +
     scale_x_date(date_labels="%b") +
     facet_grid(farm~., scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_y_AF{ifelse(pDet_forced, '_forcedDet', '')}{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
+  ggsave(glue("{dat_dir}/fig_pop_5stage_y_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
 
   # y_df <- y_df |>
   #   mutate(sepaSite=factor(farm, labels=rev(farm_order))) |>
@@ -295,91 +294,8 @@ for(sim in 1:10) {
   #   facet_grid(.~sepaSite) +
   #   theme(legend.position="bottom",
   #         axis.title.x=element_blank())
-  # ggsave(glue("{dat_dir}/fig_pop_5stage_y_AF{ifelse(pDet_forced, '_forcedDet', '')}_ALT.png"),
+  # ggsave(glue("{dat_dir}/fig_pop_5stage_y_AF_ALT.png"),
   #        p, width=10, height=4)
 
 }
-
-
-# IEM: full model F -------------------------------------------------------
-
-# iter <- 1000
-# mod_full <- cmdstan_model("code/stan/CopyOfIEM_full_FEMALE.stan")
-# fit_full <- mod_full$sample(
-#   data=stan_dat$dat, init=0, seed=101,
-#   iter_warmup=iter, iter_sampling=iter, refresh=1, max_treedepth=15,
-#   chains=n_chains, parallel_chains=n_chains
-# )
-# out_full_df <- fit_full$draws(
-#   variables=c("IP_bg", "IP_bg_m3", "ensWts_p", "attach_beta",
-#               "surv_beta", "thresh_GDD", "lifespan",
-#               "detect_p", "nb_prec"),
-#   format="df") |>
-#   pivot_longer(-starts_with("."))
-# write_csv(out_full_df, glue("{dat_dir}posterior_full_FEMALE{ifelse(pDet_forced, '_forcedDet', '')}_NEW.csv"))
-# out_full_sum <- out_full_df |>
-#   group_by(name) |>
-#   sevcheck::get_intervals(value, type="qi")
-# write_csv(out_full_sum, glue("{dat_dir}posterior_summary_full_FEMALE{ifelse(pDet_forced, '_forcedDet', '')}_NEW.csv"))
-#
-# dat_full_df <- tibble(
-#   name=c(paste0("attach_beta[", 1:5, "]"),
-#          "IP_bg", "IP_bg_m3",
-#          paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
-#          paste0("surv_beta[1,", 1:stan_dat$dat$nStages, "]"),
-#          paste0("surv_beta[2,", 1:stan_dat$dat$nStages, "]"),
-#          paste0("thresh_GDD[", 1:(stan_dat$dat$nStages-1), ",1]"),
-#          paste0("thresh_GDD[", 1:(stan_dat$dat$nStages-1), ",2]"),
-#          "lifespan",
-#          paste0("detect_p[", 1:(stan_dat$dat$nStages), "]"), "nb_prec"),
-#   value=c(stan_dat$params$attach_beta,
-#           stan_dat$params$IP_bg, stan_dat$params$IP_bg_m3,
-#           stan_dat$params$ensWts_p,
-#           t(stan_dat$params$surv_beta),
-#           stan_dat$params$thresh_GDD,
-#           stan_dat$params$lifespan,
-#           stan_dat$params$detect_p,
-#           stan_dat$params$nb_prec)
-# )
-# write_csv(dat_full_df, glue("{dat_dir}params_full.csv"))
-#
-# attach_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-#                  ~.x |> filter(grepl("attach_beta", name)) |>
-#                    inner_join(param_key, by=join_by(name)))
-# p_attach <- post_summary_plot(attach_ls, scales="free") +
-#   geom_vline(xintercept=0, linetype=3)
-#
-# ensWts_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-#                  ~.x |> filter(grepl("ensWts", name)) |>
-#                    inner_join(param_key, by=join_by(name)))
-# p_ensWts <- post_summary_plot(ensWts_ls, scales="free_y") +
-#   xlim(0, 1)
-#
-# surv_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-#                ~.x |> filter(grepl("surv_beta", name)) |>
-#                  inner_join(param_key, by=join_by(name)))
-# p_surv <- post_summary_plot(surv_ls, ncol=3, scales="free") +
-#   geom_vline(xintercept=0, linetype=3)
-#
-# pMolt_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-#                 ~.x |> filter(grepl("thresh_GDD|lifespan", name)) |>
-#                   inner_join(param_key, by=join_by(name)) |>
-#                   filter(grepl("lifespan|moltF", label)))
-# p_pMolt <- post_summary_plot(pMolt_ls, ncol=4, scales="free_y")
-#
-# detectp_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-#                   ~.x |> filter(grepl("detect_p", name)) |>
-#                     inner_join(param_key, by=join_by(name)))
-# p_detectp <- post_summary_plot(detectp_ls, scales="free_y") +
-#   xlim(0, 1)
-#
-# else_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-#                ~.x |> filter(grepl("IP_bg|nb_prec", name)) |>
-#                  inner_join(param_key, by=join_by(name)))
-# p_else <- post_summary_plot(else_ls, ncol=3, scales="free")
-#
-# plot_grid(p_ensWts, p_attach, p_surv, p_pMolt, p_detectp, p_else,
-#           nrow=6, align="hv", axis="trbl", rel_heights=c(1, 1, 2, 1, 1, 1))
-# ggsave(glue("{dat_dir}/fig_full_FEMALE_pars{ifelse(pDet_forced, '_forcedDet', '')}_NEW.png"), width=10, height=12)
-
 

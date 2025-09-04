@@ -17,7 +17,7 @@ editor_options:
 
 This document generates data for verification of the joint population model (JPM). The JPM is a multilevel Bayesian model that combines copepodid infestation pressure (IP) from a set of particle tracking simulation variants, calculates ensemble IP as a weighted average across the simulation variants, estimates attachment rates, and models the on-fish progression of daily lice cohorts through time. Observed counts of each stage of lice each week are used as the response variable, with all model parameters estimated jointly. The JPM will be verified using data that is simulated using identical processes with known, realistic parameters to assess the ability of the JPM to accurately and precisely recover parameters.
 
-This script can be modified to use final `biotracker` simulations, best available farm data and the final parameter sets. For the moment, it uses daily averages from `etive28` at each farm with a sample of six `biotracker` simulations, running from 2023-01-01 to 2024-12-31.
+This script can be modified to use final `biotracker` simulations, best available farm data and the final parameter sets. For the moment, it uses daily averages from `etive28` at each farm with a sample of `biotracker` simulations, running from 2023-01-01 to 2024-12-31.
 
 Releases and infestation pressure are currently being performed by pen rather than by farm. The final version may still use farm-level aggregation. However, the IP catchment area is more in line with reality by using a smaller radius (\~30m) around each pen as identified via satellite imagery compared to a larger radius (\~100m) around a reported point location. Since layouts tend to be 2 x n, a circular buffer fails to capture the correct area. For IP, `biotracker` internally sums the density of lice for all particles entering within the radius of each potential destination for each 120 s substep.
 
@@ -36,6 +36,7 @@ library(tidyverse)
 library(sf)
 library(glue)
 library(rprojroot)
+library(sevcheck)
 proj_dir <- find_rstudio_root_file()
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
@@ -58,7 +59,7 @@ inputs_dir <- glue("{proj_dir}/data/sim/inputs")
 ```
 
 ```{r}
-seed <- sample(100, 1)
+seed <- sample(1000, 1)
 set.seed(seed)
 ```
 
@@ -262,7 +263,7 @@ Copepodid infestation pressure was taken from 6 `biotracker` simulations which r
 ```{r}
 #| message: false
 #| echo: false
-read_csv("D:/EtiveLice/out/biotracker/sim_i.csv") |>
+read_csv("out/biotracker/sim_i.csv") |>
   select(-i, -outDir, -ends_with("_b")) |>
   mutate(across(where(is.numeric), ~signif(.x, 3))) |>
   glimpse()
@@ -287,7 +288,7 @@ glimpse(influx_df)
 
 ```{r}
 #| fig-width: 10
-#| fig-height: 6
+#| fig-height: 10
 #| fig-cap: "Daily copepodid infestation pressure by farm."
 #| fig-dpi: 400
 #| echo: false
@@ -302,7 +303,7 @@ ggplot(influx_df, aes(date, influx_m3, colour=sepaSite, group=pen)) +
 
 ```{r}
 #| fig-width: 10
-#| fig-height: 6
+#| fig-height: 10
 #| fig-cap: "Daily copepodid infestation pressure (4th root) by farm."
 #| fig-dpi: 400
 #| echo: false

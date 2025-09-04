@@ -111,9 +111,12 @@ walk(sim_seq,
        hfDirPrefix1="netcdf_",
        hfFilePrefix1="westcoms2",
        # sites
-       sitefile="D:/EtiveLice/data/pen_sites_linnhe_2023-2024.csv",
-       sitefileEnd="D:/EtiveLice/data/pen_sites_etive_2023-2024.csv",
-       siteDensityPath="D:/EtiveLice/data/lice_daily_2023-01-01_2024-12-31.csv",
+       sitefile=glue("{dirs$proj}/data/pen_sites_linnhe_2023-2024.csv"),
+       sitefileEnd=glue("{dirs$proj}/data/pen_sites_etive_2023-2024.csv"),
+       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2023-01-01_2024-12-31.csv"),
+       # sitefile="D:/EtiveLice/data/pen_sites_linnhe_2023-2024.csv",
+       # sitefileEnd="D:/EtiveLice/data/pen_sites_etive_2023-2024.csv",
+       # siteDensityPath="D:/EtiveLice/data/lice_daily_2023-01-01_2024-12-31.csv",
        # dynamics
        D_hVert=sim.i$D_hVert[.x],
        D_h=sim.i$D_h[.x],
@@ -162,6 +165,7 @@ sim_sets <- split(sim_seq, rep(1:parallel_sims, length(sim_seq)/parallel_sims))
 foreach(j=1:parallel_sims, .options.future=list(globals=structure(TRUE, add="sim.i"))) %dofuture% {
   for(i in sim_sets[[j]]) {
     setwd(dirs$proj)
+    cat("Starting", sim.i$i[i], "\n")
     biotrackR::run_biotracker(
       jdk_path=dirs$jdk,
       jar_path=dirs$jar,
@@ -202,13 +206,14 @@ write_csv(site_env_df, "data/sim/inputs/farm_env.csv")
 
 # Influx
 mesh_fp <- st_read(glue("{dirs$mesh}/etive28_mesh_footprint.gpkg"))
-c_long <- map_dfr(dirrf(dirs$out, "connectivity.*csv"),
-                  ~load_connectivity(.x,
-                                     source_names=pens_linnhe$pen,
-                                     dest_names=pens_etive$pen,
-                                     liceScale=1) |>
-                    mutate(sim=str_sub(str_split_fixed(.x, "sim_", 2)[,2], 1, 2)))
+c_long <- dirrf(dirs$out, "connectivity.*csv") |>
+  map_dfr(~load_connectivity(.x,
+                             source_names=pens_linnhe$pen,
+                             dest_names=pens_etive$pen,
+                             liceScale=1) |>
+            mutate(sim=str_sub(str_split_fixed(.x, "sim_", 2)[,2], 1, 2)))
 site_areas <- sim.i |>
+  mutate(connectivityThresh=30) |>
   select(i, connectivityThresh) |>
   mutate(site_df=list(pens_linnhe)) |>
   unnest(site_df) |>
