@@ -8,6 +8,7 @@ monofont: Lucida Console
 editor: visual
 toc: true
 number-sections: true
+embed-resources: true
 bibliography: references.bib
 editor_options: 
   chunk_output_type: console
@@ -894,3 +895,4 @@ if(save_figs) {
 Note that these are simulated with arbitrary and randomized model parameters and would not be expected to fully conform with observed values.
 
 # References
+
