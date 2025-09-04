@@ -53,7 +53,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
-sim_dirs <- dir("data/sim", "sim_", include.dirs=T)
+sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T), "/")
 for(sim_dir in sim_dirs) {
 
   stan_dat <- make_stan_data(sim_dir, priors_only=prior_only)
