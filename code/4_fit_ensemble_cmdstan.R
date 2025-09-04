@@ -17,6 +17,7 @@ dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
 prior_only <- FALSE
+keep_licePreds <- FALSE
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
@@ -74,11 +75,12 @@ for(sim in 1:2) {
   #   arrange(desc(pct)) |>
   #   write_csv(glue("{dat_dir}profile_pop5stage.csv"))
 
+  keep <- c("IP_bg", "IP_bg_m3", "IP_scale", "ensWts_p", "attach_beta",
+            "surv_beta", "mnDaysStage_beta",
+            "detect_p", "nb_prec", "treatEfficacy")
+  if(keep_licePreds) keep <- c(keep, "mu", "y_pred")
   out_full_df <- fit_full$draws(
-    variables=c("IP_bg", "IP_bg_m3", "IP_scale", "ensWts_p", "attach_beta",
-                "surv_beta", "mnDaysStage_beta",
-                "detect_p", "nb_prec", "treatEfficacy",
-                "mu", "y_pred"),
+    variables=keep,
     format="df") |>
     pivot_longer(-starts_with("."))
   write_csv(out_full_df, glue("{dat_dir}posterior_pop5stage{ifelse(prior_only, '_PRIORS', '')}.csv"))
@@ -153,149 +155,111 @@ for(sim in 1:2) {
             nrow=7, align="hv", axis="trbl", rel_heights=c(1, 1, 2, 1, 1, 1, 1))
   ggsave(glue("{dat_dir}/fig_pars_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=12)
 
+  if(keep_licePreds) {
+    mu_df <- out_full_df |>
+      filter(grepl("mu", name)) |>
+      separate_wider_delim(name, delim=",", names=c("farm", "stage5", "day")) |>
+      mutate(farm=str_sub(farm, 4, -1),
+             day=as.numeric(str_sub(day, 1, -2)),
+             stage=case_when(stage5 %in% 1:2 ~ "Ch",
+                             stage5 %in% 3:4 ~ "PA",
+                             stage5 == 5 ~ "Ad"),
+             stage=factor(stage, levels=c("Ch", "PA", "Ad"))) |>
+      group_by(.chain, .iteration, .draw, farm, stage, day) |>
+      summarise(value=sum(value)) |>
+      group_by(farm, stage, day) |>
+      sevcheck::get_intervals(value, type="qi") |>
+      ungroup() |>
+      mutate(type="Fitted") |> rename(mu=med) |>
+      bind_rows(expand_grid(farm=as.character(1:5),
+                            day=1:stan_dat$dat$nDays,
+                            stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
+                  mutate(mu=c(readRDS(glue("{dat_dir}/mu.rds"))[,1,,])) |>
+                  mutate(type="True")) |>
+      mutate(day=ymd("2023-01-01") + day - 1,
+             farm=paste("Farm", farm))
+    mu_df |>
+      saveRDS(glue("{dat_dir}/mu_sim_fitted_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.rds"))
 
-  mu_df <- out_full_df |>
-    filter(grepl("mu", name)) |>
-    separate_wider_delim(name, delim=",", names=c("farm", "stage5", "day")) |>
-    mutate(farm=str_sub(farm, 4, -1),
-           day=as.numeric(str_sub(day, 1, -2)),
-           stage=case_when(stage5 %in% 1:2 ~ "Ch",
-                           stage5 %in% 3:4 ~ "PA",
-                           stage5 == 5 ~ "Ad"),
-           stage=factor(stage, levels=c("Ch", "PA", "Ad"))) |>
-    group_by(.chain, .iteration, .draw, farm, stage, day) |>
-    summarise(value=sum(value)) |>
-    group_by(farm, stage, day) |>
-    sevcheck::get_intervals(value, type="qi") |>
-    ungroup() |>
-    mutate(type="Fitted") |> rename(mu=med) |>
-    bind_rows(expand_grid(farm=as.character(1:5),
-                          day=1:stan_dat$dat$nDays,
-                          stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
-                mutate(mu=c(readRDS(glue("{dat_dir}/mu.rds"))[,1,,])) |>
-                mutate(type="True")) |>
-    mutate(day=ymd("2023-01-01") + day - 1,
-           farm=paste("Farm", farm))
-  mu_df |>
-    saveRDS(glue("{dat_dir}/mu_sim_fitted_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.rds"))
+    p <- mu_df |>
+      ggplot(aes(day, mu)) +
+      geom_ribbon(aes(ymin=L025, ymax=L975, group=type), colour=NA, fill="grey80") +
+      geom_line(aes(colour=type)) +
+      scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
+      labs(x="Date", y="Mean lice per fish (latent)") +
+      scale_x_date(date_labels="%b") +
+      facet_grid(stage~farm, scales="free_y")
+    ggsave(glue("{dat_dir}/fig_pop_5stage_mu{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
 
-  p <- mu_df |>
-    ggplot(aes(day, mu)) +
-    geom_ribbon(aes(ymin=L025, ymax=L975, group=type), colour=NA, fill="grey80") +
-    geom_line(aes(colour=type)) +
-    scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
-    labs(x="Date", y="Mean lice per fish (latent)") +
-    scale_x_date(date_labels="%b") +
-    facet_grid(stage~farm, scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_mu{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
+    p <- mu_df |>
+      filter(stage=="Ad") |>
+      ggplot(aes(day, mu)) +
+      geom_ribbon(aes(ymin=L025, ymax=L975, group=type), colour=NA, fill="grey80") +
+      geom_line(aes(colour=type)) +
+      scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
+      labs(x="Date", y="Mean adult female lice per fish (latent)") +
+      scale_x_date(date_labels="%b") +
+      facet_grid(farm~., scales="free_y")
+    ggsave(glue("{dat_dir}/fig_pop_5stage_mu_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
 
-  p <- mu_df |>
-    filter(stage=="Ad") |>
-    ggplot(aes(day, mu)) +
-    geom_ribbon(aes(ymin=L025, ymax=L975, group=type), colour=NA, fill="grey80") +
-    geom_line(aes(colour=type)) +
-    scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
-    labs(x="Date", y="Mean adult female lice per fish (latent)") +
-    scale_x_date(date_labels="%b") +
-    facet_grid(farm~., scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_mu_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
 
-  # mu_df <- mu_df |>
-  #   mutate(sepaSite=factor(farm, labels=rev(farm_order))) |>
-  #   mutate(sepaSite=factor(sepaSite, levels=farm_order))
-  #
-  # p <- mu_df |>
-  #   filter(stage=="Ad") |>
-  #   ggplot(aes(day, mu)) +
-  #   geom_ribbon(aes(ymin=L025, ymax=L975, group=type), colour=NA, fill="grey70") +
-  #   geom_line(aes(colour=type, linewidth=type)) +
-  #   geom_point(data=y_df |> filter(stage=="Ad" & type=="True"), aes(y=y_perFish),
-  #              shape=4, colour="blue", size=0.5) +
-  #   scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
-  #   scale_linewidth_manual("", values=c("True"=0.25, "Fitted"=0.3)) +
-  #   labs(x="Date", y="Mean adult female lice per fish (latent)") +
-  #   scale_x_date(date_labels="%b") +
-  #   facet_wrap(~sepaSite, nrow=2) +
-  #   theme(legend.position=c(0.8, 0.2),
-  #         axis.title.x=element_blank())
-  # ggsave(glue("{dat_dir}/fig_pop_5stage_AF{ifelse(prior_only, '_PRIORS', '')}_ALT.png"),
-  #        p, width=10, height=6)
+    sampledDays <- readRDS(glue("{dat_dir}/sampledDays.rds")) |>
+      as_tibble() |>
+      rename(farm=sepaSite) |>
+      mutate(farm=as.character(farm),
+             sample=row_number()) |>
+      inner_join(readRDS(glue("{dat_dir}/nFishSampled_mx.rds")) |>
+                   as_tibble() |>
+                   mutate(day=row_number()) |>
+                   pivot_longer(-day, names_to="farm", values_to="nFishSampled") |>
+                   mutate(farm=str_sub(farm, 2, -1)))
+    y_df <- out_full_df |>
+      filter(grepl("y_pred", name)) |>
+      separate_wider_delim(name, delim=",", names=c("stage", "sample")) |>
+      mutate(sample=as.numeric(str_sub(sample, 1, -2)),
+             stage=factor(stage, levels=paste0("y_pred[", 1:3), labels=c("Ch", "PA", "Ad"))) |>
+      group_by(.chain, .iteration, .draw, stage, sample) |>
+      summarise(value=sum(value, na.rm=T)) |>
+      group_by(stage, sample) |>
+      sevcheck::get_intervals(value, type="qi") |>
+      ungroup() |>
+      left_join(sampledDays, by=join_by(sample)) |>
+      select(-sample) |>
+      mutate(type="Fitted") |> rename(y=med) |>
+      bind_rows(expand_grid(farm=as.character(1:5),
+                            day=1:stan_dat$dat$nDays,
+                            stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
+                  mutate(y=c(readRDS(glue("{dat_dir}/y.rds"))[,1,,])) |>
+                  mutate(type="True") |>
+                  inner_join(sampledDays |> select(-sample), by=join_by(farm, day))) |>
+      mutate(day=ymd("2023-01-01") + day - 1,
+             farm=paste("Farm", farm),
+             y_perFish=y/nFishSampled)
+    y_df |>
+      saveRDS(glue("{dat_dir}/y_sim_fitted_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.rds"))
 
-  sampledDays <- readRDS(glue("{dat_dir}/sampledDays.rds")) |>
-    as_tibble() |>
-    rename(farm=sepaSite) |>
-    mutate(farm=as.character(farm),
-           sample=row_number()) |>
-    inner_join(readRDS(glue("{dat_dir}/nFishSampled_mx.rds")) |>
-                 as_tibble() |>
-                 mutate(day=row_number()) |>
-                 pivot_longer(-day, names_to="farm", values_to="nFishSampled") |>
-                 mutate(farm=str_sub(farm, 2, -1)))
-  y_df <- out_full_df |>
-    filter(grepl("y_pred", name)) |>
-    separate_wider_delim(name, delim=",", names=c("stage", "sample")) |>
-    mutate(sample=as.numeric(str_sub(sample, 1, -2)),
-           stage=factor(stage, levels=paste0("y_pred[", 1:3), labels=c("Ch", "PA", "Ad"))) |>
-    group_by(.chain, .iteration, .draw, stage, sample) |>
-    summarise(value=sum(value, na.rm=T)) |>
-    group_by(stage, sample) |>
-    sevcheck::get_intervals(value, type="qi") |>
-    ungroup() |>
-    left_join(sampledDays, by=join_by(sample)) |>
-    select(-sample) |>
-    mutate(type="Fitted") |> rename(y=med) |>
-    bind_rows(expand_grid(farm=as.character(1:5),
-                          day=1:stan_dat$dat$nDays,
-                          stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
-                mutate(y=c(readRDS(glue("{dat_dir}/y.rds"))[,1,,])) |>
-                mutate(type="True") |>
-                inner_join(sampledDays |> select(-sample), by=join_by(farm, day))) |>
-    mutate(day=ymd("2023-01-01") + day - 1,
-           farm=paste("Farm", farm),
-           y_perFish=y/nFishSampled)
-  y_df |>
-    saveRDS(glue("{dat_dir}/y_sim_fitted_pop_5stage{ifelse(prior_only, '_PRIORS', '')}.rds"))
+    p <- y_df |>
+      ggplot(aes(day, y_perFish)) +
+      geom_linerange(aes(ymin=L025/nFishSampled, ymax=L975/nFishSampled, group=type), linewidth=0.25) +
+      geom_point(aes(colour=type, shape=type)) +
+      scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
+      scale_shape_manual("", values=c("True"=4, "Fitted"=1)) +
+      labs(x="Date", y="Mean lice per fish (observed)") +
+      scale_x_date(date_labels="%b") +
+      facet_grid(stage~farm, scales="free_y")
+    ggsave(glue("{dat_dir}/fig_pop_5stage_y{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
 
-  p <- y_df |>
-    ggplot(aes(day, y_perFish)) +
-    geom_linerange(aes(ymin=L025/nFishSampled, ymax=L975/nFishSampled, group=type), linewidth=0.25) +
-    geom_point(aes(colour=type, shape=type)) +
-    scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
-    scale_shape_manual("", values=c("True"=4, "Fitted"=1)) +
-    labs(x="Date", y="Mean lice per fish (observed)") +
-    scale_x_date(date_labels="%b") +
-    facet_grid(stage~farm, scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_y{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
-
-  p <- y_df |>
-    filter(stage=="Ad") |>
-    ggplot(aes(day, y_perFish)) +
-    geom_linerange(aes(ymin=L025/nFishSampled, ymax=L975/nFishSampled, group=type), linewidth=0.25) +
-    geom_point(aes(colour=type, shape=type)) +
-    scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
-    scale_shape_manual("", values=c("True"=4, "Fitted"=1)) +
-    labs(x="Date", y="Mean adult female lice per fish (observed)") +
-    scale_x_date(date_labels="%b") +
-    facet_grid(farm~., scales="free_y")
-  ggsave(glue("{dat_dir}/fig_pop_5stage_y_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
-
-  # y_df <- y_df |>
-  #   mutate(sepaSite=factor(farm, labels=rev(farm_order))) |>
-  #   mutate(sepaSite=factor(sepaSite, levels=farm_order))
-  # p <- y_df |>
-  #   filter(stage=="Ad") |>
-  #   ggplot(aes(day, y_perFish)) +
-  #   geom_linerange(aes(ymin=L025/nFishSampled, ymax=L975/nFishSampled, group=type), linewidth=0.25) +
-  #   geom_point(aes(colour=type, shape=type)) +
-  #   scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
-  #   scale_shape_manual("", values=c("True"=4, "Fitted"=1)) +
-  #   labs(x="Date", y="Mean adult female lice per fish (observed)") +
-  #   scale_x_date(date_labels="%b") +
-  #   facet_grid(.~sepaSite) +
-  #   theme(legend.position="bottom",
-  #         axis.title.x=element_blank())
-  # ggsave(glue("{dat_dir}/fig_pop_5stage_y_AF_ALT.png"),
-  #        p, width=10, height=4)
-
+    p <- y_df |>
+      filter(stage=="Ad") |>
+      ggplot(aes(day, y_perFish)) +
+      geom_linerange(aes(ymin=L025/nFishSampled, ymax=L975/nFishSampled, group=type), linewidth=0.25) +
+      geom_point(aes(colour=type, shape=type)) +
+      scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
+      scale_shape_manual("", values=c("True"=4, "Fitted"=1)) +
+      labs(x="Date", y="Mean adult female lice per fish (observed)") +
+      scale_x_date(date_labels="%b") +
+      facet_grid(farm~., scales="free_y")
+    ggsave(glue("{dat_dir}/fig_pop_5stage_y_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
+  }
 }
 
