@@ -395,7 +395,7 @@ lims_df <- full_sum_df |>
   summarise(lower=min(L25, value, na.rm=T),
             upper=max(L75, value, na.rm=T))
 p <- full_sum_df |>
-  ggplot(aes(value, mn)) +
+  ggplot(aes(mn, value)) +
   geom_line(stat="smooth", method="lm", formula=y~x, linewidth=1, se=F) +
   geom_line(stat="smooth", method="lm", formula=y~x, linewidth=0.25, se=F,
             aes(group=paste0(name, fit))) +
@@ -403,13 +403,13 @@ p <- full_sum_df |>
   geom_point(data=lims_df, aes(upper, upper), colour="white", size=0.2) +
   geom_abline(linetype=3) +
   geom_point(shape=1, alpha=0.75) +
-  geom_linerange(aes(ymin=L25, ymax=L75)) +
+  geom_linerange(aes(xmin=L25, xmax=L75)) +
   facet_wrap(~param_type, scales="free", nrow=2) +
-  labs(x="True value",
-       y="Posterior mean + 50% CI", 
+  labs(x="Posterior mean + 50% CI", 
+       y="True value",
        title="Verification across simulated datasets")
 ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/pop_freeDet_performance.png"), p,
-       width=8, height=4.5, dpi=300)
+       width=10, height=4.5, dpi=300)
 p
 ```
 
@@ -429,12 +429,12 @@ p <- full_sum_df |>
   geom_abline(linetype=3) +
   geom_point(shape=1, alpha=0.75) +
   geom_linerange(aes(ymin=L25, ymax=L75)) +
-  facet_wrap(~label, scales="free", nrow=4) +
+  facet_wrap(~label, scales="free", nrow=6) +
   labs(x="True value",
        y="Posterior mean + 50% CI", 
        title="Verification across simulated datasets")
 ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/pop_freeDet_performance_all.png"), p,
-       width=10, height=8, dpi=300)
+       width=12, height=10, dpi=300)
 p
 full_sum_df |>
   group_by(label) |>
@@ -497,8 +497,8 @@ pAttach_quantiles <- pAttach_post |>
 ```{r}
 
  pAttach_post |>
-  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 1000))) |>
-  filter(sim %in% unique(pAttach_post$sim)[1]) |>
+  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 500))) |>
+  filter(sim %in% unique(pAttach_post$sim)[35]) |>
   ggplot(aes(UV_raw, pAttach, alpha=fit, linewidth=fit,
              group=paste(RW, salinity, .draw, fit), colour=salinity)) + 
   geom_line() +
@@ -511,12 +511,12 @@ pAttach_quantiles <- pAttach_post |>
  
  pAttach_post |>
   filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 10))) |>
-  filter(sim %in% unique(pAttach_post$sim)[1:15]) |>
+  filter(sim %in% unique(pAttach_post$sim)[21:35]) |>
   ggplot(aes(UV_raw, pAttach, alpha=fit, linewidth=fit,
              group=paste(RW, salinity, .draw, fit), colour=salinity)) + 
   geom_line() +
   scale_colour_viridis_c(option="mako", end=0.9) +
-  scale_alpha_manual(values=c(0.2, 1)) +
+  scale_alpha_manual(values=c(0.4, 1)) +
   scale_linewidth_manual(values=c(0.2, 1)) +
   ylim(0, NA) + 
   labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
@@ -631,7 +631,7 @@ p2 <- pSurv_df |>
 ggpubr::ggarrange(p1, p2, nrow=2, common.legend=TRUE, legend="right")
 
 pSurv_df |>
-  filter(sim %in% unique(pAttach_df$sim)[1:7]) |>
+  filter(sim %in% unique(pAttach_df$sim)[21:27]) |>
   ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
   geom_line() +
   scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
