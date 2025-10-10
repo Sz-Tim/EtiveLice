@@ -890,9 +890,22 @@ ggplot(mu_df |> filter(stage %in% af), aes(date)) +
 if(save_figs) {
   ggsave("admin/project_meetings/figs_temp/dataExamp_lice_mu_y_AF.png", width=9, height=4)
 }
+
+y_df |> 
+  filter(stage != "am") |> 
+  ggplot(aes(date)) + 
+  geom_point(aes(y=value), shape=4) + 
+  geom_rug(data=out_df |> filter(treat==1), sides="b", colour="black") +
+  scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
+  labs(y="Observed lice per fish") +
+  facet_grid(stage~sepaSite, scales="free_y") + 
+  theme(axis.title.x=element_blank())
+if(save_figs) {
+  ggsave("admin/project_meetings/figs_temp/dataExamp_lice_y.png", width=10, height=7)
+}
+
 ```
 
 Note that these are simulated with arbitrary and randomized model parameters and would not be expected to fully conform with observed values.
 
 # References
-

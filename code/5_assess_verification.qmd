@@ -72,17 +72,9 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
 ```{r}
 #| message: false
 #| warning: false
-# out_pop_df <- dir(sim_dir, "sim_")[1:2] |>
-#   map_dfr(
-#     ~full_join(
-#       read_csv(glue("{sim_dir}/{.x}/posterior_summary_pop_5stage_forcedDet.csv"), show_col_types=F),
-#       read_csv(glue("{sim_dir}/{.x}/params_pop_5stage_forcedDet.csv"), show_col_types=F), 
-#       by=join_by(name)
-#     ) |>
-#       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
-#       inner_join(param_key, by=join_by(name)))
+
 sim_finished <- dir(sim_dir, "posterior_summary", recursive=T) |> str_sub(1, 6)
-out_pop5s_df <- sim_finished |>
+out_df <- sim_finished |>
   map_dfr(
     ~full_join(
       read_csv(glue("{sim_dir}/{.x}/posterior_summary_pop_5stage.csv"), show_col_types=F),
@@ -90,22 +82,8 @@ out_pop5s_df <- sim_finished |>
       by=join_by(name)
     ) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
-      inner_join(param_key, by=join_by(name)))
-
-# out_full_df <- dir(sim_dir, "sim_")[1:3] |>
-#   map_dfr(
-#     ~full_join(
-#       read_csv(glue("{sim_dir}/{.x}/posterior_summary_full_FEMALE_forcedDet.csv"), show_col_types=F),
-#       read_csv(glue("{sim_dir}/{.x}/params_full.csv"), show_col_types=F), 
-#       by=join_by(name)
-#     ) |>
-#       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
-#       inner_join(param_key, by=join_by(name)))
-out_df <- bind_rows(
-  # out_pop_df |> mutate(fit="forced"),
-  out_pop5s_df |> mutate(fit="model")
-  # out_full_df |> mutate(fit="in_full")
-)
+      inner_join(param_key, by=join_by(name))) |>
+  mutate(fit="model")
 ```
 
 ## IP and attachment
@@ -467,7 +445,7 @@ attach_df <- expand_grid(
 ```
 
 ```{r}
-post_df <- dir(sim_dir, "sim_") |>
+pAttach_post <- dir(sim_dir, "sim_") |>
   map_dfr(
       ~bind_rows(
         read_csv(glue("{sim_dir}/{.x}/posterior_pop5stage.csv"), show_col_types=F) |>
@@ -477,8 +455,7 @@ post_df <- dir(sim_dir, "sim_") |>
         read_csv(glue("{sim_dir}/{.x}/params_pop_5stage.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
-      mutate(sim=paste0("dat_", str_sub(.x, -2, -1))))
-pAttach_post <- post_df |>
+      mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
   mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
   select(-name) |>
   pivot_wider(names_from="beta", values_from="value") |>
@@ -641,6 +618,55 @@ pSurv_df |>
   facet_grid(stage~sim) +
   theme(legend.position="bottom")
 ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/dataExamp_fittedSalReg.png"),
+       width=12, height=6)
+```
+
+```{r}
+pSurv_post <- dir(sim_dir, "sim_") |>
+  map_dfr(
+      ~bind_rows(
+        read_csv(glue("{sim_dir}/{.x}/posterior_pop5stage.csv"), show_col_types=F) |>
+          filter(grepl("surv_beta", name)) |>
+          select(-.iteration, -.chain) |>
+          mutate(fit="Model"),
+        read_csv(glue("{sim_dir}/{.x}/params_pop_5stage.csv"), show_col_types=F) |>
+          filter(grepl("surv_beta", name)) |>
+          mutate(fit="True", .draw=1)) |>
+      mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
+  inner_join(param_key, by=join_by(name)) |>
+  select(-name) |>
+  pivot_wider(names_from="label", values_from="value") |>
+  mutate(S_df=list(S_df)) |>
+  unnest(S_df) |>
+  mutate(pSurv_Ch=plogis(surv_Int_Ch + surv_Sal_Ch*sal),
+         pSurv_PA=plogis(surv_Int_PA + surv_Sal_PA*sal),
+         pSurv_Ad=plogis(surv_Int_Ad + surv_Sal_Ad*sal),
+         salinity=sal + 30) |>
+  select(.draw, fit, sim, salinity, starts_with("pSurv")) |>
+  pivot_longer(starts_with("pSurv"), names_to="Stage", values_to="pSurv") |>
+  mutate(Stage=factor(str_sub(Stage, -2, -1), levels=c("Ch", "PA", "Ad")))
+```
+
+```{r}
+selected_sims <- sample(unique(pSurv_post$sim), 7)
+selected_draws <- c(1, sample.int(n_distinct(pSurv_post$.draw), 300))
+p <- pSurv_post |>
+  filter(.draw %in% selected_draws) |>
+  filter(sim %in% selected_sims) |>
+  filter(fit=="Model") |>
+  ggplot(aes(salinity, pSurv, alpha=fit, linewidth=fit, colour=Stage,
+             group=paste(.draw, fit))) + 
+  geom_line() +
+  geom_line(data=pSurv_post |> filter(fit=="True" & sim %in% selected_sims),
+            colour="gray30", linetype=2) +
+  scale_alpha_manual(values=c(0.3, 1)) +
+  scale_linewidth_manual(values=c(0.2, 1)) +
+  scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
+  ylim(0, 1) + 
+  labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
+  facet_grid(Stage~sim, scales="free_y") +
+  theme(legend.position="bottom")
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/dataExamp_postSalReg.png"), p,
        width=12, height=6)
 ```
 
