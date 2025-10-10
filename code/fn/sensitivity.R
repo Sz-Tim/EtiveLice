@@ -20,7 +20,7 @@ calc_daily_fluxes <- function(c_long, site_areas) {
              fill=list(influx=0, N_influx=0,
                        selfflux=0,
                        outflux=0, N_outflux=0)) |>
-    left_join(site_areas, by="sepaSite") |>
+    left_join(site_areas, by=join_by(sepaSite)) |>
     mutate(influx_m2=influx/area,
            selfflux_m2=selfflux/area,
            outflux_m2=outflux/area) |>
@@ -60,7 +60,7 @@ calc_sensitivity_outcomes <- function(c_daily, sim) {
 make_sensitivity_sum_df <- function(sum_ls, sim.i) {
   sum_ls |>
     reduce(bind_rows) |>
-    inner_join(sim.i |> select(1:16), by=join_by(sim==i)) |>
+    inner_join(sim.i |> select(1:20), by=join_by(sim==i)) |>
     mutate(mortSal_fn=as.numeric(mortSal_fn=="logistic"),
            eggTemp_fn=as.numeric(eggTemp_fn=="logistic"),
            passiveSinkRateSal=as.numeric(passiveSinkRateSal),
@@ -74,7 +74,7 @@ run_sensitivity_ML <- function(outcome_names, sum_df, sim.i, method="rf") {
       ~sum_df |>
         rename(outcome=.x) |>
         mutate(outcome=outcome^0.25) |>
-        select(outcome, any_of(names(sim.i)[1:15])) |>
+        select(outcome, any_of(names(sim.i)[1:19])) |>
         drop_na())
   if(method=="rf") {
     map(df_ls, ~randomForest(outcome ~ ., data=.x, importance=T))
