@@ -1,6 +1,132 @@
 
 
 
+sample_parameter_distributions <- function(n_sim=30, out_dir,
+                                           egg_post=NULL, mort_post=NULL, sink_post=NULL,
+                                           swim_Sigma=diag(1, nrow=4, ncol=4),
+                                           light_Sigma=matrix(c(1, 0.4, 0.4, 1), nrow=2),
+                                           salMax_Sigma=matrix(c(1, 0.4, 0.4, 1), nrow=2),
+                                           salSpan_Sigma=matrix(c(1, 0.4, 0.4, 1), nrow=2)
+                                           ) {
+  swim_mx <- MASS::mvrnorm(n_sim, c(0, 0, 0, 0), swim_Sigma)
+  light_mx <- MASS::mvrnorm(n_sim, c(0,0), light_Sigma)
+  salMax_mx <- MASS::mvrnorm(n_sim, c(0,0), salMax_Sigma)
+  salSpan_mx <- MASS::mvrnorm(n_sim, c(0,0), salSpan_Sigma)
+
+  # Define minimum and maximum for each parameter
+  bounds <- list(
+    variableDh=c("false"),
+    variableDhV=c("false"),
+    D_h=c(1e-4, 1e1),
+    D_hVert=c(1e-6, 1e0),
+    mortSal_fn=c("constant", "logistic"),
+    eggTemp_fn=c("constant", "logistic"),
+    lightN=c(0.05, 0.5),
+    lightC=c(2e-6, 2e-4),
+    swimUpN=c(0.05, 5)*1e-3, # mm/s -> m/s
+    swimDownN=c(0.005, 2.5)*1e-3, # mm/s -> m/s
+    swimUpC=c(0.1, 10)*1e-3, # mm/s -> m/s
+    swimDownC=c(0.01, 5)*1e-3, # mm/s -> m/s
+    passiveSinkSal=c(T, F),
+    salThreshMaxN=c(20, 32),
+    salThreshSpanN=c(0, 15),
+    salThreshMaxC=c(20, 32),
+    salThreshSpanC=c(0, 15),
+    viableDD=c(30, 50),
+    maxDepth=c(10, 300),
+    connectRadius=c(30, 100)
+  )
+
+  # Several parameters are sampled on a transformed scale. This is to counteract
+  # the over-representation of larger values (and lack of resolution among low
+  # values) when the plausible range spans orders of magnitude.
+  sim.i <- tibble(
+    variableDh=bounds$variableDh |>
+      sample(n_sim, replace=T),
+    variableDhV=bounds$variableDhV |>
+      sample(n_sim, replace=T),
+    # Diffusion coefficients: sample on a log scale
+    D_h=log(bounds$D_h) |>
+      runif_minmax(n_sim) |>
+      exp(),
+    D_hVert=log(bounds$D_hVert) |>
+      runif_minmax(n_sim) |>
+      exp(),
+    # Mortality function
+    mortSal_fn=bounds$mortSal_fn |>
+      sample(n_sim, replace=T),
+    # Egg production function
+    eggTemp_fn=bounds$eggTemp_fn |>
+      sample(n_sim, replace=T),
+    # Light responses: sample on a sqrt scale
+    lightThreshNauplius=sqrt(bounds$lightN) |>
+      qunif_minmax(pnorm(light_mx[,1])) |>
+      pow(2),
+    lightThreshCopepodid=sqrt(bounds$lightC) |>
+      qunif_minmax(pnorm(light_mx[,2])) |>
+      pow(2),
+    # Swim speeds: sample on a sqrt scale
+    swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
+      qunif_minmax(pnorm(swim_mx[,1])) |>
+      pow(2) |>
+      multiply(-1),
+    swimDownSpeedNaupliusMean=sqrt(bounds$swimDownN) |>
+      qunif_minmax(pnorm(swim_mx[,2])) |>
+      pow(2),
+    swimUpSpeedCopepodidMean=sqrt(bounds$swimUpC) |>
+      qunif_minmax(pnorm(swim_mx[,3])) |>
+      pow(2) |>
+      multiply(-1),
+    swimDownSpeedCopepodidMean=sqrt(bounds$swimDownC) |>
+      qunif_minmax(pnorm(swim_mx[,4])) |>
+      pow(2),
+    # Sink rate: salinity-dependent or defined by swimDownSpeed ?
+    passiveSinkRateSal=bounds$passiveSinkSal |>
+      sample(n_sim, replace=T),
+    # Salinity thresholds: define max, then define psu span of 0-100% sinking
+    salinityThreshNaupliusMax=bounds$salThreshMaxN |>
+      qunif_minmax(pnorm(salMax_mx[,1])),
+    salinityThreshNaupliusMin=salinityThreshNaupliusMax -
+      (bounds$salThreshSpanN |>
+         qunif_minmax(pnorm(salSpan_mx[,1]))),
+    salinityThreshCopepodidMax=bounds$salThreshMaxC |>
+      qunif_minmax(pnorm(salMax_mx[,2])),
+    salinityThreshCopepodidMin=salinityThreshCopepodidMax -
+      (bounds$salThreshSpanC |>
+         qunif_minmax(pnorm(salSpan_mx[,2]))),
+    # Degree days for transition to copepodid
+    viableDegreeDays=bounds$viableDD |>
+      runif_minmax(n_sim),
+    # Maximum preferred depth: sample on a log scale
+    maxDepth=log(bounds$maxDepth) |>
+      runif_minmax(n_sim) |>
+      exp(),
+    # Connectivity radius around pens
+    connectivityThresh=bounds$connectRadius |>
+      runif_minmax(n_sim)
+  )  |>
+    rowwise() |>
+    mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
+           mortSal_b=sample(mort_post[[mortSal_fn]], 1)) |>
+    ungroup()
+  # Add posterior samples from sink rate regression
+  if(is.null(sink_post)) {
+    sim.i <- sim.i |>
+      mutate(passiveSinkInt=swimDownSpeedNaupliusMean,
+             passiveSinkSlope=0)
+  } else {
+    sim.i <- sim.i |>
+      mutate(passiveSinkInt=sample(sink_post$Intercept, n_sim, replace=T),
+             passiveSinkSlope=sample(sink_post$slope, n_sim, replace=T))
+  }
+  sim.i <- sim.i |>
+    mutate(across(where(is.numeric), ~signif(.x, 5))) |>
+    mutate(i=str_pad(row_number(), 4, "left", "0"),
+           outDir=glue("{out_dir}/sim_{i}/"))
+  return(sim.i)
+}
+
+
 
 
 calc_daily_fluxes <- function(c_long, site_areas) {
@@ -60,7 +186,8 @@ calc_sensitivity_outcomes <- function(c_daily, sim) {
 make_sensitivity_sum_df <- function(sum_ls, sim.i) {
   sum_ls |>
     reduce(bind_rows) |>
-    inner_join(sim.i |> select(1:20), by=join_by(sim==i)) |>
+    inner_join(sim.i |> select(-ends_with("_b"), -passiveSinkInt, -passiveSinkSlope, -outDir),
+               by=join_by(sim==i)) |>
     mutate(mortSal_fn=as.numeric(mortSal_fn=="logistic"),
            eggTemp_fn=as.numeric(eggTemp_fn=="logistic"),
            passiveSinkRateSal=as.numeric(passiveSinkRateSal),

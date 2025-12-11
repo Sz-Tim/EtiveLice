@@ -89,7 +89,8 @@ sites_validation <- sites.i |>
   slice_min(dist, by=mssID) |>
   select(sepaSite, mssID, easting, northing, geometry)
 
-out.df <- read_csv("data/lice_biomass_2017-01-01_2024-12-31.csv") |>
+
+out.df <- read_csv("../sealice_ensembling/data/lice_biomass_2017-01-01_2024-12-31.csv") |>
   left_join(sepa.locs |> select(sepaSite, maximumBiomassAllowedTonnes)) |>
   mutate(total_AF=weeklyAverageAf * maximumBiomassAllowedTonnes *
            (actualBiomassOnSiteTonnes > (0.2*maximumBiomassAllowedTonnes)) * 240)
@@ -97,6 +98,7 @@ out.df <- read_csv("data/lice_biomass_2017-01-01_2024-12-31.csv") |>
 
 # save output -------------------------------------------------------------
 
+GSA_farms <- st_read("data/sensitivity_farms.gpkg")$SEPA.Site
 linnhe_farms <- c("APT1", "ARDG1", "CALL1", "FFMC19", "FFMC20", "FFMC27",
                   "FFMC32", "FFMC40A", "FFMC40B", "FFMC41", "FFMC56", "FFMC60",
                   "FFMC84", "GORS1", "KING1", "SAR1", "SHUI1")
@@ -104,6 +106,10 @@ out.df |>
   filter(sepaSite %in% linnhe_farms) |>
   select(sepaSite, date, weeklyAverageAf, actualBiomassOnSiteTonnes, maximumBiomassAllowedTonnes, total_AF) |>
   write_csv(glue("data/lice_biomass_{min(out.df$date)}_{max(out.df$date)}.csv"))
+out.df |>
+  filter(sepaSite %in% GSA_farms) |>
+  select(sepaSite, date, weeklyAverageAf, actualBiomassOnSiteTonnes, maximumBiomassAllowedTonnes, total_AF) |>
+  write_csv(glue("data/lice_biomass_GSA_{min(out.df$date)}_{max(out.df$date)}.csv"))
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
   filter(date >= "2021-04-01") |>
@@ -122,6 +128,15 @@ out.df |>
   summarise() |>
   left_join(sites.i |> st_drop_geometry() |> select(sepaSite, easting, northing)) |>
   write_csv("data/farm_sites_2023-2024.csv")
+out.df |>
+  filter(sepaSite %in% GSA_farms) |>
+  filter(date >= "2023-01-01") |>
+  filter(date <= "2024-12-31") |>
+  group_by(sepaSite) |>
+  filter(any(actualBiomassOnSiteTonnes > 0)) |>
+  summarise() |>
+  left_join(sites.i |> st_drop_geometry() |> select(sepaSite, easting, northing)) |>
+  write_csv("data/farm_sites_GSA_2023-2024.csv")
 
 pen_df |>
   filter(sepaSite %in% read_csv("data/farm_sites_2023-2024.csv")$sepaSite) |>
@@ -179,6 +194,21 @@ out.df |>
   write_csv("data/lice_daily_2023-01-01_2024-12-31_FARMS.csv")
 
 out.df |>
+  filter(sepaSite %in% GSA_farms) |>
+  filter(date >= "2023-01-01") |>
+  filter(date <= "2024-12-31") |>
+  group_by(sepaSite) |>
+  mutate(actualBiomassOnSiteTonnes=first(actualBiomassOnSiteTonnes)) |>
+  ungroup() |>
+  mutate(total_AF=actualBiomassOnSiteTonnes * weeklyAverageAf * 240,
+         date.c=str_remove_all(date, "-")) |>
+  select(sepaSite, date.c, total_AF) |>
+  pivot_wider(names_from=date.c, values_from=total_AF) |>
+  filter(sepaSite %in% read_csv("data/farm_sites_GSA_2023-2024.csv")$sepaSite) |>
+  mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
+  write_csv("data/lice_daily_2023-01-01_2024-12-31_GSA.csv")
+
+out.df |>
   filter(sepaSite %in% linnhe_farms) |>
   filter(date >= "2021-04-01") |>
   filter(date <= "2024-12-31") |>
@@ -207,7 +237,8 @@ out.df |>
 library(brms)
 theme_set(theme_bw())
 
-## EGG PRODUCTION
+# . egg production --------------------------------------------------------
+
 # Scottish data + biotracker assume eggs/day/AF, NOT eggs/day/Gravid!
 # egg_df is adjusted to assume 82.6% of adult females are gravid based on
 # average development times in Toorians & Adams 2020 (35d: AF, 55-150d: Gravid)
@@ -259,11 +290,6 @@ as_draws_df(egg_temp_quadratic) |>
   select(a, b) |>
   write_csv("data/lit/fit/egg_temp_quadratic_post.csv")
 
-
-
-
-
-
 egg_post <- read_csv("data/lit/fit/egg_temp_logistic_post.csv")
 temp_seq <- seq(3, 20, by=0.1)
 plot(NA, NA, xlim=c(3, 20), ylim=c(0, 100),
@@ -302,7 +328,8 @@ abline(h=28.2, lty=3)
 
 
 
-## MORTALITY
+# . mortality -------------------------------------------------------------
+
 # assume survival times follow an exponential distribution
 # hazard rate = hourly mortality rate = ln(2)/LT50
 # sal = 5, 9, 12 are listed as LT50: <1h
@@ -333,10 +360,6 @@ as_draws_df(mort_sal_logistic) |>
   select(mortMax, k, salMid, mortMin) |>
   write_csv("data/lit/fit/mort_sal_logistic_post.csv")
 
-
-
-
-
 mort_post <- read_csv("data/lit/fit/mort_sal_logistic_post.csv")
 sal_seq <- seq(5, 35, by=0.1)
 
@@ -351,3 +374,45 @@ points(sal_df$salinity, sal_df$mort_h, col="blue")
 
 
 
+
+# . sinking ---------------------------------------------------------------
+
+# based on estimated digitized Fig. 3 from Bricknell et al., 2006
+# N = 25
+# sinking rate of anesthetized copepodids (mm/s)
+# No apparent difference between 0.6 and 9.9 psu, but pretty linear otherwise
+
+sink_df <- tibble(sal=c(0.6, 9.9, 17.9, 27, 35),
+                  mn=c(1.371, 1.367, 1.208, 1.060, 0.933),
+                  hi=c(1.402, 1.430, 1.268, 1.120, 0.990)) |>
+  mutate(se=hi-mn,
+         sd=se*sqrt(25)) |>
+  mutate(obs_sim=map2(mn, sd, ~rnorm(25, .x, .y))) |>
+  unnest(obs_sim)
+ggplot(sink_df, aes(sal, obs_sim)) + geom_point(shape=1) + stat_smooth(method="lm")
+
+sink_dat <- sink_df |> filter(sal > 5)
+
+ggplot(sink_dat, aes(sal, obs_sim)) + geom_point(shape=1) + stat_smooth(method="lm") +
+  geom_pointrange(aes(y=mn, ymin=mn-se, ymax=mn+se), colour="red")
+
+sink_out <- brm(obs_sim ~ sal, data=sink_dat)
+
+sink_out |> saveRDS("data/lit/fit/sink_sal_linear_brmsfit.rds")
+as_draws_df(sink_out) |>
+  select(b_Intercept, b_sal) |>
+  rename(Intercept=b_Intercept,
+         slope=b_sal) |>
+  write_csv("data/lit/fit/sink_sal_linear_post.csv")
+
+sink_post <- read_csv("data/lit/fit/sink_sal_linear_post.csv")
+sal_seq <- seq(5, 35, by=0.1)
+
+plot(NA, NA, xlim=c(5, 35), ylim=c(0, 3),
+     xlab="Salinity", ylab="Sink rate (mm/s)")
+for(i in 1:300) {
+  lines(sal_seq, sink_post$slope[i] * sal_seq + sink_post$Intercept[i], col=rgb(0,0,0,0.1))
+}
+lines(sal_seq, median(sink_post$slope) * sal_seq + median(sink_post$Intercept), col="red", lwd=2)
+lines(sal_seq, mean(sink_post$slope) * sal_seq + mean(sink_post$Intercept), col="red3", lwd=2)
+points(sink_dat$sal, sink_dat$obs_sim, col="blue")

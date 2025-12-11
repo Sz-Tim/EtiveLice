@@ -20,8 +20,8 @@ set.seed(1003)
 
 cores_per_sim <- 25
 parallel_sims <- 5
-start_date <- "2023-01-05"
-end_date <- "2024-01-05"
+start_date <- "2023-01-01"
+end_date <- "2024-01-01"
 nDays <- length(seq(ymd(start_date), ymd(end_date), by=1))
 
 os <- get_os()
@@ -43,6 +43,7 @@ dirs <- switch(
                out=glue("D:/EtiveLice/out/sensitivity"))
 )
 
+n_sim <- 5
 post_dir <- glue("{dirs$proj}/data/lit/fit")
 egg_post <- list(constant=tibble(b=rnorm(4000, 28.2, 2)),
                  logistic=read_csv(glue("{post_dir}/egg_temp_logistic_post.csv"), show_col_types=F),
@@ -55,41 +56,9 @@ mort_post <- list(constant=tibble(b=plogis(rnorm(4000, qlogis(0.01), 0.25))),
   map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
         unite("all", everything(), sep=",") %>%
         .$all)
-n_sim <- 1000
-swim_mx <- MASS::mvrnorm(n_sim, c(0, 0, 0, 0),
-                         cbind(c(1, 0.6, 0.4, 0.4), c(0.6, 1, 0.4, 0.4),
-                               c(0.4, 0.4, 1, 0.6), c(0.4, 0.4, 0.6, 1)))
-light_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.4, 0.4, 1), nrow=2))
-salMin_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.4, 0.4, 1), nrow=2))
-salMax_mx <- MASS::mvrnorm(n_sim, c(0,0), matrix(c(1, 0.4, 0.4, 1), nrow=2))
-sim.i <- tibble(
-  D_h=exp(runif(n_sim, log(1e-4), log(10))),
-  D_hVert=exp(runif(n_sim, log(1e-6), log(1))),
-  stokesDrift=sample(c("true", "false"), n_sim, replace=T),
-  mortSal_fn=sample(c("constant", "logistic"), n_sim, replace=T),
-  eggTemp_fn=sample(c("constant", "logistic"), n_sim, replace=T),
-  lightThreshCopepodid=qunif(pnorm(light_mx[,1]), (2e-6)^0.5, (2e-4)^0.5)^2,
-  lightThreshNauplius=qunif(pnorm(light_mx[,2]), (0.05)^0.5, (0.5)^0.5)^2,
-  swimUpSpeedCopepodidMean=-(qunif(pnorm(swim_mx[,1]), (1e-4)^0.5, (1e-2)^0.5))^2,
-  swimDownSpeedCopepodidMean=(qunif(pnorm(swim_mx[,2]), (1e-5)^0.5, (0.5e-2)^0.5))^2,
-  swimUpSpeedNaupliusMean=-(qunif(pnorm(swim_mx[,3]), (0.5e-4)^0.5, (0.5e-2)^0.5))^2,
-  swimDownSpeedNaupliusMean=(qunif(pnorm(swim_mx[,4]), (0.5e-5)^0.5, (0.25e-2)^0.5))^2,
-  passiveSinkRateSal=sample(c(T, F), n_sim, replace=T),
-  salinityThreshCopepodidMin=qunif(pnorm(salMin_mx[,1]), 20, 29),
-  salinityThreshNaupliusMin=qunif(pnorm(salMin_mx[,2]), 20, 29),
-  salinityThreshCopepodidMax=pmin(salinityThreshCopepodidMin + qunif(pnorm(salMax_mx[,1]), 0.1, 6), 32),
-  salinityThreshNaupliusMax=pmin(salinityThreshNaupliusMin + qunif(pnorm(salMax_mx[,2]), 0.1, 6), 32),
-  viableDegreeDays=runif(n_sim, 30, 50),
-  maxDepth=runif(n_sim, 25, 100) + sample(c(0, 1000), n_sim, replace=T),
-  connectivityThresh=runif(n_sim, 30, 200)
-) |>
-  mutate(across(where(is.numeric), ~signif(.x, 5))) |>
-  mutate(i=str_pad(row_number(), 4, "left", "0"),
-         outDir=glue("{dirs$out}/sim_{i}/")) |>
-  rowwise() |>
-  mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
-         mortSal_b=sample(mort_post[[mortSal_fn]], 1)) |>
-  ungroup()
+sink_post <- read_csv(glue("{post_dir}/sink_sal_linear_post.csv"), show_col_types=F) |>
+  mutate(across(everything(), ~.x/1e3)) #mm/s to m/s
+sim.i <- sample_parameter_distributions(n_sim, dirs$out, egg_post, mort_post, sink_post)
 write_csv(sim.i, glue("{dirs$out}/sim_i.csv"))
 sim_seq <- 1:nrow(sim.i)
 sim_seq <- sim_seq
@@ -113,19 +82,21 @@ walk(sim_seq,
        mesh0=glue("{dirs$mesh}/WeStCOMS2_mesh.nc"),
        hfDir0=glue("{dirs$hf0}/"),
        hfFilePrefix0="westcoms2",
-       hfDir2=glue("{dirs$hf2}/"),
-       hfFilePrefix2="swan",
-       hfDirPrefix2="netcdf_",
-       hfDirSuffix2="F",
+       hfDir2="",
+       hfFilePrefix2="",
+       hfDirPrefix2="",
+       hfDirSuffix2="",
        # sites
-       sitefile=glue("{dirs$proj}/data/farm_sites_2023.csv"),
-       sitefileEnd=glue("{dirs$proj}/data/farm_sites_2023.csv"),
-       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2023-01-05_2024-12-31_FARMS.csv"),
+       sitefile=glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"),
+       sitefileEnd=glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"),
+       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2023-01-01_2024-12-31_GSA.csv"),
        # dynamics
+       variableDh=sim.i$variableDh[.x],
+       variableDhV=sim.i$variableDhV[.x],
        D_h=sim.i$D_h[.x],
        D_hVert=sim.i$D_hVert[.x],
        stepsPerStep=30,
-       stokesDrift=sim.i$stokesDrift[.x],
+       stokesDrift="false",
        # biology
        fixDepth="false",
        startDepth=3,
@@ -148,8 +119,8 @@ walk(sim_seq,
        swimUpSpeedNaupliusStd=abs(sim.i$swimUpSpeedNaupliusMean[.x]/5),
        swimDownSpeedNaupliusMean=sim.i$swimDownSpeedNaupliusMean[.x],
        swimDownSpeedNaupliusStd=sim.i$swimDownSpeedNaupliusMean[.x]/5,
-       passiveSinkingIntercept=if_else(sim.i$passiveSinkRateSal[.x], 0.001527, sim.i$swimDownSpeedNaupliusMean[.x]),
-       passiveSinkingSlope=if_else(sim.i$passiveSinkRateSal[.x], -1.68e-5, 0),
+       passiveSinkingIntercept=sim.i$passiveSinkInt[.x],
+       passiveSinkingSlope=sim.i$passiveSinkSlope[.x],
        viableDegreeDays=sim.i$viableDegreeDays[.x],
        connectivityThresh=sim.i$connectivityThresh[.x],
        # recording
@@ -194,21 +165,21 @@ plan(sequential)
 
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
 farms_linnhe <- read_csv(glue("{dirs$proj}/data/farm_sites_2023.csv"))
+farms_GSA <- read_csv(glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"))
 farms_etive <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
 
 # Influx
 mesh_fp <- st_read(glue("{dirs$mesh}/WeStCOMS2_meshFootprint.gpkg"))
 sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
 c_0_5_summary <- c_5_15_summary <- c_15_30_summary <- c_0_30_summary <- vector("list", length(sim_dirs))
-c_0_5_etive <- c_5_15_etive <- c_15_30_etive <- c_0_30_etive <- vector("list", length(sim_dirs))
+c_0_5_farm <- c_5_15_farm <- c_15_30_farm <- c_0_30_farm <- vector("list", length(sim_dirs))
 
 for(i in 1:length(sim_dirs)) {
-# for(i in 1:40) {
   f_0_5 <- dirrf(sim_dirs[i], "connectivity_0.0-5.0.*csv")
   f_5_15 <- dirrf(sim_dirs[i], "connectivity_5.0-15.0.*csv")
   f_15_30 <- dirrf(sim_dirs[i], "connectivity_15.0-30.0.*csv")
   sim <- str_sub(sim_dirs[i], -4, -1)
-  site_areas <- farms_linnhe |>
+  site_areas <- farms_GSA |>
     st_as_sf(coords=c("easting", "northing"), crs=27700) |>
     st_buffer(dist=sim.i$connectivityThresh[i]) |>
     st_intersection(mesh_fp) %>%
@@ -217,42 +188,39 @@ for(i in 1:length(sim_dirs)) {
   if(length(f_0_5) > 0) {
     c_0_5_i <- f_0_5 |>
       map_dfr(~load_connectivity(.x,
-                                 source_names=farms_linnhe$sepaSite,
-                                 dest_names=farms_linnhe$sepaSite,
+                                 source_names=farms_GSA$sepaSite,
+                                 dest_names=farms_GSA$sepaSite,
                                  liceScale=1) |>
                 mutate(sim=sim))
     c_0_5_i_daily <- calc_daily_fluxes(c_0_5_i, site_areas)
     c_0_5_summary[[i]] <- c_0_5_i_daily |> calc_sensitivity_outcomes(sim)
-    c_0_5_etive[[i]] <- c_0_5_i_daily |>
-      filter(sepaSite %in% farms_etive) |>
+    c_0_5_farm[[i]] <- c_0_5_i_daily |>
       group_by(sepaSite) |>
       calc_sensitivity_outcomes(sim)
   }
   if(length(f_5_15) > 0) {
     c_5_15_i <- f_5_15 |>
       map_dfr(~load_connectivity(.x,
-                                 source_names=farms_linnhe$sepaSite,
-                                 dest_names=farms_linnhe$sepaSite,
+                                 source_names=farms_GSA$sepaSite,
+                                 dest_names=farms_GSA$sepaSite,
                                  liceScale=1) |>
                 mutate(sim=sim))
     c_5_15_i_daily <- calc_daily_fluxes(c_5_15_i, site_areas)
     c_5_15_summary[[i]] <- c_5_15_i_daily |> calc_sensitivity_outcomes(sim)
-    c_5_15_etive[[i]] <- c_5_15_i_daily |>
-      filter(sepaSite %in% farms_etive) |>
+    c_5_15_farm[[i]] <- c_5_15_i_daily |>
       group_by(sepaSite) |>
       calc_sensitivity_outcomes(sim)
   }
   if(length(f_15_30) > 0) {
     c_15_30_i <- f_15_30 |>
       map_dfr(~load_connectivity(.x,
-                                 source_names=farms_linnhe$sepaSite,
-                                 dest_names=farms_linnhe$sepaSite,
+                                 source_names=farms_GSA$sepaSite,
+                                 dest_names=farms_GSA$sepaSite,
                                  liceScale=1) |>
                 mutate(sim=sim))
     c_15_30_i_daily <- calc_daily_fluxes(c_15_30_i, site_areas)
     c_15_30_summary[[i]] <- c_15_30_i_daily |> calc_sensitivity_outcomes(sim)
-    c_15_30_etive[[i]] <- c_15_30_i_daily |>
-      filter(sepaSite %in% farms_etive) |>
+    c_15_30_farm[[i]] <- c_15_30_i_daily |>
       group_by(sepaSite) |>
       calc_sensitivity_outcomes(sim)
   }
@@ -262,8 +230,7 @@ for(i in 1:length(sim_dirs)) {
       summarise(value=sum(value))
     c_0_30_i_daily <- calc_daily_fluxes(c_0_30_i, site_areas)
     c_0_30_summary[[i]] <- c_0_30_i_daily |> calc_sensitivity_outcomes(sim)
-    c_0_30_etive[[i]] <- c_0_30_i_daily |>
-      filter(sepaSite %in% farms_etive) |>
+    c_0_30_farm[[i]] <- c_0_30_i_daily |>
       group_by(sepaSite) |>
       calc_sensitivity_outcomes(sim)
   }
@@ -282,54 +249,64 @@ saveRDS(c_15_30_sum_df, "out/sensitivity/processed/c_15_30_sum_df.rds")
 c_0_30_sum_df <- make_sensitivity_sum_df(c_0_30_summary, sim.i)
 saveRDS(c_0_30_sum_df, "out/sensitivity/processed/c_0_30_sum_df.rds")
 
-c_0_5_sum_etive_df <- make_sensitivity_sum_df(c_0_5_etive, sim.i)
-saveRDS(c_0_5_sum_etive_df, "out/sensitivity/processed/c_0_5_sum_etive_df.rds")
+c_0_5_sum_farm_df <- make_sensitivity_sum_df(c_0_5_farm, sim.i)
+saveRDS(c_0_5_sum_farm_df, "out/sensitivity/processed/c_0_5_sum_farm_df.rds")
 
-c_5_15_sum_etive_df <- make_sensitivity_sum_df(c_5_15_etive, sim.i)
-saveRDS(c_5_15_sum_etive_df, "out/sensitivity/processed/c_5_15_sum_etive_df.rds")
+c_5_15_sum_farm_df <- make_sensitivity_sum_df(c_5_15_farm, sim.i)
+saveRDS(c_5_15_sum_farm_df, "out/sensitivity/processed/c_5_15_sum_farm_df.rds")
 
-c_15_30_sum_etive_df <- make_sensitivity_sum_df(c_15_30_etive, sim.i)
-saveRDS(c_15_30_sum_etive_df, "out/sensitivity/processed/c_15_30_sum_etive_df.rds")
+c_15_30_sum_farm_df <- make_sensitivity_sum_df(c_15_30_farm, sim.i)
+saveRDS(c_15_30_sum_farm_df, "out/sensitivity/processed/c_15_30_sum_farm_df.rds")
 
-c_0_30_sum_etive_df <- make_sensitivity_sum_df(c_0_30_etive, sim.i)
-saveRDS(c_0_30_sum_etive_df, "out/sensitivity/processed/c_0_30_sum_etive_df.rds")
+c_0_30_sum_farm_df <- make_sensitivity_sum_df(c_0_30_farm, sim.i)
+saveRDS(c_0_30_sum_farm_df, "out/sensitivity/processed/c_0_30_sum_farm_df.rds")
 
 
 
 
 # plots -------------------------------------------------------------------
 
-logCols <- c("D_h", "D_hVert")
+logCols <- c("D_h", "D_hVert", "maxDepth")
 rtCols <- c("lightThreshCopepodid", "lightThreshNauplius",
             "swimDownSpeedCopepodidMean", "swimDownSpeedNaupliusMean",
             "swimUpSpeedCopepodidMean", "swimUpSpeedNaupliusMean")
 
 c_0_5_sum_df <- readRDS("out/sensitivity/processed/c_0_5_sum_df.rds") |>
-  mutate(maxDepth=pmin(maxDepth, 200),
-         across(all_of(logCols), log),
+  mutate(across(all_of(logCols), log),
          across(all_of(rtCols), sqrt))
 c_5_15_sum_df <- readRDS("out/sensitivity/processed/c_5_15_sum_df.rds") |>
-  mutate(maxDepth=pmin(maxDepth, 200),
-         across(all_of(logCols), log),
+  mutate(across(all_of(logCols), log),
          across(all_of(rtCols), sqrt))
 c_15_30_sum_df <- readRDS("out/sensitivity/processed/c_15_30_sum_df.rds") |>
-  mutate(maxDepth=pmin(maxDepth, 200),
-         across(all_of(logCols), log),
+  mutate(across(all_of(logCols), log),
          across(all_of(rtCols), sqrt))
 c_0_30_sum_df <- readRDS("out/sensitivity/processed/c_0_30_sum_df.rds") |>
-  mutate(maxDepth=pmin(maxDepth, 200),
-         across(all_of(logCols), log),
+  mutate(across(all_of(logCols), log),
          across(all_of(rtCols), sqrt))
 
+c_0_5_sum_farm_df <- readRDS("out/sensitivity/processed/c_0_5_sum_farm_df.rds") |>
+  mutate(across(all_of(logCols), log),
+         across(all_of(rtCols), sqrt))
+c_5_15_sum_farm_df <- readRDS("out/sensitivity/processed/c_5_15_sum_farm_df.rds") |>
+  mutate(across(all_of(logCols), log),
+         across(all_of(rtCols), sqrt))
+c_15_30_sum_farm_df <- readRDS("out/sensitivity/processed/c_15_30_sum_farm_df.rds") |>
+  mutate(across(all_of(logCols), log),
+         across(all_of(rtCols), sqrt))
+c_0_30_sum_farm_df <- readRDS("out/sensitivity/processed/c_0_30_sum_farm_df.rds") |>
+  mutate(across(all_of(logCols), log),
+         across(all_of(rtCols), sqrt))
+
+
 outcome_names <- grep("^N_|_m2", names(c_0_5_sum_df), value=T)
-param_names <- names(sim.i)[1:19]
+param_names <- names(sim.i)[3:20]
 
 
 c_0_5_sum_df |>
   pivot_longer(any_of(param_names)) |>
   ggplot(aes(value, influx_m2_MAM_md^0.25)) +
   geom_point(shape=1, alpha=0.5) +
-  geom_smooth(method="loess", se=F) +
+  # geom_smooth(method="loess", se=F) +
   facet_wrap(~name, scales="free_x")
 c_5_15_sum_df |>
   pivot_longer(any_of(param_names)) |>
@@ -350,45 +327,47 @@ c_0_30_sum_df |>
   # geom_smooth(method="loess", se=F) +
   facet_wrap(~name, scales="free_x")
 
-
-c_0_5_sum_etive_df |>
-  mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+# How does relative importance vary among farms?
+# Make maps
+# What location-level characteristics might explain the variation?
+c_0_5_sum_farm_df |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+  pivot_longer(any_of(param_names)) |>
+  ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
+  geom_point(shape=1, alpha=0.5) +
+  # geom_smooth(method="loess", se=F) +
+  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
+  facet_wrap(~name, scales="free_x")
+c_5_15_sum_farm_df |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+  pivot_longer(any_of(param_names)) |>
+  ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
+  geom_point(shape=1, alpha=0.5) +
+  # geom_smooth(method="loess", se=F) +
+  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
+  facet_wrap(~name, scales="free_x")
+c_5_15_sum_farm_df |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
   pivot_longer(any_of(param_names)) |>
   ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
   geom_point(shape=1, alpha=0.5) +
   geom_smooth(method="loess", se=F) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
   facet_wrap(~name, scales="free_x")
-c_5_15_sum_etive_df |>
-  mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+c_15_30_sum_farm_df |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
   pivot_longer(any_of(param_names)) |>
   ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
   geom_point(shape=1, alpha=0.5) +
   geom_smooth(method="loess", se=F) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
   facet_wrap(~name, scales="free_x")
-c_5_15_sum_etive_df |>
-  mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+c_0_30_sum_farm_df |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
   pivot_longer(any_of(param_names)) |>
   ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
   geom_point(shape=1, alpha=0.5) +
-  geom_smooth(method="loess", se=F) +
-  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
-  facet_wrap(~name, scales="free_x")
-c_15_30_sum_etive_df |>
-  mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
-  pivot_longer(any_of(param_names)) |>
-  ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
-  geom_point(shape=1, alpha=0.5) +
-  geom_smooth(method="loess", se=F) +
-  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
-  facet_wrap(~name, scales="free_x")
-c_0_30_sum_etive_df |>
-  mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
-  pivot_longer(any_of(param_names)) |>
-  ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
-  geom_point(shape=1, alpha=0.5) +
-  geom_smooth(method="loess", se=F) +
+  # geom_smooth(method="loess", se=F) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
   facet_wrap(~name, scales="free_x")
 
@@ -571,7 +550,7 @@ importance_df |>
   geom_boxplot() +
   scale_fill_manual(values=c("#FDE725FF", "#21908CFF", "#440154FF", "grey80")) +
   scale_x_discrete(labels=label_wrap_gen(23)) +
-  labs(x="Parameter", y="Relative importance") +
+  labs(x="Parameter", y="Relative importance for influx") +
   theme(panel.grid.major.x=element_line(colour="grey90"),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         legend.position="inside",
@@ -584,16 +563,20 @@ importance_df |>
   filter(type=="IP_m2") |>
   left_join(param_df) |>
   mutate(pretty=factor(pretty, levels=importance_avg$pretty)) |>
-  ggplot(aes(pretty, `%IncMSE`, fill=depth)) +
-  geom_boxplot() +
-  scale_fill_manual(values=c("#FDE725FF", "#21908CFF", "#440154FF", "grey80")) +
+  ggplot(aes(pretty, `%IncMSE`, colour=depth, linetype=mn_md, shape=mn_md)) +
+  geom_point() +
+  geom_line(aes(group=paste(depth, mn_md))) +
+  scale_shape_manual(values=c(1, 19)) +
+  scale_linetype_manual(values=c(2, 1)) +
+  scale_colour_manual(values=c("#FDE725FF", "#21908CFF", "#440154FF", "grey")) +
   scale_x_discrete(labels=label_wrap_gen(23)) +
-  labs(x="Parameter", y="Relative importance") +
+  labs(x="Parameter", y="Relative importance for influx") +
   facet_grid(season~.) +
   theme(panel.grid.major.x=element_line(colour="grey90"),
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5),
         legend.position="inside",
-        legend.position.inside=c(0.1, 0.85))
+        legend.position.inside=c(0.1, 0.85),
+        legend.box="horizontal")
 
 
 

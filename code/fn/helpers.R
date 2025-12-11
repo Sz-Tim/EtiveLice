@@ -22,6 +22,26 @@ make_compositional <- function(x, method="softmax") {
 
 
 
+pow <- function(x, y) {
+  x^y
+}
+
+multiply <- function(x, y) {
+  x * y
+}
+
+runif_minmax <- function(minmax, n) {
+  runif(n, minmax[1], minmax[2])
+}
+
+qunif_minmax <- function(minmax, p) {
+  qunif(p, minmax[1], minmax[2])
+}
+
+
+
+
+
 
 
 render_qmd <- function(input_file, output_path, file_ext, ...) {
