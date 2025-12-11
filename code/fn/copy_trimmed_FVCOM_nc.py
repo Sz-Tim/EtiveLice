@@ -15,7 +15,7 @@ def main(args):
     os.makedirs(destination_dir, exist_ok=True)
 
     # List of variables to copy
-    variables_to_copy = ['u', 'v', 'ww', 'temp', 'salinity', 'short_wave']
+    variables_to_copy = ['u', 'v', 'ww', 'temp', 'salinity', 'short_wave', 'kh', 'viscofh']
 
     # Iterate over each file in the source directory
     filenames = os.listdir(source_dir)
