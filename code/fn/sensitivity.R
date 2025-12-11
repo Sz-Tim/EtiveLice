@@ -6,7 +6,8 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
                                            swim_Sigma=diag(1, nrow=4, ncol=4),
                                            light_Sigma=matrix(c(1, 0.4, 0.4, 1), nrow=2),
                                            salMax_Sigma=matrix(c(1, 0.4, 0.4, 1), nrow=2),
-                                           salSpan_Sigma=matrix(c(1, 0.4, 0.4, 1), nrow=2)
+                                           salSpan_Sigma=matrix(c(1, 0.4, 0.4, 1), nrow=2),
+                                           alt_ls=NULL
                                            ) {
   swim_mx <- MASS::mvrnorm(n_sim, c(0, 0, 0, 0), swim_Sigma)
   light_mx <- MASS::mvrnorm(n_sim, c(0,0), light_Sigma)
@@ -15,8 +16,8 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
 
   # Define minimum and maximum for each parameter
   bounds <- list(
-    variableDh=c("false"),
-    variableDhV=c("false"),
+    variableDh=c("true", "false"),
+    variableDhV=c("true", "false"),
     D_h=c(1e-4, 1e1),
     D_hVert=c(1e-6, 1e0),
     mortSal_fn=c("constant", "logistic"),
@@ -36,6 +37,12 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
     maxDepth=c(10, 300),
     connectRadius=c(30, 100)
   )
+  # Replace any defaults
+  if(!is.null(alt_ls)) {
+    for(i in seq_along(alt_ls)) {
+      bounds[[names(alt_ls)[i]]] <- alt_ls[[i]]
+    }
+  }
 
   # Several parameters are sampled on a transformed scale. This is to counteract
   # the over-representation of larger values (and lack of resolution among low
