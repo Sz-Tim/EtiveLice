@@ -2,6 +2,7 @@
 
 
 sample_parameter_distributions <- function(n_sim=30, out_dir,
+                                           mode="random",
                                            egg_post=NULL, mort_post=NULL, sink_post=NULL,
                                            swim_Sigma=diag(1, nrow=4, ncol=4),
                                            light_Sigma=matrix(c(1, 0.4, 0.4, 1), nrow=2),
@@ -44,87 +45,171 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
     }
   }
 
-  # Several parameters are sampled on a transformed scale. This is to counteract
-  # the over-representation of larger values (and lack of resolution among low
-  # values) when the plausible range spans orders of magnitude.
-  sim.i <- tibble(
-    variableDh=bounds$variableDh |>
-      sample(n_sim, replace=T),
-    variableDhV=bounds$variableDhV |>
-      sample(n_sim, replace=T),
-    # Diffusion coefficients: sample on a log scale
-    D_h=log(bounds$D_h) |>
-      runif_minmax(n_sim) |>
-      exp(),
-    D_hVert=log(bounds$D_hVert) |>
-      runif_minmax(n_sim) |>
-      exp(),
-    # Mortality function
-    mortSal_fn=bounds$mortSal_fn |>
-      sample(n_sim, replace=T),
-    # Egg production function
-    eggTemp_fn=bounds$eggTemp_fn |>
-      sample(n_sim, replace=T),
-    # Light responses: sample on a sqrt scale
-    lightThreshNauplius=sqrt(bounds$lightN) |>
-      qunif_minmax(pnorm(light_mx[,1])) |>
-      pow(2),
-    lightThreshCopepodid=sqrt(bounds$lightC) |>
-      qunif_minmax(pnorm(light_mx[,2])) |>
-      pow(2),
-    # Swim speeds: sample on a sqrt scale
-    swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
-      qunif_minmax(pnorm(swim_mx[,1])) |>
-      pow(2) |>
-      multiply(-1),
-    swimDownSpeedNaupliusMean=sqrt(bounds$swimDownN) |>
-      qunif_minmax(pnorm(swim_mx[,2])) |>
-      pow(2),
-    swimUpSpeedCopepodidMean=sqrt(bounds$swimUpC) |>
-      qunif_minmax(pnorm(swim_mx[,3])) |>
-      pow(2) |>
-      multiply(-1),
-    swimDownSpeedCopepodidMean=sqrt(bounds$swimDownC) |>
-      qunif_minmax(pnorm(swim_mx[,4])) |>
-      pow(2),
-    # Sink rate: salinity-dependent or defined by swimDownSpeed ?
-    passiveSinkRateSal=bounds$passiveSinkSal |>
-      sample(n_sim, replace=T),
-    # Salinity thresholds: define max, then define psu span of 0-100% sinking
-    salinityThreshNaupliusMax=bounds$salThreshMaxN |>
-      qunif_minmax(pnorm(salMax_mx[,1])),
-    salinityThreshNaupliusMin=salinityThreshNaupliusMax -
-      (bounds$salThreshSpanN |>
-         qunif_minmax(pnorm(salSpan_mx[,1]))),
-    salinityThreshCopepodidMax=bounds$salThreshMaxC |>
-      qunif_minmax(pnorm(salMax_mx[,2])),
-    salinityThreshCopepodidMin=salinityThreshCopepodidMax -
-      (bounds$salThreshSpanC |>
-         qunif_minmax(pnorm(salSpan_mx[,2]))),
-    # Degree days for transition to copepodid
-    viableDegreeDays=bounds$viableDD |>
-      runif_minmax(n_sim),
-    # Maximum preferred depth: sample on a log scale
-    maxDepth=log(bounds$maxDepth) |>
-      runif_minmax(n_sim) |>
-      exp(),
-    # Connectivity radius around pens
-    connectivityThresh=bounds$connectRadius |>
-      runif_minmax(n_sim)
-  )  |>
-    rowwise() |>
-    mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
-           mortSal_b=sample(mort_post[[mortSal_fn]], 1)) |>
-    ungroup()
-  # Add posterior samples from sink rate regression
-  if(is.null(sink_post)) {
-    sim.i <- sim.i |>
-      mutate(passiveSinkInt=swimDownSpeedNaupliusMean,
-             passiveSinkSlope=0)
-  } else {
-    sim.i <- sim.i |>
-      mutate(passiveSinkInt=sample(sink_post$Intercept, n_sim, replace=T),
-             passiveSinkSlope=sample(sink_post$slope, n_sim, replace=T))
+  if(mode=="lhs") {
+    library(lhs)
+    LHS <- randomLHS(n_sim, length(bounds))
+    # Several parameters are sampled on a transformed scale. This is to counteract
+    # the over-representation of larger values (and lack of resolution among low
+    # values) when the plausible range spans orders of magnitude.
+    sim.i <- tibble(
+      variableDh=bounds$variableDh[qinteger(LHS[,1], 1, 2)],
+      variableDhV=bounds$variableDhV[qinteger(LHS[,2], 1, 2)],
+      # Diffusion coefficients: sample on a log scale
+      D_h=log(bounds$D_h) |>
+        qunif_minmax(LHS[,3]) |>
+        exp(),
+      D_hVert=log(bounds$D_hVert) |>
+        qunif_minmax(LHS[,4]) |>
+        exp(),
+      # Mortality function
+      mortSal_fn=bounds$mortSal_fn[qinteger(LHS[,5], 1, length(bounds$mortSal_fn))],
+      # Egg production function
+      eggTemp_fn=bounds$eggTemp_fn[qinteger(LHS[,6], 1, length(bounds$eggTemp_fn))],
+      # Light responses: sample on a sqrt scale
+      lightThreshNauplius=sqrt(bounds$lightN) |>
+        qunif_minmax(LHS[,7]) |>
+        pow(2),
+      lightThreshCopepodid=sqrt(bounds$lightC) |>
+        qunif_minmax(LHS[,8]) |>
+        pow(2),
+      # Swim speeds: sample on a sqrt scale
+      swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
+        qunif_minmax(LHS[,9]) |>
+        pow(2) |>
+        multiply(-1),
+      swimDownSpeedNaupliusMean=sqrt(bounds$swimDownN) |>
+        qunif_minmax(LHS[,10]) |>
+        pow(2),
+      swimUpSpeedCopepodidMean=sqrt(bounds$swimUpC) |>
+        qunif_minmax(LHS[,11]) |>
+        pow(2) |>
+        multiply(-1),
+      swimDownSpeedCopepodidMean=sqrt(bounds$swimDownC) |>
+        qunif_minmax(LHS[,12]) |>
+        pow(2),
+      # Sink rate: salinity-dependent or defined by swimDownSpeed ?
+      passiveSinkRateSal=bounds$passiveSinkSal[qinteger(LHS[,13], 1, 2)],
+      # Salinity thresholds: define max, then define psu span of 0-100% sinking
+      salinityThreshNaupliusMax=bounds$salThreshMaxN |>
+        qunif_minmax(LHS[,14]),
+      salinityThreshNaupliusMin=salinityThreshNaupliusMax -
+        (bounds$salThreshSpanN |>
+           qunif_minmax(LHS[,15])),
+      salinityThreshCopepodidMax=bounds$salThreshMaxC |>
+        qunif_minmax(LHS[,16]),
+      salinityThreshCopepodidMin=salinityThreshCopepodidMax -
+        (bounds$salThreshSpanC |>
+           qunif_minmax(LHS[,17])),
+      # Degree days for transition to copepodid
+      viableDegreeDays=bounds$viableDD |>
+        qunif_minmax(LHS[,18]),
+      # Maximum preferred depth: sample on a log scale
+      maxDepth=log(bounds$maxDepth) |>
+        qunif_minmax(LHS[,19]) |>
+        exp(),
+      # Connectivity radius around pens
+      connectivityThresh=bounds$connectRadius |>
+        qunif_minmax(LHS[,20])
+    )  |>
+      rowwise() |>
+      mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
+             mortSal_b=sample(mort_post[[mortSal_fn]], 1)) |>
+      ungroup()
+    # Add posterior samples from sink rate regression
+    if(is.null(sink_post)) {
+      sim.i <- sim.i |>
+        mutate(passiveSinkInt=swimDownSpeedNaupliusMean,
+               passiveSinkSlope=0)
+    } else {
+      sim.i <- sim.i |>
+        mutate(passiveSinkInt=sample(sink_post$Intercept, n_sim, replace=T),
+               passiveSinkSlope=sample(sink_post$slope, n_sim, replace=T))
+    }
+  }
+
+  if(mode=="random") {
+    # Several parameters are sampled on a transformed scale. This is to counteract
+    # the over-representation of larger values (and lack of resolution among low
+    # values) when the plausible range spans orders of magnitude.
+    sim.i <- tibble(
+      variableDh=bounds$variableDh |>
+        sample(n_sim, replace=T),
+      variableDhV=bounds$variableDhV |>
+        sample(n_sim, replace=T),
+      # Diffusion coefficients: sample on a log scale
+      D_h=log(bounds$D_h) |>
+        runif_minmax(n_sim) |>
+        exp(),
+      D_hVert=log(bounds$D_hVert) |>
+        runif_minmax(n_sim) |>
+        exp(),
+      # Mortality function
+      mortSal_fn=bounds$mortSal_fn |>
+        sample(n_sim, replace=T),
+      # Egg production function
+      eggTemp_fn=bounds$eggTemp_fn |>
+        sample(n_sim, replace=T),
+      # Light responses: sample on a sqrt scale
+      lightThreshNauplius=sqrt(bounds$lightN) |>
+        qunif_minmax(pnorm(light_mx[,1])) |>
+        pow(2),
+      lightThreshCopepodid=sqrt(bounds$lightC) |>
+        qunif_minmax(pnorm(light_mx[,2])) |>
+        pow(2),
+      # Swim speeds: sample on a sqrt scale
+      swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
+        qunif_minmax(pnorm(swim_mx[,1])) |>
+        pow(2) |>
+        multiply(-1),
+      swimDownSpeedNaupliusMean=sqrt(bounds$swimDownN) |>
+        qunif_minmax(pnorm(swim_mx[,2])) |>
+        pow(2),
+      swimUpSpeedCopepodidMean=sqrt(bounds$swimUpC) |>
+        qunif_minmax(pnorm(swim_mx[,3])) |>
+        pow(2) |>
+        multiply(-1),
+      swimDownSpeedCopepodidMean=sqrt(bounds$swimDownC) |>
+        qunif_minmax(pnorm(swim_mx[,4])) |>
+        pow(2),
+      # Sink rate: salinity-dependent or defined by swimDownSpeed ?
+      passiveSinkRateSal=bounds$passiveSinkSal |>
+        sample(n_sim, replace=T),
+      # Salinity thresholds: define max, then define psu span of 0-100% sinking
+      salinityThreshNaupliusMax=bounds$salThreshMaxN |>
+        qunif_minmax(pnorm(salMax_mx[,1])),
+      salinityThreshNaupliusMin=salinityThreshNaupliusMax -
+        (bounds$salThreshSpanN |>
+           qunif_minmax(pnorm(salSpan_mx[,1]))),
+      salinityThreshCopepodidMax=bounds$salThreshMaxC |>
+        qunif_minmax(pnorm(salMax_mx[,2])),
+      salinityThreshCopepodidMin=salinityThreshCopepodidMax -
+        (bounds$salThreshSpanC |>
+           qunif_minmax(pnorm(salSpan_mx[,2]))),
+      # Degree days for transition to copepodid
+      viableDegreeDays=bounds$viableDD |>
+        runif_minmax(n_sim),
+      # Maximum preferred depth: sample on a log scale
+      maxDepth=log(bounds$maxDepth) |>
+        runif_minmax(n_sim) |>
+        exp(),
+      # Connectivity radius around pens
+      connectivityThresh=bounds$connectRadius |>
+        runif_minmax(n_sim)
+    )  |>
+      rowwise() |>
+      mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
+             mortSal_b=sample(mort_post[[mortSal_fn]], 1)) |>
+      ungroup()
+    # Add posterior samples from sink rate regression
+    if(is.null(sink_post)) {
+      sim.i <- sim.i |>
+        mutate(passiveSinkInt=swimDownSpeedNaupliusMean,
+               passiveSinkSlope=0)
+    } else {
+      sim.i <- sim.i |>
+        mutate(passiveSinkInt=sample(sink_post$Intercept, n_sim, replace=T),
+               passiveSinkSlope=sample(sink_post$slope, n_sim, replace=T))
+    }
   }
   sim.i <- sim.i |>
     mutate(across(where(is.numeric), ~signif(.x, 5))) |>

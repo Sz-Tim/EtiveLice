@@ -19,9 +19,9 @@ set.seed(1003)
 # define parameters -------------------------------------------------------
 
 cores_per_sim <- 25
-parallel_sims <- 5
+parallel_sims <- 6
 start_date <- "2023-01-01"
-end_date <- "2024-01-01"
+end_date <- "2023-12-31"
 nDays <- length(seq(ymd(start_date), ymd(end_date), by=1))
 
 os <- get_os()
@@ -43,7 +43,7 @@ dirs <- switch(
                out=glue("D:/EtiveLice/out/sensitivity"))
 )
 
-n_sim <- 5
+n_sim <- 2000
 post_dir <- glue("{dirs$proj}/data/lit/fit")
 egg_post <- list(constant=tibble(b=rnorm(4000, 28.2, 2)),
                  logistic=read_csv(glue("{post_dir}/egg_temp_logistic_post.csv"), show_col_types=F),
@@ -58,7 +58,7 @@ mort_post <- list(constant=tibble(b=plogis(rnorm(4000, qlogis(0.01), 0.25))),
         .$all)
 sink_post <- read_csv(glue("{post_dir}/sink_sal_linear_post.csv"), show_col_types=F) |>
   mutate(across(everything(), ~.x/1e3)) #mm/s to m/s
-sim.i <- sample_parameter_distributions(n_sim, dirs$out, egg_post, mort_post, sink_post)
+sim.i <- sample_parameter_distributions(n_sim, dirs$out, "lhs", egg_post, mort_post, sink_post)
 write_csv(sim.i, glue("{dirs$out}/sim_i.csv"))
 sim_seq <- 1:nrow(sim.i)
 sim_seq <- sim_seq
