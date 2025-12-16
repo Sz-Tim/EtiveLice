@@ -74,7 +74,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
         qunif_minmax(LHS[,8]) |>
         pow(2),
       # Nauplius only swim up if surface is colder
-      swimColdNaupluis=bounds$coldPrefN[qinteger(LHS[,9], 1, length(bounds$mortSal_fn))],
+      swimColdNauplius=bounds$coldPrefN[qinteger(LHS[,9], 1, length(bounds$coldPrefN))],
       # Swim speeds: sample on a sqrt scale
       swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
         qunif_minmax(LHS[,10]) |>
