@@ -25,6 +25,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
     eggTemp_fn=c("constant", "logistic"),
     lightN=c(0.05, 0.5),
     lightC=c(2e-6, 2e-4),
+    coldPrefN=c("true", "false"),
     swimUpN=c(0.05, 5)*1e-3, # mm/s -> m/s
     swimDownN=c(0.005, 2.5)*1e-3, # mm/s -> m/s
     swimUpC=c(0.1, 10)*1e-3, # mm/s -> m/s
@@ -34,7 +35,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
     salThreshSpanN=c(0, 15),
     salThreshMaxC=c(20, 32),
     salThreshSpanC=c(0, 15),
-    viableDD=c(30, 50),
+    viableDD=c(30, 55),
     maxDepth=c(10, 300),
     connectRadius=c(30, 100)
   )
@@ -72,44 +73,46 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
       lightThreshCopepodid=sqrt(bounds$lightC) |>
         qunif_minmax(LHS[,8]) |>
         pow(2),
+      # Nauplius only swim up if surface is colder
+      swimColdNaupluis=bounds$coldPrefN[qinteger(LHS[,9], 1, length(bounds$mortSal_fn))],
       # Swim speeds: sample on a sqrt scale
       swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
-        qunif_minmax(LHS[,9]) |>
+        qunif_minmax(LHS[,10]) |>
         pow(2) |>
         multiply(-1),
       swimDownSpeedNaupliusMean=sqrt(bounds$swimDownN) |>
-        qunif_minmax(LHS[,10]) |>
+        qunif_minmax(LHS[,11]) |>
         pow(2),
       swimUpSpeedCopepodidMean=sqrt(bounds$swimUpC) |>
-        qunif_minmax(LHS[,11]) |>
+        qunif_minmax(LHS[,12]) |>
         pow(2) |>
         multiply(-1),
       swimDownSpeedCopepodidMean=sqrt(bounds$swimDownC) |>
-        qunif_minmax(LHS[,12]) |>
+        qunif_minmax(LHS[,13]) |>
         pow(2),
       # Sink rate: salinity-dependent or defined by swimDownSpeed ?
-      passiveSinkRateSal=bounds$passiveSinkSal[qinteger(LHS[,13], 1, 2)],
+      passiveSinkRateSal=bounds$passiveSinkSal[qinteger(LHS[,14], 1, 2)],
       # Salinity thresholds: define max, then define psu span of 0-100% sinking
       salinityThreshNaupliusMax=bounds$salThreshMaxN |>
-        qunif_minmax(LHS[,14]),
+        qunif_minmax(LHS[,15]),
       salinityThreshNaupliusMin=salinityThreshNaupliusMax -
         (bounds$salThreshSpanN |>
-           qunif_minmax(LHS[,15])),
+           qunif_minmax(LHS[,16])),
       salinityThreshCopepodidMax=bounds$salThreshMaxC |>
-        qunif_minmax(LHS[,16]),
+        qunif_minmax(LHS[,17]),
       salinityThreshCopepodidMin=salinityThreshCopepodidMax -
         (bounds$salThreshSpanC |>
-           qunif_minmax(LHS[,17])),
+           qunif_minmax(LHS[,18])),
       # Degree days for transition to copepodid
       viableDegreeDays=bounds$viableDD |>
-        qunif_minmax(LHS[,18]),
+        qunif_minmax(LHS[,19]),
       # Maximum preferred depth: sample on a log scale
       maxDepth=log(bounds$maxDepth) |>
-        qunif_minmax(LHS[,19]) |>
+        qunif_minmax(LHS[,20]) |>
         exp(),
       # Connectivity radius around pens
       connectivityThresh=bounds$connectRadius |>
-        qunif_minmax(LHS[,20])
+        qunif_minmax(LHS[,21])
     )  |>
       rowwise() |>
       mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
@@ -156,6 +159,9 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
       lightThreshCopepodid=sqrt(bounds$lightC) |>
         qunif_minmax(pnorm(light_mx[,2])) |>
         pow(2),
+      # Nauplius only swim up if surface is colder
+      swimColdNauplius=bounds$coldPrefN |>
+        sample(n_sim, replace=T),
       # Swim speeds: sample on a sqrt scale
       swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
         qunif_minmax(pnorm(swim_mx[,1])) |>
