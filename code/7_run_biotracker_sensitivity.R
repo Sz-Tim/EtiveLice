@@ -18,7 +18,7 @@ set.seed(1003)
 
 # define parameters -------------------------------------------------------
 
-cores_per_sim <- 25
+cores_per_sim <- 26
 parallel_sims <- 6
 start_date <- "2023-01-01"
 end_date <- "2023-12-31"
@@ -32,14 +32,14 @@ dirs <- switch(
              hf0="/home/sa04ts/hydro/WeStCOMS2/Archive",
              hf2="/home/sa04ts/hydro/WeStCOMS2/SWAN/Archive_daily/",
              jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
-             jar="/home/sa04ts/biotracker/biotracker_v2-1-1.jar",
+             jar="/home/sa04ts/biotracker/biotracker_v2-2-0.jar",
              out=glue("{getwd()}/out/sensitivity")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
                hf0="E:/hydro/WeStCOMS2/Archive",
                hf2="E:/hydro/WeStCOMS2/SWAN/Archive_daily/",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
-               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-1-1.jar",
+               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-0.jar",
                out=glue("D:/EtiveLice/out/sensitivity"))
 )
 
@@ -111,6 +111,7 @@ walk(sim_seq,
        salinityThreshNaupliusMax=sim.i$salinityThreshNaupliusMax[.x],
        lightThreshCopepodid=sim.i$lightThreshCopepodid[.x],
        lightThreshNauplius=sim.i$lightThreshNauplius[.x],
+       swimColdNauplius=sim.i$swimColdNauplius[.x],
        swimUpSpeedCopepodidMean=sim.i$swimUpSpeedCopepodidMean[.x],
        swimUpSpeedCopepodidStd=abs(sim.i$swimUpSpeedCopepodidMean[.x]/5),
        swimDownSpeedCopepodidMean=sim.i$swimDownSpeedCopepodidMean[.x],
@@ -135,6 +136,9 @@ walk(sim_seq,
        connectDepth3_min=15,
        connectDepth3_max=30,
        recordVertDistr="false",
+       recordPsteps="true",
+       recordImmature="true",
+       pstepsInterval=730,
        recordElemActivity="false"))
 
 
@@ -162,7 +166,6 @@ plan(sequential)
 
 # process output ----------------------------------------------------------
 
-
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
 farms_linnhe <- read_csv(glue("{dirs$proj}/data/farm_sites_2023.csv"))
 farms_GSA <- read_csv(glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"))
@@ -174,6 +177,7 @@ sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
 c_0_5_summary <- c_5_15_summary <- c_15_30_summary <- c_0_30_summary <- vector("list", length(sim_dirs))
 c_0_5_farm <- c_5_15_farm <- c_15_30_farm <- c_0_30_farm <- vector("list", length(sim_dirs))
 
+cores <- 30
 for(i in 1:length(sim_dirs)) {
   f_0_5 <- dirrf(sim_dirs[i], "connectivity_0.0-5.0.*csv")
   f_5_15 <- dirrf(sim_dirs[i], "connectivity_5.0-15.0.*csv")
@@ -186,45 +190,33 @@ for(i in 1:length(sim_dirs)) {
     mutate(area=as.numeric(st_area(.))) |>
     st_drop_geometry()
   if(length(f_0_5) > 0) {
-    c_0_5_i <- f_0_5 |>
-      map_dfr(~load_connectivity(.x,
-                                 source_names=farms_GSA$sepaSite,
-                                 dest_names=farms_GSA$sepaSite,
-                                 liceScale=1) |>
-                mutate(sim=sim))
-    c_0_5_i_daily <- calc_daily_fluxes(c_0_5_i, site_areas)
-    c_0_5_summary[[i]] <- c_0_5_i_daily |> calc_sensitivity_outcomes(sim)
-    c_0_5_farm[[i]] <- c_0_5_i_daily |>
-      group_by(sepaSite) |>
-      calc_sensitivity_outcomes(sim)
+    c_0_5 <- calc_GSA_connectivity(f_0_5, farms_GSA$sepaSite, sim, site_areas, cores)
+    c_0_5_i <- c_0_5$og
+    c_0_5_i_daily <- c_0_5$daily
+    c_0_5_summary[[i]] <- c_0_5$summary
+    c_0_5_farm[[i]] <- c_0_5$farm
+  } else {
+    c_0_5_i <- NULL
   }
   if(length(f_5_15) > 0) {
-    c_5_15_i <- f_5_15 |>
-      map_dfr(~load_connectivity(.x,
-                                 source_names=farms_GSA$sepaSite,
-                                 dest_names=farms_GSA$sepaSite,
-                                 liceScale=1) |>
-                mutate(sim=sim))
-    c_5_15_i_daily <- calc_daily_fluxes(c_5_15_i, site_areas)
-    c_5_15_summary[[i]] <- c_5_15_i_daily |> calc_sensitivity_outcomes(sim)
-    c_5_15_farm[[i]] <- c_5_15_i_daily |>
-      group_by(sepaSite) |>
-      calc_sensitivity_outcomes(sim)
+    c_5_15 <- calc_GSA_connectivity(f_5_15, farms_GSA$sepaSite, sim, site_areas, cores)
+    c_5_15_i <- c_5_15$og
+    c_5_15_i_daily <- c_5_15$daily
+    c_5_15_summary[[i]] <- c_5_15$summary
+    c_5_15_farm[[i]] <- c_5_15$farm
+  } else {
+    c_5_15_i <- NULL
   }
   if(length(f_15_30) > 0) {
-    c_15_30_i <- f_15_30 |>
-      map_dfr(~load_connectivity(.x,
-                                 source_names=farms_GSA$sepaSite,
-                                 dest_names=farms_GSA$sepaSite,
-                                 liceScale=1) |>
-                mutate(sim=sim))
-    c_15_30_i_daily <- calc_daily_fluxes(c_15_30_i, site_areas)
-    c_15_30_summary[[i]] <- c_15_30_i_daily |> calc_sensitivity_outcomes(sim)
-    c_15_30_farm[[i]] <- c_15_30_i_daily |>
-      group_by(sepaSite) |>
-      calc_sensitivity_outcomes(sim)
+    c_15_30 <- calc_GSA_connectivity(f_15_30, farms_GSA$sepaSite, sim, site_areas, cores)
+    c_15_30_i <- c_15_30$og
+    c_15_30_i_daily <- c_15_30$daily
+    c_15_30_summary[[i]] <- c_15_30$summary
+    c_15_30_farm[[i]] <- c_15_30$farm
+  } else {
+    c_15_30_i <- NULL
   }
-  if(length(f_0_5) > 0 & length(f_5_15) > 0 & length(f_15_30) > 0) {
+  if(length(f_0_5) > 0 | length(f_5_15) > 0 | length(f_15_30) > 0) {
     c_0_30_i <- bind_rows(c_0_5_i, c_5_15_i, c_15_30_i) |>
       group_by(source, destination, sim, date) |>
       summarise(value=sum(value))
@@ -234,6 +226,7 @@ for(i in 1:length(sim_dirs)) {
       group_by(sepaSite) |>
       calc_sensitivity_outcomes(sim)
   }
+  cat("Finished", i, "\n")
 }
 
 
@@ -273,33 +266,49 @@ rtCols <- c("lightThreshCopepodid", "lightThreshNauplius",
 
 c_0_5_sum_df <- readRDS("out/sensitivity/processed/c_0_5_sum_df.rds") |>
   mutate(across(all_of(logCols), log),
-         across(all_of(rtCols), sqrt))
+         across(all_of(rtCols), sqrt)) |>
+  mutate(D_h=if_else(variableDh, NA_real_, D_h),
+         D_hVert=if_else(variableDhV, NA_real_, D_hVert))
 c_5_15_sum_df <- readRDS("out/sensitivity/processed/c_5_15_sum_df.rds") |>
   mutate(across(all_of(logCols), log),
-         across(all_of(rtCols), sqrt))
+         across(all_of(rtCols), sqrt)) |>
+  mutate(D_h=if_else(variableDh, NA_real_, D_h),
+         D_hVert=if_else(variableDhV, NA_real_, D_hVert))
 c_15_30_sum_df <- readRDS("out/sensitivity/processed/c_15_30_sum_df.rds") |>
   mutate(across(all_of(logCols), log),
-         across(all_of(rtCols), sqrt))
+         across(all_of(rtCols), sqrt)) |>
+  mutate(D_h=if_else(variableDh, NA_real_, D_h),
+         D_hVert=if_else(variableDhV, NA_real_, D_hVert))
 c_0_30_sum_df <- readRDS("out/sensitivity/processed/c_0_30_sum_df.rds") |>
   mutate(across(all_of(logCols), log),
-         across(all_of(rtCols), sqrt))
+         across(all_of(rtCols), sqrt)) |>
+  mutate(D_h=if_else(variableDh, NA_real_, D_h),
+         D_hVert=if_else(variableDhV, NA_real_, D_hVert))
 
 c_0_5_sum_farm_df <- readRDS("out/sensitivity/processed/c_0_5_sum_farm_df.rds") |>
   mutate(across(all_of(logCols), log),
-         across(all_of(rtCols), sqrt))
+         across(all_of(rtCols), sqrt)) |>
+  mutate(D_h=if_else(variableDh, NA_real_, D_h),
+         D_hVert=if_else(variableDhV, NA_real_, D_hVert))
 c_5_15_sum_farm_df <- readRDS("out/sensitivity/processed/c_5_15_sum_farm_df.rds") |>
   mutate(across(all_of(logCols), log),
-         across(all_of(rtCols), sqrt))
+         across(all_of(rtCols), sqrt)) |>
+  mutate(D_h=if_else(variableDh, NA_real_, D_h),
+         D_hVert=if_else(variableDhV, NA_real_, D_hVert))
 c_15_30_sum_farm_df <- readRDS("out/sensitivity/processed/c_15_30_sum_farm_df.rds") |>
   mutate(across(all_of(logCols), log),
-         across(all_of(rtCols), sqrt))
+         across(all_of(rtCols), sqrt)) |>
+  mutate(D_h=if_else(variableDh, NA_real_, D_h),
+         D_hVert=if_else(variableDhV, NA_real_, D_hVert))
 c_0_30_sum_farm_df <- readRDS("out/sensitivity/processed/c_0_30_sum_farm_df.rds") |>
   mutate(across(all_of(logCols), log),
-         across(all_of(rtCols), sqrt))
+         across(all_of(rtCols), sqrt)) |>
+  mutate(D_h=if_else(variableDh, NA_real_, D_h),
+         D_hVert=if_else(variableDhV, NA_real_, D_hVert))
 
 
 outcome_names <- grep("^N_|_m2", names(c_0_5_sum_df), value=T)
-param_names <- names(sim.i)[3:20]
+param_names <- names(sim.i)[1:21]
 
 
 c_0_5_sum_df |>
