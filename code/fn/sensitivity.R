@@ -227,6 +227,31 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
 
 
 
+calc_GSA_connectivity <- function(f, farms, sim, site_areas, cores=4) {
+  library(furrr)
+  if(get_os()=="windows") {
+    plan(multisession, workers=cores)
+  } else {
+    plan(multicore, workers=cores)
+  }
+  c_i <- future_map_dfr(f,
+                        ~load_connectivity(.x,
+                                           source_names=farms,
+                                           dest_names=farms,
+                                           liceScale=1)) |>
+    mutate(sim=sim)
+  plan(sequential)
+  c_i_daily <- calc_daily_fluxes(c_i, site_areas)
+  c_summary <- c_i_daily |> calc_sensitivity_outcomes(sim)
+  c_farm <- c_i_daily |> group_by(sepaSite) |> calc_sensitivity_outcomes(sim)
+
+  return(list(og=c_i, daily=c_i_daily, summary=c_summary, farm=c_farm))
+}
+
+
+
+
+
 calc_daily_fluxes <- function(c_long, site_areas) {
   list(
     c_long |>
