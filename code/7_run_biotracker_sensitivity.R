@@ -138,7 +138,7 @@ walk(sim_seq,
        recordVertDistr="false",
        recordPsteps="true",
        recordImmature="true",
-       pstepsInterval=730,
+       pstepsInterval=365,
        recordElemActivity="false"))
 
 
@@ -379,6 +379,54 @@ c_0_30_sum_farm_df |>
   # geom_smooth(method="loess", se=F) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
   facet_wrap(~name, scales="free_x")
+
+
+c_0_30_sum_farm_df |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+  pivot_longer(any_of(param_names)) |>
+  ggplot(aes(value, sepaSite, colour=influx_m2_MAM_md^0.25)) +
+  geom_point(shape=1, alpha=0.5) +
+  # geom_smooth(method="loess", se=F) +
+  scale_colour_viridis_c(option="turbo", begin=0.05) +
+  facet_wrap(~name, scales="free_x")
+
+farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
+linnhe_fp <- mesh_fp |> st_crop(unlist(farm_bbox))
+pA <- c_0_30_sum_farm_df |>
+  group_by(sepaSite) |>
+  summarise(influx_MAM_m2=mean(influx_m2_MAM_md^0.25)^4) |>
+  left_join(farms_GSA) |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_point(aes(easting, northing, colour=influx_MAM_m2)) +
+  scale_colour_viridis_c(option="turbo", begin=0.05)
+pB <- c_0_30_sum_farm_df |>
+  group_by(sepaSite) |>
+  summarise(sd_influx_MAM_m2=sd(influx_m2_MAM_md^0.25)^4) |>
+  left_join(farms_GSA) |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_point(aes(easting, northing, colour=sd_influx_MAM_m2)) +
+  scale_colour_viridis_c(option="viridis", end=0.95)
+pC <- c_0_30_sum_farm_df |>
+  group_by(sepaSite) |>
+  summarise(influx_SON_m2=mean(influx_m2_SON_md^0.25, na.rm=T)^4) |>
+  left_join(farms_GSA) |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_point(aes(easting, northing, colour=influx_SON_m2)) +
+  scale_colour_viridis_c(option="turbo", begin=0.05)
+pD <- c_0_30_sum_farm_df |>
+  group_by(sepaSite) |>
+  summarise(sd_influx_SON_m2=sd(influx_m2_SON_md^0.25, na.rm=T)^4) |>
+  left_join(farms_GSA) |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_point(aes(easting, northing, colour=sd_influx_SON_m2)) +
+  scale_colour_viridis_c(option="viridis", end=0.95)
+cowplot::plot_grid(pA, pB, pC, pD, nrow=2, align="hv", axis="tblr")
+
+
 
 c_0_30_sum_df |>
   ggplot(aes(salinityThreshCopepodidMin, salinityThreshCopepodidMax, colour=influx_m2_MAM_md^0.25)) +
@@ -699,3 +747,524 @@ importance_15_30_df |>
   geom_point(alpha=0.5) +
   facet_grid(flux~type) +
   theme(panel.grid.major.y=element_line(colour="grey90"))
+
+
+
+
+
+# maps --------------------------------------------------------------------
+
+farms_GSA <- read_csv(glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"))
+sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
+mesh_fp <- st_read(glue("{dirs$mesh}/WeStCOMS2_meshFootprint.gpkg"))
+mesh_sf <- st_read(glue("{dirs$mesh}/WeStCOMS2_mesh.gpkg"))
+farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
+linnhe_fp <- mesh_fp |> st_crop(unlist(farm_bbox))
+linnhe_sf <- mesh_sf |> st_crop(unlist(farm_bbox))
+sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
+
+ip_ls <- vector("list", length(sim_dirs))
+
+sim_dirs <- sim_dirs[c(1:12,15,16)]
+library(furrr)
+if(get_os()=="windows") {
+  plan(multisession, workers=12)
+} else {
+  plan(multicore, workers=12)
+}
+# TODO: This is obviously too unwieldy for a large number of simulations.
+# Read by time step and store temporary files
+# Also worth using data.table
+for(i in 1:length(sim_dirs)) {
+  sim <- str_sub(sim_dirs[i], -4, -1)
+  fN <- dirrf(sim_dirs[i], "pstepsImmature")
+  fC <- dirrf(sim_dirs[i], "pstepsMature")
+  ip_ls[[i]] <- full_join(
+    map_dfr(fN, ~load_psteps(.x, liceScale=1/730) |>
+              rename_with(~"ipN_h", starts_with("t_")) |>
+              mutate(date=ymd(str_split_fixed(basename(.x), "_", 3)[,2]))),
+    map_dfr(fC, ~load_psteps(.x, liceScale=1/730) |>
+              rename_with(~"ipC_h", starts_with("t_")) |>
+              mutate(date=ymd(str_split_fixed(basename(.x), "_", 3)[,2]))),
+    by=join_by(i, date)) |>
+    mutate(sim=sim) |>
+    filter(i %in% linnhe_sf$i)
+}
+plan(sequential)
+
+ip_df <- data.table::rbindlist(ip_ls) |> as_tibble()
+
+ip_sf <- inner_join(linnhe_sf |> select(i, area, depth, geom),
+           ip_df,
+           by="i") |>
+  mutate(vol=(area*pmin(depth, 30)),
+         ipN_m3=ipN_h/vol,
+         ipC_m3=ipC_h/vol)
+ip_sf |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=ipC_m3), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
+  facet_grid(date~sim) +
+  # facet_wrap(~sim) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+
+ip_sum_df <- inner_join(
+  linnhe_sf |> select(i, geom),
+  inner_join(linnhe_sf |> as_tibble() |> select(i, area, depth),
+             ip_df |> complete(i, sim, date, fill=list(ipN_h=0, ipC_h=0)),
+             by="i") |>
+    mutate(vol=(area*pmin(depth, 30)),
+           ipN_m3=(ipN_h/vol)^0.25,
+           ipC_m3=(ipC_h/vol)^0.25) |>
+    summarise(mnN=mean(ipN_m3),
+              sdN=sd(ipN_m3),
+              mnC=mean(ipC_m3),
+              sdC=sd(ipC_m3),
+              .by=c("i", "date"))
+) |>
+  mutate(month=as.numeric(as.factor(date)))
+pA <- ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=mnN^4), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
+  # scale_fill_viridis_c(option="turbo") +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+pB <- ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=(sdN)), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_c(option="turbo") +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+pC <- ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=sdN/mnN), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_c(option="turbo") +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+pD <- ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=mnC^4), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
+  # scale_fill_viridis_c(option="turbo") +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+pE <- ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=(sdC)), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_c(option="turbo") +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+pF <- ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=sdC/mnC), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_c(option="turbo") +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+ggpubr::ggarrange(pA, pD, ncol=2, nrow=1, common.legend=TRUE, legend="right")
+ggpubr::ggarrange(pB, pE, ncol=2, nrow=1, common.legend=TRUE, legend="right")
+ggpubr::ggarrange(pC, pF, ncol=2, nrow=1, common.legend=TRUE, legend="right")
+
+ip_months <- unique(ip_sum_df$month)
+lims_sdN <- range(ip_sum_df$sdN)
+lims_sdC <- range(ip_sum_df$sdC)
+lims_logsdN <- c(-5, max(log(filter(ip_sum_df, sdN > 0)$sdN)))
+lims_logsdC <- c(-5, max(log(filter(ip_sum_df, sdC > 0)$sdC)))
+lims_mnN <- range(ip_sum_df$mnN)
+lims_mnC <- range(ip_sum_df$mnC)
+mnBreaks <- c(0, 0.01, 0.1, 1)
+for(i in seq_along(ip_months)) {
+  month_i <- ip_months[i]
+  p <- ip_sum_df |>
+    filter(month==month_i) |>
+    ggplot() +
+    geom_sf(data=linnhe_fp) +
+    geom_sf(aes(fill=mnN^4), colour=NA) +
+    geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+    scale_fill_viridis_b("Mean IP (Nauplii/m3/h) in top 30m",
+                         option="turbo",
+                         breaks=c(0.001, 0.01, 0.1, 1, 5),
+                         labels=c(0.001, 0.01, 0.1, 1, 5),
+                         limits=c(0, 5)) +
+    ggtitle(paste("2023", month.name[month_i])) +
+    theme(axis.title=element_blank(),
+          legend.position="bottom",
+          legend.title.position="top",
+          legend.key.width=unit(1.5, "cm"),
+          legend.key.height=unit(0.2, "cm"))
+  ggsave(glue("figs/meanIP_N_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+         width=5, height=5.5)
+  p <- ip_sum_df |>
+    filter(month==month_i) |>
+    ggplot() +
+    geom_sf(data=linnhe_fp) +
+    geom_sf(aes(fill=mnC^4), colour=NA) +
+    geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+    scale_fill_viridis_b("Mean IP (Copepodids/m3/h) in top 30m",
+                         option="turbo",
+                         breaks=c(0.001, 0.01, 0.1, 1, 5),
+                         labels=c(0.001, 0.01, 0.1, 1, 5),
+                         limits=c(0, 5)) +
+    ggtitle(paste("2023", month.name[month_i])) +
+    theme(axis.title=element_blank(),
+          legend.position="bottom",
+          legend.title.position="top",
+          legend.key.width=unit(1.5, "cm"),
+          legend.key.height=unit(0.2, "cm"))
+  ggsave(glue("figs/meanIP_C_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+         width=5, height=5.5)
+
+  p <- ip_sum_df |>
+    filter(month==month_i) |>
+    ggplot() +
+    geom_sf(data=linnhe_fp) +
+    geom_sf(aes(fill=mnN), colour=NA) +
+    geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+    scale_fill_viridis_c("Mean IP (Nauplii/m3/h) in top 30m",
+                         option="turbo",
+                         breaks=mnBreaks^0.25,
+                         labels=mnBreaks,
+                         limits=lims_mnN) +
+    ggtitle(paste("2023", month.name[month_i])) +
+    theme(axis.title=element_blank(),
+          legend.position="bottom",
+          legend.title.position="top",
+          legend.key.width=unit(1.5, "cm"),
+          legend.key.height=unit(0.2, "cm"))
+  ggsave(glue("figs/contmeanIP_N_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+         width=5, height=5.5)
+  p <- ip_sum_df |>
+    filter(month==month_i) |>
+    ggplot() +
+    geom_sf(data=linnhe_fp) +
+    geom_sf(aes(fill=mnC), colour=NA) +
+    geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+    scale_fill_viridis_c("Mean IP (Copepodids/m3/h) in top 30m",
+                         option="turbo",
+                         breaks=mnBreaks^0.25,
+                         labels=mnBreaks,
+                         limits=lims_mnC) +
+    ggtitle(paste("2023", month.name[month_i])) +
+    theme(axis.title=element_blank(),
+          legend.position="bottom",
+          legend.title.position="top",
+          legend.key.width=unit(1.5, "cm"),
+          legend.key.height=unit(0.2, "cm"))
+  ggsave(glue("figs/contmeanIP_C_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+         width=5, height=5.5)
+
+
+  p <- ip_sum_df |>
+    filter(month==month_i) |>
+    ggplot() +
+    geom_sf(data=linnhe_fp) +
+    geom_sf(aes(fill=sdN), colour=NA) +
+    geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+    scale_fill_viridis_c("sd(nauplii IP) in top 30m", option="turbo", limits=lims_sdN) +
+    ggtitle(paste("2023", month.name[month_i])) +
+    theme(axis.title=element_blank(),
+          legend.position="bottom",
+          legend.title.position="top",
+          legend.key.width=unit(1.5, "cm"),
+          legend.key.height=unit(0.2, "cm"))
+  ggsave(glue("figs/sdIP_N_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+         width=5, height=5.5)
+  p <- ip_sum_df |>
+    filter(month==month_i) |>
+    ggplot() +
+    geom_sf(data=linnhe_fp) +
+    geom_sf(aes(fill=sdC), colour=NA) +
+    geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+    scale_fill_viridis_c("sd(copepodid IP) in top 30m", option="turbo", limits=lims_sdC) +
+    ggtitle(paste("2023", month.name[month_i])) +
+    theme(axis.title=element_blank(),
+          legend.position="bottom",
+          legend.title.position="top",
+          legend.key.width=unit(1.5, "cm"),
+          legend.key.height=unit(0.2, "cm"))
+  ggsave(glue("figs/sdIP_C_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+         width=5, height=5.5)
+
+  p <- ip_sum_df |>
+    filter(month==month_i) |>
+    ggplot() +
+    geom_sf(data=linnhe_fp) +
+    geom_sf(aes(fill=pmax(log(sdN), -5)), colour=NA) +
+    geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+    scale_fill_viridis_c("log sd(nauplii IP) in top 30m", option="turbo",
+                         limits=lims_logsdN,
+                         breaks=seq(-5,max(lims_logsdN), length.out=4),
+                         labels=round(exp(seq(-5,max(lims_logsdN), length.out=4)), 3)) +
+    ggtitle(paste("2023", month.name[month_i])) +
+    theme(axis.title=element_blank(),
+          legend.position="bottom",
+          legend.title.position="top",
+          legend.key.width=unit(1.5, "cm"),
+          legend.key.height=unit(0.2, "cm"))
+  ggsave(glue("figs/logsdIP_N_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+         width=5, height=5.5)
+  p <- ip_sum_df |>
+    filter(month==month_i) |>
+    ggplot() +
+    geom_sf(data=linnhe_fp) +
+    geom_sf(aes(fill=pmax(log(sdC), -5)), colour=NA) +
+    geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+    scale_fill_viridis_c("log sd(copepodid IP) in top 30m", option="turbo",
+                         limits=lims_logsdC,
+                         breaks=seq(-5,max(lims_logsdC), length.out=4),
+                         labels=round(exp(seq(-5,max(lims_logsdC), length.out=4)), 3)) +
+    ggtitle(paste("2023", month.name[month_i])) +
+    theme(axis.title=element_blank(),
+          legend.position="bottom",
+          legend.title.position="top",
+          legend.key.width=unit(1.5, "cm"),
+          legend.key.height=unit(0.2, "cm"))
+  ggsave(glue("figs/logsdIP_C_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+         width=5, height=5.5)
+}
+
+
+library(av)
+sets <- c(outer(c("contmeanIP_", "meanIP_", "logsdIP_", "sdIP_"),
+              c("N_", "C_"),
+              paste0))
+for(i in sets) {
+  dirf("figs/temp/", glue("^{i}.*png")) |>
+    av_encode_video(glue("figs/anim_{i}.mp4"),
+                    framerate=2, vfilter="scale=-2:'min(720,ih)'")
+}
+
+
+
+
+
+# vert dist ---------------------------------------------------------------
+
+# I tested this out, but I think it is more worthwhile to run *more* simulations
+# rather than track vertical distributions. Analysis of vertical dynamics can
+# use bins at farms rather than the full map.
+
+farms_GSA <- read_csv(glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"))
+sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
+mesh_fp <- st_read(glue("{dirs$mesh}/WeStCOMS2_meshFootprint.gpkg"))
+mesh_sf <- st_read(glue("{dirs$mesh}/WeStCOMS2_mesh.gpkg"))
+farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
+linnhe_fp <- mesh_fp |> st_crop(unlist(farm_bbox))
+linnhe_sf <- mesh_sf |> st_crop(unlist(farm_bbox))
+sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
+
+ip_ls <- zSum_ls <- zBin_ls <- vector("list", length(sim_dirs))
+
+for(i in 1:length(sim_dirs)) {
+  sim <- str_sub(sim_dirs[i], -4, -1)
+  f <- dirrf(sim_dirs[i], "vertDistrMature")
+  z_i <- map_dfr(f, ~read_csv(.x) |>
+                   mutate(sim=sim,
+                          date=ymd(str_split_fixed(basename(.x), "_", 3)[,2]))
+  ) |>
+    filter(!is.na(value)) # TODO: WHY ARE THESE NA???
+  ip_ls[[i]] <- z_i |>
+    summarise(lice=sum(value)/730, .by=c("i", "sim", "date"))
+  zSum_ls[[i]] <- z_i |>
+    summarise(lice=sum(value)/730, .by=c("z", "sim", "date")) |>
+    mutate(prop=lice/sum(lice), .by=c("sim", "date"))
+  zBin_ls[[i]] <- z_i |>
+    mutate(depBin=case_when(z < 5 ~ "0-5",
+                            z >= 5 & z < 15 ~ "5-15",
+                            z >=15 & z < 30 ~ "15-30",
+                            z >= 30 ~ "30+") |>
+             factor(levels=c("0-5", "5-15", "15-30", "30+"))) |>
+    summarise(lice=sum(value)/730, .by=c("i", "depBin", "sim", "date"))
+}
+
+zSum_ls |>
+  reduce(bind_rows) |>
+  arrange(sim, date, z) |>
+  ggplot(aes(lice, z)) +
+  geom_vline(xintercept=0, colour="grey80") +
+  geom_point(alpha=0.5, shape=1) +
+  geom_path(aes(group=sim), alpha=0.5) +
+  scale_y_reverse() +
+  facet_wrap(~date)
+zSum_ls |>
+  reduce(bind_rows) |>
+  arrange(sim, date, z) |>
+  ggplot(aes(prop, z)) +
+  geom_vline(xintercept=0, colour="grey80") +
+  geom_point(alpha=0.5, shape=1) +
+  geom_path(aes(group=sim), alpha=0.5) +
+  scale_y_reverse() +
+  facet_wrap(~date)
+zSum_ls |>
+  reduce(bind_rows) |>
+  arrange(sim, date, z) |>
+  mutate(month=month(date)) |>
+  ggplot(aes(prop, z)) +
+  geom_vline(xintercept=0, colour="grey80") +
+  geom_point(alpha=0.5, shape=1) +
+  geom_path(aes(group=date, colour=month), alpha=0.5) +
+  scale_y_reverse() +
+  facet_wrap(~sim)
+zSum_ls |>
+  reduce(bind_rows) |>
+  arrange(sim, date, z) |>
+  mutate(month=as.numeric(as.factor(date))) |>
+  ggplot(aes(month, z, fill=prop)) +
+  geom_raster() +
+  scale_fill_viridis_c(option="turbo") +
+  scale_y_reverse() +
+  facet_wrap(~sim)
+
+inner_join(linnhe_sf |> select(i, area, depth, geom),
+           ip_ls |> reduce(bind_rows),
+           by="i") |>
+  mutate(IP_m2=lice/area,
+         IP_m3=lice/(area*pmin(depth, 30))) |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=IP_m3), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
+  facet_grid(date~sim) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+
+ip_sum_df <- inner_join(
+  linnhe_sf |> select(i, geom),
+  inner_join(linnhe_sf |> as_tibble() |> select(i, area, depth),
+             ip_ls |> reduce(bind_rows) |> complete(i, sim, date, fill=list(lice=0)),
+             by="i") |>
+    mutate(IP_m3=lice/(area*pmin(depth, 30))) |>
+    summarise(mn=mean(IP_m3), sd=sd(IP_m3), .by=c("i", "date"))
+)
+ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=mn), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=log10(sd)), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_c(option="turbo") +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+ip_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=sd/mn), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_c(option="turbo") +
+  facet_wrap(~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+
+
+inner_join(linnhe_sf |> select(i, area, depth, geom),
+           zBin_ls |> reduce(bind_rows) |> filter(date=="2023-04-02"),
+           by="i") |>
+  mutate(depRng=case_when(depBin=="0-5" ~ 5,
+                          depBin=="5-15" ~ 10,
+                          depBin=="15-30" ~ 30,
+                          depBin=="30+" ~ 30-pmin(depth, 30))) |>
+  filter(depBin != "30+") |>
+  mutate(IP_m2=lice/area,
+         IP_m3=lice/(area*depRng)) |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=IP_m3^0.25), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5)) +
+  facet_grid(depBin~sim) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+
+
+zBin_sum_df <- inner_join(
+  linnhe_sf |> select(i, geom),
+  inner_join(linnhe_sf |> as_tibble() |> select(i, area, depth),
+             zBin_ls |> reduce(bind_rows) |>
+               filter(depBin != "30+") |>
+               droplevels() |>
+               complete(i, sim, date, depBin, fill=list(lice=0)),
+             by="i") |>
+    mutate(depRng=case_when(depBin=="0-5" ~ 5,
+                            depBin=="5-15" ~ 10,
+                            depBin=="15-30" ~ 30)) |>
+    mutate(IP_m3=lice/(area*depRng)) |>
+    summarise(mn=mean(IP_m3), sd=sd(IP_m3), .by=c("i", "date", "depBin"))
+)
+
+zBin_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=mn), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5)) +
+  facet_grid(depBin~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+
+zBin_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=log10(sd)), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_c(option="turbo") +
+  facet_grid(depBin~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+
+zBin_sum_df |>
+  ggplot() +
+  geom_sf(data=linnhe_fp) +
+  geom_sf(aes(fill=sd/mn), colour=NA) +
+  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+  scale_fill_viridis_c(option="turbo") +
+  facet_grid(depBin~date) +
+  theme(legend.position="bottom",
+        legend.key.width=unit(3, "cm"),
+        legend.key.height=unit(0.2, "cm"))
+
+
