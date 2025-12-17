@@ -92,8 +92,11 @@ sites_validation <- sites.i |>
 
 out.df <- read_csv("../sealice_ensembling/data/lice_biomass_2017-01-01_2024-12-31.csv") |>
   left_join(sepa.locs |> select(sepaSite, maximumBiomassAllowedTonnes)) |>
-  mutate(total_AF=weeklyAverageAf * maximumBiomassAllowedTonnes *
-           (actualBiomassOnSiteTonnes > (0.2*maximumBiomassAllowedTonnes)) * 240)
+  mutate(total_AF=0.5 * maximumBiomassAllowedTonnes *
+           (actualBiomassOnSiteTonnes > (0.05*maximumBiomassAllowedTonnes)) * 240)
+
+  # mutate(total_AF=weeklyAverageAf * maximumBiomassAllowedTonnes *
+  #          (actualBiomassOnSiteTonnes > (0.2*maximumBiomassAllowedTonnes)) * 240)
 
 
 # save output -------------------------------------------------------------
@@ -105,11 +108,11 @@ linnhe_farms <- c("APT1", "ARDG1", "CALL1", "FFMC19", "FFMC20", "FFMC27",
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
   select(sepaSite, date, weeklyAverageAf, actualBiomassOnSiteTonnes, maximumBiomassAllowedTonnes, total_AF) |>
-  write_csv(glue("data/lice_biomass_{min(out.df$date)}_{max(out.df$date)}.csv"))
+  write_csv(glue("data/lice_biomass_{min(out.df$date)}_{max(out.df$date)}_05lpf.csv"))
 out.df |>
   filter(sepaSite %in% GSA_farms) |>
   select(sepaSite, date, weeklyAverageAf, actualBiomassOnSiteTonnes, maximumBiomassAllowedTonnes, total_AF) |>
-  write_csv(glue("data/lice_biomass_GSA_{min(out.df$date)}_{max(out.df$date)}.csv"))
+  write_csv(glue("data/lice_biomass_GSA_{min(out.df$date)}_{max(out.df$date)}_05lpf.csv"))
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
   filter(date >= "2021-04-01") |>
@@ -176,7 +179,7 @@ out.df |>
   select(-sepaSite, -nPens) |>
   rename(sepaSite=pen) |>
   mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
-  write_csv("data/lice_daily_2023-01-01_2024-12-31.csv")
+  write_csv("data/lice_daily_2023-01-01_2024-12-31_05lpf.csv")
 
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
@@ -191,22 +194,18 @@ out.df |>
   pivot_wider(names_from=date.c, values_from=total_AF) |>
   filter(sepaSite %in% read_csv("data/farm_sites_2023-2024.csv")$sepaSite) |>
   mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
-  write_csv("data/lice_daily_2023-01-01_2024-12-31_FARMS.csv")
+  write_csv("data/lice_daily_2023-01-01_2024-12-31_FARMS_05lpf.csv")
 
 out.df |>
   filter(sepaSite %in% GSA_farms) |>
   filter(date >= "2023-01-01") |>
   filter(date <= "2024-12-31") |>
-  group_by(sepaSite) |>
-  mutate(actualBiomassOnSiteTonnes=first(actualBiomassOnSiteTonnes)) |>
-  ungroup() |>
-  mutate(total_AF=actualBiomassOnSiteTonnes * weeklyAverageAf * 240,
-         date.c=str_remove_all(date, "-")) |>
+  mutate(date.c=str_remove_all(date, "-")) |>
   select(sepaSite, date.c, total_AF) |>
   pivot_wider(names_from=date.c, values_from=total_AF) |>
   filter(sepaSite %in% read_csv("data/farm_sites_GSA_2023-2024.csv")$sepaSite) |>
   mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
-  write_csv("data/lice_daily_2023-01-01_2024-12-31_GSA.csv")
+  write_csv("data/lice_daily_2023-01-01_2024-12-31_GSA_05lpf.csv")
 
 out.df |>
   filter(sepaSite %in% linnhe_farms) |>
@@ -226,7 +225,7 @@ out.df |>
   select(-sepaSite, -nPens) |>
   rename(sepaSite=pen) |>
   mutate(across(where(is.numeric), ~replace_na(.x, 0))) |>
-  write_csv(glue("data/lice_daily_2021-04-01_2024-12-31.csv"))
+  write_csv(glue("data/lice_daily_2021-04-01_2024-12-31_05lpf.csv"))
 
 
 

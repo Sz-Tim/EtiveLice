@@ -73,7 +73,7 @@ walk(sim_seq,
        # run settings
        properties_file_path=glue("{dirs$out}/sim_{sim.i$i[.x]}.properties"),
        parallelThreads=cores_per_sim,
-       parallelThreadsHD=6,
+       parallelThreadsHD=8,
        start_ymd=as.numeric(str_remove_all(start_date, "-")),
        numberOfDays=nDays,
        nparts=10,
@@ -89,7 +89,7 @@ walk(sim_seq,
        # sites
        sitefile=glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"),
        sitefileEnd=glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"),
-       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2023-01-01_2024-12-31_GSA.csv"),
+       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2023-01-01_2024-12-31_GSA_05lpf.csv"),
        # dynamics
        variableDh=sim.i$variableDh[.x],
        variableDhV=sim.i$variableDhV[.x],
