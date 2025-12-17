@@ -119,16 +119,6 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
       mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
              mortSal_b=sample(mort_post[[mortSal_fn]], 1)) |>
       ungroup()
-    # Add posterior samples from sink rate regression
-    if(is.null(sink_post)) {
-      sim.i <- sim.i |>
-        mutate(passiveSinkInt=swimDownSpeedNaupliusMean,
-               passiveSinkSlope=0)
-    } else {
-      sim.i <- sim.i |>
-        mutate(passiveSinkInt=sample(sink_post$Intercept, n_sim, replace=T),
-               passiveSinkSlope=sample(sink_post$slope, n_sim, replace=T))
-    }
   }
 
   if(mode=="random") {
@@ -208,16 +198,17 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
       mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
              mortSal_b=sample(mort_post[[mortSal_fn]], 1)) |>
       ungroup()
-    # Add posterior samples from sink rate regression
-    if(is.null(sink_post)) {
-      sim.i <- sim.i |>
-        mutate(passiveSinkInt=swimDownSpeedNaupliusMean,
-               passiveSinkSlope=0)
-    } else {
-      sim.i <- sim.i |>
-        mutate(passiveSinkInt=sample(sink_post$Intercept, n_sim, replace=T),
-               passiveSinkSlope=sample(sink_post$slope, n_sim, replace=T))
-    }
+  }
+  # Add posterior samples from sink rate regression
+  if(is.null(sink_post)) {
+    sim.i <- sim.i |>
+      mutate(passiveSinkInt=swimDownSpeedNaupliusMean,
+             passiveSinkSlope=0)
+  } else {
+    sim.i <- sim.i |>
+      mutate(passiveSinkInt=sample(sink_post$Intercept, n_sim, replace=T)*passiveSinkRateSal +
+               swimDownSpeedNaupliusMean*(!passiveSinkRateSal),
+             passiveSinkSlope=sample(sink_post$slope, n_sim, replace=T)*passiveSinkRateSal)
   }
   sim.i <- sim.i |>
     mutate(across(where(is.numeric), ~signif(.x, 5))) |>
