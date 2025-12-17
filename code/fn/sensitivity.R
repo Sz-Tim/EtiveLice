@@ -37,7 +37,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
     salThreshSpanC=c(0, 15),
     viableDD=c(30, 55),
     maxDepth=c(10, 300),
-    connectRadius=c(30, 100)
+    connectRadius=c(15, 300)
   )
   # Replace any defaults
   if(!is.null(alt_ls)) {
@@ -111,8 +111,9 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
         qunif_minmax(LHS[,20]) |>
         exp(),
       # Connectivity radius around pens
-      connectivityThresh=bounds$connectRadius |>
-        qunif_minmax(LHS[,21])
+      connectivityThresh=sqrt(bounds$connectRadius) |>
+        qunif_minmax(LHS[,21]) |>
+        pow(2)
     )  |>
       rowwise() |>
       mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
@@ -199,8 +200,9 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
         runif_minmax(n_sim) |>
         exp(),
       # Connectivity radius around pens
-      connectivityThresh=bounds$connectRadius |>
-        runif_minmax(n_sim)
+      connectivityThresh=sqrt(bounds$connectRadius) |>
+        runif_minmax(n_sim) |>
+        pow(2)
     )  |>
       rowwise() |>
       mutate(eggTemp_b=sample(egg_post[[eggTemp_fn]], 1),
