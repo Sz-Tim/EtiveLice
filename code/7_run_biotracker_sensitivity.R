@@ -40,18 +40,18 @@ dirs <- switch(
                hf2="E:/hydro/WeStCOMS2/SWAN/Archive_daily/",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
                jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-0.jar",
-               out=glue("D:/EtiveLice/out/sensitivity"))
+               out=glue("{getwd()}/out/sensitivity"))
 )
 
 n_sim <- 2000
 post_dir <- glue("{dirs$proj}/data/lit/fit")
-egg_post <- list(constant=tibble(b=rnorm(4000, 28.2, 2)),
+egg_post <- list(constant=read_csv(glue("{post_dir}/egg_temp_constant_post.csv"), show_col_type=F),
                  logistic=read_csv(glue("{post_dir}/egg_temp_logistic_post.csv"), show_col_types=F),
                  linear=read_csv(glue("{post_dir}/egg_temp_linear_post.csv"), show_col_types=F)) |>
   map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
         unite("all", everything(), sep=",") %>%
         .$all)
-mort_post <- list(constant=tibble(b=plogis(rnorm(4000, qlogis(0.01), 0.25))),
+mort_post <- list(constant=read_csv(glue("{post_dir}/mort_sal_constant_post.csv"), show_col_types=F),
                  logistic=read_csv(glue("{post_dir}/mort_sal_logistic_post.csv"), show_col_types=F)) |>
   map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
         unite("all", everything(), sep=",") %>%
@@ -89,7 +89,7 @@ walk(sim_seq,
        # sites
        sitefile=glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"),
        sitefileEnd=glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"),
-       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2023-01-01_2024-12-31_GSA_05lpf.csv"),
+       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2023-01-01_2024-12-31_GSA_05lpf_maxB.csv"),
        # dynamics
        variableDh=sim.i$variableDh[.x],
        variableDhV=sim.i$variableDhV[.x],
@@ -765,7 +765,7 @@ sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
 
 ip_ls <- vector("list", length(sim_dirs))
 
-sim_dirs <- sim_dirs[c(1:12,15,16)]
+sim_dirs <- sim_dirs[c(1:6, 9, 10)]
 library(furrr)
 if(get_os()=="windows") {
   plan(multisession, workers=12)
@@ -893,7 +893,7 @@ ggpubr::ggarrange(pA, pD, ncol=2, nrow=1, common.legend=TRUE, legend="right")
 ggpubr::ggarrange(pB, pE, ncol=2, nrow=1, common.legend=TRUE, legend="right")
 ggpubr::ggarrange(pC, pF, ncol=2, nrow=1, common.legend=TRUE, legend="right")
 
-ip_months <- unique(ip_sum_df$month)
+ip_dates <- unique(ip_sum_df$date)
 lims_sdN <- range(ip_sum_df$sdN)
 lims_sdC <- range(ip_sum_df$sdC)
 lims_logsdN <- c(-5, max(log(filter(ip_sum_df, sdN > 0)$sdN)))
@@ -901,10 +901,11 @@ lims_logsdC <- c(-5, max(log(filter(ip_sum_df, sdC > 0)$sdC)))
 lims_mnN <- range(ip_sum_df$mnN)
 lims_mnC <- range(ip_sum_df$mnC)
 mnBreaks <- c(0, 0.01, 0.1, 1)
-for(i in seq_along(ip_months)) {
-  month_i <- ip_months[i]
+for(i in seq_along(ip_dates)) {
+  date_i <- ip_dates[i]
+  date_i_c <- format(date_i, "%Y-%m-%d")
   p <- ip_sum_df |>
-    filter(month==month_i) |>
+    filter(date==date_i) |>
     ggplot() +
     geom_sf(data=linnhe_fp) +
     geom_sf(aes(fill=mnN^4), colour=NA) +
@@ -914,16 +915,15 @@ for(i in seq_along(ip_months)) {
                          breaks=c(0.001, 0.01, 0.1, 1, 5),
                          labels=c(0.001, 0.01, 0.1, 1, 5),
                          limits=c(0, 5)) +
-    ggtitle(paste("2023", month.name[month_i])) +
+    ggtitle(date_i_c) +
     theme(axis.title=element_blank(),
           legend.position="bottom",
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/meanIP_N_{str_pad(month_i, 2, 'left', '0')}.png"), p,
-         width=5, height=5.5)
+  ggsave(glue("figs/meanIP_N_{date_i_c}.png"), p, width=5, height=5.5)
   p <- ip_sum_df |>
-    filter(month==month_i) |>
+    filter(date==date_i) |>
     ggplot() +
     geom_sf(data=linnhe_fp) +
     geom_sf(aes(fill=mnC^4), colour=NA) +
@@ -933,17 +933,16 @@ for(i in seq_along(ip_months)) {
                          breaks=c(0.001, 0.01, 0.1, 1, 5),
                          labels=c(0.001, 0.01, 0.1, 1, 5),
                          limits=c(0, 5)) +
-    ggtitle(paste("2023", month.name[month_i])) +
+    ggtitle(date_i_c) +
     theme(axis.title=element_blank(),
           legend.position="bottom",
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/meanIP_C_{str_pad(month_i, 2, 'left', '0')}.png"), p,
-         width=5, height=5.5)
+  ggsave(glue("figs/meanIP_C_{date_i_c}.png"), p, width=5, height=5.5)
 
   p <- ip_sum_df |>
-    filter(month==month_i) |>
+    filter(date==date_i) |>
     ggplot() +
     geom_sf(data=linnhe_fp) +
     geom_sf(aes(fill=mnN), colour=NA) +
@@ -953,16 +952,15 @@ for(i in seq_along(ip_months)) {
                          breaks=mnBreaks^0.25,
                          labels=mnBreaks,
                          limits=lims_mnN) +
-    ggtitle(paste("2023", month.name[month_i])) +
+    ggtitle(date_i_c) +
     theme(axis.title=element_blank(),
           legend.position="bottom",
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/contmeanIP_N_{str_pad(month_i, 2, 'left', '0')}.png"), p,
-         width=5, height=5.5)
+  ggsave(glue("figs/contmeanIP_N_{date_i_c}.png"), p, width=5, height=5.5)
   p <- ip_sum_df |>
-    filter(month==month_i) |>
+    filter(date==date_i) |>
     ggplot() +
     geom_sf(data=linnhe_fp) +
     geom_sf(aes(fill=mnC), colour=NA) +
@@ -972,49 +970,47 @@ for(i in seq_along(ip_months)) {
                          breaks=mnBreaks^0.25,
                          labels=mnBreaks,
                          limits=lims_mnC) +
-    ggtitle(paste("2023", month.name[month_i])) +
+    ggtitle(date_i_c) +
     theme(axis.title=element_blank(),
           legend.position="bottom",
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/contmeanIP_C_{str_pad(month_i, 2, 'left', '0')}.png"), p,
-         width=5, height=5.5)
+  ggsave(glue("figs/contmeanIP_C_{date_i_c}.png"), p, width=5, height=5.5)
 
 
   p <- ip_sum_df |>
-    filter(month==month_i) |>
+    filter(date==date_i) |>
     ggplot() +
     geom_sf(data=linnhe_fp) +
     geom_sf(aes(fill=sdN), colour=NA) +
     geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
     scale_fill_viridis_c("sd(nauplii IP) in top 30m", option="turbo", limits=lims_sdN) +
-    ggtitle(paste("2023", month.name[month_i])) +
+    ggtitle(date_i_c) +
     theme(axis.title=element_blank(),
           legend.position="bottom",
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/sdIP_N_{str_pad(month_i, 2, 'left', '0')}.png"), p,
+  ggsave(glue("figs/sdIP_N_{date_i_c}.png"), p,
          width=5, height=5.5)
   p <- ip_sum_df |>
-    filter(month==month_i) |>
+    filter(date==date_i) |>
     ggplot() +
     geom_sf(data=linnhe_fp) +
     geom_sf(aes(fill=sdC), colour=NA) +
     geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
     scale_fill_viridis_c("sd(copepodid IP) in top 30m", option="turbo", limits=lims_sdC) +
-    ggtitle(paste("2023", month.name[month_i])) +
+    ggtitle(date_i_c) +
     theme(axis.title=element_blank(),
           legend.position="bottom",
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/sdIP_C_{str_pad(month_i, 2, 'left', '0')}.png"), p,
-         width=5, height=5.5)
+  ggsave(glue("figs/sdIP_C_{date_i_c}.png"), p, width=5, height=5.5)
 
   p <- ip_sum_df |>
-    filter(month==month_i) |>
+    filter(date==date_i) |>
     ggplot() +
     geom_sf(data=linnhe_fp) +
     geom_sf(aes(fill=pmax(log(sdN), -5)), colour=NA) +
@@ -1023,16 +1019,15 @@ for(i in seq_along(ip_months)) {
                          limits=lims_logsdN,
                          breaks=seq(-5,max(lims_logsdN), length.out=4),
                          labels=round(exp(seq(-5,max(lims_logsdN), length.out=4)), 3)) +
-    ggtitle(paste("2023", month.name[month_i])) +
+    ggtitle(date_i_c) +
     theme(axis.title=element_blank(),
           legend.position="bottom",
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/logsdIP_N_{str_pad(month_i, 2, 'left', '0')}.png"), p,
-         width=5, height=5.5)
+  ggsave(glue("figs/logsdIP_N_{date_i_c}.png"), p, width=5, height=5.5)
   p <- ip_sum_df |>
-    filter(month==month_i) |>
+    filter(date==date_i) |>
     ggplot() +
     geom_sf(data=linnhe_fp) +
     geom_sf(aes(fill=pmax(log(sdC), -5)), colour=NA) +
@@ -1041,14 +1036,13 @@ for(i in seq_along(ip_months)) {
                          limits=lims_logsdC,
                          breaks=seq(-5,max(lims_logsdC), length.out=4),
                          labels=round(exp(seq(-5,max(lims_logsdC), length.out=4)), 3)) +
-    ggtitle(paste("2023", month.name[month_i])) +
+    ggtitle(date_i_c) +
     theme(axis.title=element_blank(),
           legend.position="bottom",
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/logsdIP_C_{str_pad(month_i, 2, 'left', '0')}.png"), p,
-         width=5, height=5.5)
+  ggsave(glue("figs/logsdIP_C_{date_i_c}.png"), p, width=5, height=5.5)
 }
 
 
