@@ -173,11 +173,12 @@ farms_etive <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
 
 # Influx
 mesh_fp <- st_read(glue("{dirs$mesh}/WeStCOMS2_meshFootprint.gpkg"))
-sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
+# sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
+sim_dirs <- dirrf(dirs$out, "pstepsImmature_20231231") |> dirname() |> dirname()
 c_0_5_summary <- c_5_15_summary <- c_15_30_summary <- c_0_30_summary <- vector("list", length(sim_dirs))
 c_0_5_farm <- c_5_15_farm <- c_15_30_farm <- c_0_30_farm <- vector("list", length(sim_dirs))
 
-cores <- 30
+cores <- 20
 for(i in 1:length(sim_dirs)) {
   f_0_5 <- dirrf(sim_dirs[i], "connectivity_0.0-5.0.*csv")
   f_5_15 <- dirrf(sim_dirs[i], "connectivity_5.0-15.0.*csv")
@@ -259,6 +260,7 @@ saveRDS(c_0_30_sum_farm_df, "out/sensitivity/processed/c_0_30_sum_farm_df.rds")
 
 # plots -------------------------------------------------------------------
 
+farm_meta <- read_csv("data/farm_GSA_metadata.csv")
 logCols <- c("D_h", "D_hVert", "maxDepth")
 rtCols <- c("lightThreshCopepodid", "lightThreshNauplius",
             "swimDownSpeedCopepodidMean", "swimDownSpeedNaupliusMean",
@@ -316,25 +318,25 @@ c_0_5_sum_df |>
   ggplot(aes(value, influx_m2_MAM_md^0.25)) +
   geom_point(shape=1, alpha=0.5) +
   # geom_smooth(method="loess", se=F) +
-  facet_wrap(~name, scales="free_x")
+  facet_wrap(~name, scales="free_x", ncol=7)
 c_5_15_sum_df |>
   pivot_longer(any_of(param_names)) |>
   ggplot(aes(value, influx_m2_MAM_md^0.25)) +
   geom_point(shape=1, alpha=0.5) +
   # geom_smooth(method="loess", se=F) +
-  facet_wrap(~name, scales="free_x")
+  facet_wrap(~name, scales="free_x", ncol=7)
 c_15_30_sum_df |>
   pivot_longer(any_of(param_names)) |>
   ggplot(aes(value, influx_m2_MAM_md^0.25)) +
   geom_point(shape=1, alpha=0.5) +
   # geom_smooth(method="loess", se=F) +
-  facet_wrap(~name, scales="free_x")
+  facet_wrap(~name, scales="free_x", ncol=7)
 c_0_30_sum_df |>
   pivot_longer(any_of(param_names)) |>
   ggplot(aes(value, influx_m2_MAM_md^0.25)) +
   geom_point(shape=1, alpha=0.5) +
   # geom_smooth(method="loess", se=F) +
-  facet_wrap(~name, scales="free_x")
+  facet_wrap(~name, scales="free_x", ncol=7)
 
 # How does relative importance vary among farms?
 # Make maps
@@ -364,31 +366,68 @@ c_5_15_sum_farm_df |>
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
   facet_wrap(~name, scales="free_x")
 c_15_30_sum_farm_df |>
-  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
   pivot_longer(any_of(param_names)) |>
   ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
   geom_point(shape=1, alpha=0.5) +
-  geom_smooth(method="loess", se=F) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
   facet_wrap(~name, scales="free_x")
 c_0_30_sum_farm_df |>
-  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+  inner_join(farm_meta, by="sepaSite") |>
   pivot_longer(any_of(param_names)) |>
-  ggplot(aes(value, influx_m2_MAM_md^0.25, colour=sepaSite)) +
+  ggplot(aes(value, influx_m2_SON_md^0.25, colour=logProximity)) +
   geom_point(shape=1, alpha=0.5) +
-  # geom_smooth(method="loess", se=F) +
-  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
-  facet_wrap(~name, scales="free_x")
+  scale_colour_viridis_c(option="turbo", begin=0.05) +
+  facet_wrap(~name, scales="free_x", ncol=7) +
+  theme(legend.position="bottom")
+
+c_0_30_sum_farm_df |>
+  inner_join(farm_meta, by="sepaSite") |>
+  mutate(across(any_of(param_names), ~c(scale(.x)))) |>
+  pivot_longer(any_of(param_names)) |>
+  ggplot(aes(logProximity, influx_m2_SON_md^0.25, colour=value)) +
+  geom_point(shape=1, alpha=0.5) +
+  scale_colour_viridis_c(option="turbo", begin=0.05) +
+  facet_wrap(~name, scales="free_x", ncol=7) +
+  theme(legend.position="bottom")
 
 
 c_0_30_sum_farm_df |>
+  inner_join(farm_meta, by="sepaSite") |>
   # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
   pivot_longer(any_of(param_names)) |>
-  ggplot(aes(value, sepaSite, colour=influx_m2_MAM_md^0.25)) +
+  ggplot(aes(logProximity, value, colour=influx_m2_MAM_md^0.25)) +
   geom_point(shape=1, alpha=0.5) +
   # geom_smooth(method="loess", se=F) +
   scale_colour_viridis_c(option="turbo", begin=0.05) +
-  facet_wrap(~name, scales="free_x")
+  facet_wrap(~name, scales="free_y", ncol=7)
+c_0_30_sum_farm_df |>
+  inner_join(farm_meta, by="sepaSite") |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+  pivot_longer(any_of(param_names)) |>
+  ggplot(aes(logProximity, value, colour=influx_m2_SON_md^0.25)) +
+  geom_point(shape=1, alpha=0.5) +
+  # geom_smooth(method="loess", se=F) +
+  scale_colour_viridis_c(option="turbo", begin=0.05) +
+  facet_wrap(~name, scales="free_y", ncol=7)
+
+c_0_30_sum_farm_df |>
+  inner_join(farm_meta, by="sepaSite") |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+  pivot_longer(any_of(param_names)) |>
+  ggplot(aes(fetch, value, colour=influx_m2_MAM_md^0.25)) +
+  geom_point(shape=1, alpha=0.5) +
+  # geom_smooth(method="loess", se=F) +
+  scale_colour_viridis_c(option="turbo", begin=0.05) +
+  facet_wrap(~name, scales="free_y", ncol=7)
+c_0_30_sum_farm_df |>
+  inner_join(farm_meta, by="sepaSite") |>
+  # mutate(sepaSite=factor(sepaSite, levels=farms_etive)) |>
+  pivot_longer(any_of(param_names)) |>
+  ggplot(aes(fetch, value, colour=influx_m2_SON_md^0.25)) +
+  geom_point(shape=1, alpha=0.5) +
+  # geom_smooth(method="loess", se=F) +
+  scale_colour_viridis_c(option="turbo", begin=0.05) +
+  facet_wrap(~name, scales="free_y", ncol=7)
 
 farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
 linnhe_fp <- mesh_fp |> st_crop(unlist(farm_bbox))
@@ -531,18 +570,36 @@ ggsave("admin/project_meetings/figs_temp/sensitivity_0_30m_scatter.png",
 
 
 
+# random forest -----------------------------------------------------------
+
 library(randomForest)
 
-rf_0_5_ls <- run_sensitivity_ML(outcome_names, c_0_5_sum_df, sim.i)
+rf_0_5_ls <- run_sensitivity_ML(outcome_names, param_names,
+                                c_0_5_sum_df |>
+                                  mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
+                                         D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)),
+                                sim.i)
 importance_0_5_df <- summarise_importance(rf_0_5_ls, outcome_names)
 
-rf_5_15_ls <- run_sensitivity_ML(outcome_names, c_5_15_sum_df, sim.i)
+rf_5_15_ls <- run_sensitivity_ML(outcome_names, param_names,
+                                 c_5_15_sum_df |>
+                                   mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
+                                          D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)),
+                                 sim.i)
 importance_5_15_df <- summarise_importance(rf_5_15_ls, outcome_names)
 
-rf_15_30_ls <- run_sensitivity_ML(outcome_names, c_15_30_sum_df, sim.i)
+rf_15_30_ls <- run_sensitivity_ML(outcome_names, param_names,
+                                  c_15_30_sum_df |>
+                                    mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
+                                           D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)),
+                                  sim.i)
 importance_15_30_df <- summarise_importance(rf_15_30_ls, outcome_names)
 
-rf_0_30_ls <- run_sensitivity_ML(outcome_names, c_0_30_sum_df, sim.i)
+rf_0_30_ls <- run_sensitivity_ML(outcome_names, param_names,
+                                 c_0_30_sum_df |>
+                                   mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
+                                          D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)),
+                                 sim.i)
 importance_0_30_df <- summarise_importance(rf_0_30_ls, outcome_names)
 
 importance_df <- bind_rows(
@@ -553,45 +610,44 @@ importance_df <- bind_rows(
 ) |>
   mutate(depth=factor(depth, levels=c("0-5m", "5-15m", "15-30m", "0-30m")))
 
+param_df <- list("D_h"="Diffusion: horizontal",
+                   "D_hVert"="Diffusion: vertical",
+                   "variableDh"="WeStCOMS horizontal diffusion",
+                   "variableDhV"="WeStCOMS vertical diffusion",
+                   "eggTemp_fn"="Gravid egg production",
+                   "mortSal_fn"="Larval mortality rate",
+                   "swimUpSpeedNaupliusMean"="Upward swimming speed: N",
+                   "swimDownSpeedNaupliusMean"="Downward sinking speed: N",
+                   "swimUpSpeedCopepodidMean"="Upward swimming speed: C",
+                   "swimDownSpeedCopepodidMean"="Downward sinking speed: C",
+                   "passiveSinkRateSal"="Salinity-dependent sink rate",
+                   "salinityThreshNaupliusMin"="Salinity: Lower threshold: N",
+                   "salinityThreshNaupliusMax"="Salinity: Upper threshold: N",
+                   "salinityThreshCopepodidMin"="Salinity: Lower threshold: C",
+                   "salinityThreshCopepodidMax"="Salinity: Upper threshold: C",
+                   "salRangeN"="Salinity range: N",
+                   "salRangeC"="Salinity range: C",
+                   "lightThreshNauplius"="Light threshold: N",
+                   "lightThreshCopepodid"="Light threshold: C",
+                   "swimColdNauplius"="Cold preference: N",
+                   "viableDegreeDays"="Development: N",
+                   "maxDepth"="Maximum preferred depth",
+                   "connectivityThresh"="IP radius") |>
+  as_tibble() |>
+  pivot_longer(everything(), names_to="param", values_to="param_pretty") |>
+  mutate(param_order=factor(param,
+                          levels=c("D_h", "D_hVert", "variableDh", "variableDhV",
+                                   "maxDepth", "connectivityThresh", "passiveSinkRateSal",
+                                   "eggTemp_fn", "mortSal_fn", "viableDegreeDays",
+                                   "swimColdNauplius",
+                                   "salinityThreshNaupliusMin", "salinityThreshNaupliusMax",
+                                   "salinityThreshCopepodidMin", "salinityThreshCopepodidMax",
+                                   "salRangeN", "salRangeC",
+                                   "swimDownSpeedNaupliusMean", "swimUpSpeedNaupliusMean",
+                                   "swimDownSpeedCopepodidMean", "swimUpSpeedCopepodidMean",
+                                   "lightThreshNauplius", "lightThreshCopepodid"))) |>
+  arrange(param_order)
 
-param_df <- tibble(param=c("D_h",
-                           "D_hVert",
-                           "passiveSinkRateSal",
-                           "viableDegreeDays",
-                           "salinityThreshNaupliusMax",
-                           "salinityThreshNaupliusMin",
-                           "salinityThreshCopepodidMax",
-                           "salinityThreshCopepodidMin",
-                           "connectivityThresh",
-                           "swimUpSpeedNaupliusMean",
-                           "swimDownSpeedNaupliusMean",
-                           "swimUpSpeedCopepodidMean",
-                           "swimDownSpeedCopepodidMean",
-                           "lightThreshNauplius",
-                           "lightThreshCopepodid",
-                           "mortSal_fn",
-                           "eggTemp_fn",
-                           "maxDepth",
-                           "stokesDrift"),
-                   pretty=c("Diffusion (horizontal)",
-                            "Diffusion (vertical)",
-                            "Passive sink rate",
-                            "Nauplius to Copepodid GDD",
-                            "Upper salinity thresh: Nauplius",
-                            "Lower salinity thresh: Nauplius",
-                            "Upper salinity thresh: Copepodid",
-                            "Lower salinity thresh: Copepodid",
-                            "Connectivity radius",
-                            "Vert speed Nauplius (up)",
-                            "Vert speed Nauplius (down)",
-                            "Vert speed Copepodid (up)",
-                            "Vert speed Copepodid (down)",
-                            "Light threshold: Nauplius",
-                            "Light threshold: Copepodid",
-                            "Mortality fn",
-                            "Egg production fn",
-                            "Max depth preferred",
-                            "Stokes drift"))
 importance_avg <- importance_df |>
   group_by(param) |>
   summarise(mn=mean(`%IncMSE`, na.rm=T)) |>
@@ -602,7 +658,7 @@ importance_df |>
   filter(flux=="influx") |>
   filter(type=="IP_m2") |>
   left_join(param_df) |>
-  mutate(pretty=factor(pretty, levels=importance_avg$pretty)) |>
+  mutate(pretty=factor(param_pretty, levels=importance_avg$param_pretty)) |>
   ggplot(aes(pretty, `%IncMSE`, fill=depth)) +
   geom_boxplot() +
   scale_fill_manual(values=c("#FDE725FF", "#21908CFF", "#440154FF", "grey80")) +
@@ -619,7 +675,7 @@ importance_df |>
   filter(flux=="influx") |>
   filter(type=="IP_m2") |>
   left_join(param_df) |>
-  mutate(pretty=factor(pretty, levels=importance_avg$pretty)) |>
+  mutate(pretty=factor(param_pretty, levels=importance_avg$param_pretty)) |>
   ggplot(aes(pretty, `%IncMSE`, colour=depth, linetype=mn_md, shape=mn_md)) +
   geom_point() +
   geom_line(aes(group=paste(depth, mn_md))) +
@@ -640,7 +696,7 @@ importance_df |>
 importance_df |>
   filter(flux=="influx") |>
   left_join(param_df) |>
-  mutate(pretty=factor(pretty, levels=importance_avg$pretty)) |>
+  mutate(pretty=factor(param_pretty, levels=importance_avg$param_pretty)) |>
   ggplot(aes(pretty, `%IncMSE`, fill=depth)) +
   geom_boxplot() +
   scale_fill_manual(values=c("#FDE725FF", "#21908CFF", "#440154FF", "grey80")) +
@@ -661,7 +717,7 @@ importance_df |>
   filter(type=="IP_m2") |>
   filter(season != "all") |>
   left_join(param_df) |>
-  mutate(pretty=factor(pretty, levels=importance_avg$pretty),
+  mutate(pretty=factor(param_pretty, levels=importance_avg$param_pretty),
          season=factor(season,
                        levels=c("MAM", "JJA", "SON"),
                        labels=c("Spring: MAM", "Summer: JJA", "Autumn: SON"))) |>
@@ -676,7 +732,7 @@ importance_df |>
         axis.text.x=element_text(angle=270, hjust=0, vjust=0.5))
 
 importance_df |>
-  mutate(param=factor(param, levels=importance_avg$param)) |>
+  mutate(param=factor(param_pretty, levels=importance_avg$param_pretty)) |>
   ggplot(aes(`%IncMSE`, param, fill=depth)) +
   geom_boxplot() +
   scale_fill_manual(values=c("#FDE725FF", "#21908CFF", "#440154FF", "grey80")) +
@@ -684,7 +740,7 @@ importance_df |>
   theme(panel.grid.major.y=element_line(colour="grey90"))
 
 importance_df |>
-  mutate(param=factor(param, levels=importance_avg$param)) |>
+  mutate(param=factor(param_pretty, levels=importance_avg$param_pretty)) |>
   ggplot(aes(`%IncMSE`, param, fill=season)) +
   geom_boxplot() +
   facet_grid(depth~type) +
@@ -751,6 +807,61 @@ importance_15_30_df |>
 
 
 
+library(DALEX)
+library(ingredients)
+explainers <- map(1:length(rf_0_30_ls$rf),
+                  ~explain(rf_0_30_ls$rf[[.x]],
+                           data=rf_0_30_ls$exp$x_valid[[.x]],
+                           y=rf_0_30_ls$exp$y_valid[[.x]]))
+ALEs <- map(explainers[grep("influx_m2", outcome_names)],
+            ~accumulated_dependence(.x))
+map_dfr(seq_along(ALEs),
+        ~ALEs[[.x]] |>
+          mutate(id=.x,
+                 outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
+  mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                          grepl("JJA", outcome) ~ "JJA",
+                          grepl("SON", outcome) ~ "SON",
+                          .default="all")) |>
+  ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
+  geom_hline(yintercept=0, linetype=3) +
+  geom_line(alpha=0.5) +
+  scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
+  facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+
+PDs <- map(explainers[grep("influx_m2", outcome_names)],
+           ~partial_dependence(.x))
+map_dfr(seq_along(PDs),
+        ~PDs[[.x]] |>
+          mutate(id=.x,
+                 outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
+  mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                          grepl("JJA", outcome) ~ "JJA",
+                          grepl("SON", outcome) ~ "SON",
+                          .default="all")) |>
+  ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
+  geom_hline(yintercept=0, linetype=3) +
+  geom_line(alpha=0.5) +
+  scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
+  facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+
+FIs <- map(explainers[grep("influx_m2", outcome_names)],
+           ~feature_importance(.x))
+map_dfr(seq_along(FIs),
+        ~FIs[[.x]] |>
+          as_tibble() |>
+          group_by(variable) |>
+          summarise(mean_dropout_loss=mean(dropout_loss)) |>
+          ungroup() |>
+          mutate(id=.x,
+                 outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
+  mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                          grepl("JJA", outcome) ~ "JJA",
+                          grepl("SON", outcome) ~ "SON",
+                          .default="all")) |>
+  ggplot(aes(mean_dropout_loss, variable, fill=season)) +
+  geom_boxplot() +
+  scale_fill_manual(values=c("grey", viridis::turbo(3, begin=0.3, end=0.9)))
 
 # maps --------------------------------------------------------------------
 
@@ -765,7 +876,6 @@ sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
 
 ip_ls <- vector("list", length(sim_dirs))
 
-sim_dirs <- sim_dirs[c(1:6, 9, 10)]
 library(furrr)
 if(get_os()=="windows") {
   plan(multisession, workers=12)
@@ -775,7 +885,7 @@ if(get_os()=="windows") {
 # TODO: This is obviously too unwieldy for a large number of simulations.
 # Read by time step and store temporary files
 # Also worth using data.table
-for(i in 1:length(sim_dirs)) {
+for(i in (1:length(sim_dirs))[25:50]) {
   sim <- str_sub(sim_dirs[i], -4, -1)
   fN <- dirrf(sim_dirs[i], "pstepsImmature")
   fC <- dirrf(sim_dirs[i], "pstepsMature")
@@ -794,23 +904,23 @@ plan(sequential)
 
 ip_df <- data.table::rbindlist(ip_ls) |> as_tibble()
 
-ip_sf <- inner_join(linnhe_sf |> select(i, area, depth, geom),
-           ip_df,
-           by="i") |>
-  mutate(vol=(area*pmin(depth, 30)),
-         ipN_m3=ipN_h/vol,
-         ipC_m3=ipC_h/vol)
-ip_sf |>
-  ggplot() +
-  geom_sf(data=linnhe_fp) +
-  geom_sf(aes(fill=ipC_m3), colour=NA) +
-  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
-  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
-  facet_grid(date~sim) +
-  # facet_wrap(~sim) +
-  theme(legend.position="bottom",
-        legend.key.width=unit(3, "cm"),
-        legend.key.height=unit(0.2, "cm"))
+# ip_sf <- inner_join(linnhe_sf |> select(i, area, depth, geom),
+#            ip_df,
+#            by="i") |>
+#   mutate(vol=(area*pmin(depth, 30)),
+#          ipN_m3=ipN_h/vol,
+#          ipC_m3=ipC_h/vol)
+# ip_sf |>
+#   ggplot() +
+#   geom_sf(data=linnhe_fp) +
+#   geom_sf(aes(fill=ipC_m3), colour=NA) +
+#   geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+#   scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
+#   facet_grid(date~sim) +
+#   # facet_wrap(~sim) +
+#   theme(legend.position="bottom",
+#         legend.key.width=unit(3, "cm"),
+#         legend.key.height=unit(0.2, "cm"))
 
 ip_sum_df <- inner_join(
   linnhe_sf |> select(i, geom),

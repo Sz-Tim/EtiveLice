@@ -312,16 +312,21 @@ make_sensitivity_sum_df <- function(sum_ls, sim.i) {
 
 
 
-run_sensitivity_ML <- function(outcome_names, sum_df, sim.i, method="rf") {
+run_sensitivity_ML <- function(outcome_names, predictor_names,
+                               sum_df, sim.i,
+                               method="rf") {
   df_ls <- map(outcome_names,
       ~sum_df |>
         rename(outcome=.x) |>
         mutate(outcome=outcome^0.25) |>
-        select(outcome, any_of(names(sim.i)[1:19])) |>
+        select(outcome, any_of(predictor_names)) |>
         drop_na())
   if(method=="rf") {
-    map(df_ls, ~randomForest(outcome ~ ., data=.x, importance=T))
+    rf_ls <- map(df_ls, ~randomForest(outcome ~ ., data=.x, importance=T))
   }
+  exp_ls <- list(x_valid=df_ls |> map(~.x |> select(-outcome)),
+                 y_valid=df_ls |> map(~.x$outcome))
+  return(list(rf=rf_ls, exp=exp_ls))
 }
 
 
