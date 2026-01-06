@@ -13,8 +13,6 @@ library(biotrackR) # devtools::install_github("Sz-Tim/biotrackR")
 library(zoo)
 library(janitor)
 library(sf)
-# library(raster)
-# library(spaths)
 library(readxl)
 # conflicted::conflicts_prefer(dplyr::select,
 #                              dplyr::filter,
@@ -229,6 +227,49 @@ out.df |>
 #   write_csv(glue("data/lice_daily_2021-04-01_2024-12-31_05lpf.csv"))
 
 
+
+
+
+
+# site info ---------------------------------------------------------------
+
+# library(raster)
+library(spaths)
+FMA <- st_read("../00_gis/farm_management_areas/salmon_2016/aquaculture_disease_managementPolygon.shp") |>
+  st_transform(crs=27700)
+
+get_fetch2 <- function (site.df, fetch.path) {
+  library(tidyverse)
+  library(sf)
+  fetch_rast <- raster::raster(fetch.path)
+  site.df %>%
+    mutate(fetch = raster::extract(fetch_rast, ., small = T, buffer = 10, fun = mean)) %>%
+    mutate(fetch = if_else(is.na(fetch), raster::extract(fetch_rast, ., small = T, buffer = 30, fun = mean), fetch)) %>%
+    mutate(fetch = if_else(is.na(fetch), raster::extract(fetch_rast, ., small = T, buffer = 100, fun = mean), fetch)) %>%
+    st_drop_geometry()
+}
+
+site_meta <- read_csv("data/farm_sites_GSA_2023-2024.csv") |>
+  st_as_sf(coords=c("easting", "northing"), crs=27700, remove=F) |>
+  st_join(FMA |> dplyr::select(-objectid)) |>
+  get_fetch2("../00_gis/fetch/log10_eu200m1a.tif")
+linnhe_rast <- terra::rast("data/linnhe_ocean.tif")
+terra::NAflag(linnhe_rast) <- 2
+dist_df <- shortest_paths(
+  linnhe_rast,
+  site_meta |> st_as_sf(coords=c("easting", "northing"), crs=27700, remove=F),
+  bidirectional=T
+)
+site_meta <- bind_cols(
+  site_meta,
+  dist_df |>
+    group_by(origins) |>
+    summarise(logProximity=log(sum(1/(distances/1e3)^2))) |>
+    ungroup() |>
+    select(logProximity)
+)
+
+write_csv(site_meta, "data/farm_GSA_metadata.csv")
 
 
 
