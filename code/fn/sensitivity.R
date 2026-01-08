@@ -212,7 +212,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
   }
   sim.i <- sim.i |>
     mutate(across(where(is.numeric), ~signif(.x, 5))) |>
-    mutate(i=str_pad(row_number(), 4, "left", "0"),
+    mutate(i=str_pad(row_number(), nchar(n_sim), "left", "0"),
            outDir=glue("{out_dir}/sim_{i}/"))
   return(sim.i)
 }
