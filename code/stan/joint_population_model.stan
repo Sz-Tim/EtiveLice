@@ -73,7 +73,8 @@ parameters {
   real<lower=0,upper=1> treatEfficacy; // mortality induced by treatment
   matrix[2, nStages-1] mnDaysStage_beta_z; // [Int, temp][Ch-Pr, Pr-Ad, Ad-Gr]
   vector[nStages] logit_detect_p; // p(detect) by stage
-  real<lower=1,upper=4> IP_scale; // scaling factor for IP -> N_attach
+  // real<lower=1,upper=4> IP_scale; // scaling factor for IP -> N_attach
+  real<lower=0> IP_halfSat_m3; // half-saturation constant for attachment rate (cop/m3)
   real<lower=0> nb_prec; // neg_binom precision
 }
 
@@ -81,6 +82,7 @@ transformed parameters {
   // parameters
   real lprior = 0;  // prior contributions to the log posterior
   real<lower=0> IP_bg = IP_bg_m3 * IP_volume; // background N_copepodids per pen
+  real<lower=0> IP_halfSat = IP_halfSat_m3 * IP_volume; // half-saturation constant for attachment rate per pen
   simplex[nSims] ensWts_p = softmax(ensWts_p_uc);  // mixture proportions
   vector[nAttachCov] attach_beta; // p(attach) [RW_logit, sal_z, uv, uv^2]
   matrix[nSurvCov, nStages] surv_beta; // p(surv) [Int, sal][Ch, Pr, Ad]
@@ -88,7 +90,8 @@ transformed parameters {
   vector[nStages] detect_p;
   // intermediate quantities
   matrix[nDays, nFarms] ensIP;
-  matrix[nDays, nFarms] pr_attach;
+  // matrix[nDays, nFarms] pr_attach;
+  matrix[nDays, nFarms] pr_attachSaturated;
   matrix[nDays, nFarms] N_attach;
   array[nFarms] matrix[nDays, nStages] stage_Surv; // survival rates
   array[nFarms] matrix[nDays, nStages-1] pMolt; // transition probabilities
@@ -126,7 +129,7 @@ transformed parameters {
   // calculate ensIP, pr_attach, N_attach, stage_logSurv
   for(farm in 1:nFarms) {
     ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg * nPens[farm];
-    pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
+    // pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
     stage_Surv[farm] = inv_logit(surv_env_mx[farm] * surv_beta);
     for(stage in 1:(nStages-1)) {
       pMolt[farm, , stage] = 1 / (temp_X[farm] * mnDaysStage_beta[, stage]);
@@ -137,7 +140,12 @@ transformed parameters {
                                     (1 - (treatDays[, farm] * treatEfficacy));
     }
   }
-  N_attach = (ensIP.^(1/IP_scale) .* pr_attach).^IP_scale .* fishPresent * 0.5 ./ nFishNoZero_mx;
+  // N_attach = (ensIP.^(1/IP_scale) .* pr_attach).^IP_scale .* fishPresent * 0.5 ./ nFishNoZero_mx;
+  for(farm in 1:nFarms) {
+    pr_attachSaturated[,farm] = (inv_logit(attach_env_mx[farm] * attach_beta) * IP_halfSat * nPens[farm])
+    ./ (ensIP[,farm] + IP_halfSat * nPens[farm]);
+  }
+  N_attach = ensIP .* pr_attachSaturated .* fishPresent * 0.5 ./ nFishNoZero_mx;
 
   trans_mx = trans_mx_init;
   for(farm in 1:nFarms) {
@@ -167,17 +175,17 @@ transformed parameters {
   }
   for(farm in 1:nFarms) {
     array[2] int farmInd = sample_ii[farm, ];
-    // Chalimus: (mu[Ch1] + mu[Ch2]) * nFish * pDet[Ch]
+    // Chalimus: (mu[Ch1] + mu[Ch2]) * nFishSampled * pDet[Ch]
     y_bar[1, farmInd[1]:farmInd[2]] =
       ones_row_vector(2) * mu[farm, 1:2, sample_i[farmInd[1]:farmInd[2], 2]] .*
       t_nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
       detect_p[1] + y_bar_minimum;
-    // Pre-adult: (mu[PA1] + mu[PA2]) * nFish * pDet[PA]
+    // Pre-adult: (mu[PA1] + mu[PA2]) * nFishSampled * pDet[PA]
     y_bar[2, farmInd[1]:farmInd[2]] =
       ones_row_vector(2) * mu[farm, 3:4, sample_i[farmInd[1]:farmInd[2], 2]] .*
       t_nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
       detect_p[2] + y_bar_minimum;
-    // Adult: mu[Ad] * nFish * pDet[Ad]
+    // Adult: mu[Ad] * nFishSampled * pDet[Ad]
     y_bar[3, farmInd[1]:farmInd[2]] =
       mu[farm, 5, sample_i[farmInd[1]:farmInd[2], 2]] .*
       t_nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
@@ -196,6 +204,7 @@ transformed parameters {
     }
     lprior += std_normal_lpdf(logit_detect_p);
     lprior += normal_lpdf(nb_prec | 0, 2) - normal_lccdf(0 | 0, 2);
+    lprior += student_t_lpdf(IP_halfSat_m3 | 3, 5, 10) - student_t_lccdf(0 | 3, 5, 10);
   }
 }
 

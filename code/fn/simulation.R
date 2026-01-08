@@ -90,7 +90,12 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
     stage_survRate[farm,,] <- plogis(sal_mx[farm,,] %*% params$surv_beta)
   }
   # assume even sex ratio
-  N_attach <- (ensIP^(1/params$IP_scale) * pr_attach)^params$IP_scale / nFish_mx / 2
+  # N_attach <- (ensIP^(1/params$IP_scale) * pr_attach)^params$IP_scale / nFish_mx / 2
+  for(farm in 1:info$nFarms) {
+    N_attach <- 0.5 *
+      (pr_attach*params$IP_halfSat*info$nPens[farm])/(ensIP + params$IP_halfSat*info$nPens[farm]) *
+      ensIP / nFish_mx
+  }
   N_attach[nFish_mx==0] <- 0
   for(day in 1:info$nDays) {
     for(farm in 1:info$nFarms) {
