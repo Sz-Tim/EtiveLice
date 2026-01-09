@@ -813,6 +813,24 @@ explainers <- map(1:length(rf_0_30_ls$rf),
                   ~explain(rf_0_30_ls$rf[[.x]],
                            data=rf_0_30_ls$exp$x_valid[[.x]],
                            y=rf_0_30_ls$exp$y_valid[[.x]]))
+LDs <- map(explainers[grep("influx_m2", outcome_names)],
+            ~conditional_dependence(.x))
+map_dfr(seq_along(LDs),
+        ~LDs[[.x]] |>
+          mutate(id=.x,
+                 outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
+  mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                          grepl("JJA", outcome) ~ "JJA",
+                          grepl("SON", outcome) ~ "SON",
+                          .default="all")) |>
+  mutate(x=case_when(`_vname_` %in% logCols ~ exp(`_x_`),
+                     `_vname_` %in% rtCols ~ (`_x_`)^2,
+                     .default=`_x_`)) |>
+  ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
+  geom_line(alpha=0.5) +
+  scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
+  facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+
 ALEs <- map(explainers[grep("influx_m2", outcome_names)],
             ~accumulated_dependence(.x))
 map_dfr(seq_along(ALEs),
@@ -823,22 +841,9 @@ map_dfr(seq_along(ALEs),
                           grepl("JJA", outcome) ~ "JJA",
                           grepl("SON", outcome) ~ "SON",
                           .default="all")) |>
-  ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
-  geom_hline(yintercept=0, linetype=3) +
-  geom_line(alpha=0.5) +
-  scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
-  facet_wrap(~`_vname_`, scales="free_x", ncol=7)
-
-PDs <- map(explainers[grep("influx_m2", outcome_names)],
-           ~partial_dependence(.x))
-map_dfr(seq_along(PDs),
-        ~PDs[[.x]] |>
-          mutate(id=.x,
-                 outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
-  mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
-                          grepl("JJA", outcome) ~ "JJA",
-                          grepl("SON", outcome) ~ "SON",
-                          .default="all")) |>
+  mutate(x=case_when(`_vname_` %in% logCols ~ exp(`_x_`),
+                     `_vname_` %in% rtCols ~ (`_x_`)^2,
+                     .default=`_x_`)) |>
   ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
   geom_hline(yintercept=0, linetype=3) +
   geom_line(alpha=0.5) +
@@ -850,18 +855,31 @@ FIs <- map(explainers[grep("influx_m2", outcome_names)],
 map_dfr(seq_along(FIs),
         ~FIs[[.x]] |>
           as_tibble() |>
+          group_by(permutation) |>
+          mutate(rel_loss=(dropout_loss - min(dropout_loss))/(max(dropout_loss) - min(dropout_loss))) |>
           group_by(variable) |>
-          summarise(mean_dropout_loss=mean(dropout_loss)) |>
+          summarise(mean_dropout_loss=mean(rel_loss)) |>
           ungroup() |>
           mutate(id=.x,
                  outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
   mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
                           grepl("JJA", outcome) ~ "JJA",
                           grepl("SON", outcome) ~ "SON",
-                          .default="all")) |>
-  ggplot(aes(mean_dropout_loss, variable, fill=season)) +
-  geom_boxplot() +
-  scale_fill_manual(values=c("grey", viridis::turbo(3, begin=0.3, end=0.9)))
+                          .default="all"),
+         metric=if_else(grepl("_mn", outcome), "mean", "median")) |>
+  filter(! variable %in% c("_baseline_", "_full_model_", "variableDh", "variableDhV")) |>
+  group_by(variable) |>
+  mutate(grand_mean=mean(mean_dropout_loss)) |>
+  ungroup() |>
+  arrange(grand_mean) |>
+  mutate(variable=factor(variable, levels=unique(variable))) |>
+  ggplot(aes(mean_dropout_loss, variable, colour=season)) +
+  # geom_bar(stat="identity", position="dodge", colour="grey30") +
+  geom_path(aes(group=season)) +
+  geom_point() +
+  scale_colour_manual(values=c("grey", viridis::turbo(3, begin=0.3, end=0.9))) +
+  facet_grid(.~metric) +
+  theme(panel.grid.major.y=element_line(colour="grey90", linewidth=0.15))
 
 # maps --------------------------------------------------------------------
 
