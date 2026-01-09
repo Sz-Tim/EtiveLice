@@ -14,7 +14,7 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     nPens = info$nPens,
     nAttachCov = length(params$attach_beta),
     nSurvCov = nrow(params$surv_beta),
-    IP_volume = pi*30^2*20,
+    IP_volume = info$IP_penVolume,
     y_bar_minimum = 1e-5,
     # farm counts, treatments, sampling info
     y = readRDS(glue("{dat_dir}y.rds"))[,,dates,],
