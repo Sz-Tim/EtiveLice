@@ -5,6 +5,7 @@
 
 data {
   int<lower=0> nDays; // number of days from start to end
+  int<lower=0> nHours; // number of hours from start to end
   int<lower=0> nFarms; // number of farms
   int<lower=0> nSims; // number of IP simulations for ensembling
   int<lower=0> nStages; // number of on-fish stages: 3 = Ch, PA, Ad
@@ -14,9 +15,10 @@ data {
   real<lower=0> IP_volume; // per-pen volume to use for scaling IP_m3 to N_copepodids
   real<lower=0> y_bar_minimum; // minimum possible expected lice counts (0 not allowed)
   array[nFarms] int<lower=0> nPens; // number of pens per farm
+  array[nDays,24] int<lower=1,upper=nHours> day_hour; // hour numbers corresponding to each day
   array[nStages, nDays, nFarms] int y_F; // FEMALE lice counts for each day 1:nDays
-  array[nFarms] matrix<lower=0>[nDays, nSims] IP_mx; // IP from particle tracking simulations
-  array[nFarms] matrix[nDays, nAttachCov] attach_env_mx; // covariates for p(Attach)
+  array[nFarms] matrix<lower=0>[nHours, nSims] IP_mx; // IP from particle tracking simulations
+  array[nFarms] matrix[nHours, nAttachCov] attach_env_mx; // covariates for p(Attach)
   array[nFarms] matrix[nDays, nSurvCov] surv_env_mx; // covariates for p(Surv) incl. intercept
   matrix[nDays, nFarms] temp_z_mx; // z-transformed temperature
   matrix<lower=0,upper=1>[nDays, nFarms] treatDays; // indicator for treatment application
@@ -41,6 +43,7 @@ transformed data {
   array[nStages, nSamples] int y2_F;
   matrix[nDays, nFarms] nFishNoZero_mx = nFish_mx;
   matrix[nDays, nFarms] fishPresent;
+  matrix[nDays, nFarms] fishScale;
 
   for(farm in 1:nFarms) {
     temp_X[farm, ,1] = ones_vector(nDays);
@@ -58,6 +61,7 @@ transformed data {
       }
     }
   }
+  fishScale = fishPresent ./ nFishNoZero_mx;
   for(sample in 1:nSamples) {
     for(stage in 1:nStages) {
       y2_F[stage, sample] = y_F[stage, sample_i[sample, 2], sample_i[sample, 1]];
@@ -91,8 +95,8 @@ transformed parameters {
   // intermediate quantities
   matrix[nDays, nFarms] ensIP;
   // matrix[nDays, nFarms] pr_attach;
-  matrix[nDays, nFarms] pr_attachSaturated;
-  matrix[nDays, nFarms] N_attach;
+  matrix[nHours, nFarms] pr_attachSaturated;
+  matrix[nHours, nFarms] N_attach;
   array[nFarms] matrix[nDays, nStages] stage_Surv; // survival rates
   array[nFarms] matrix[nDays, nStages-1] pMolt; // transition probabilities
   array[nFarms, nDays] matrix[nStages+2, nStages+2] trans_mx; // transition matrix
@@ -145,7 +149,7 @@ transformed parameters {
     pr_attachSaturated[,farm] = (inv_logit(attach_env_mx[farm] * attach_beta) * IP_halfSat * nPens[farm])
     ./ (ensIP[,farm] + IP_halfSat * nPens[farm]);
   }
-  N_attach = ensIP .* pr_attachSaturated .* fishPresent * 0.5 ./ nFishNoZero_mx;
+  N_attach = 0.5 * ensIP .* pr_attachSaturated;
 
   trans_mx = trans_mx_init;
   for(farm in 1:nFarms) {
@@ -166,11 +170,12 @@ transformed parameters {
   }
 
   mu = N_init;
+  // Population projection: Newly attached Ch1 + existing population transitions
   for(farm in 1:nFarms) {
-    mu[farm, 1, 1] = N_attach[1, farm];
+    mu[farm, 1, 1] = sum(N_attach[day_hour[1], farm]) * fishScale[1,farm];
     for(day in 1:(nDays-1)) {
       mu[farm, , day+1] = trans_mx[farm, day] * mu[farm, , day];
-      mu[farm, 1, day+1] += N_attach[day+1, farm];
+      mu[farm, 1, day+1] += sum(N_attach[day_hour[day+1], farm]) * fishScale[day+1,farm];
     }
   }
   for(farm in 1:nFarms) {

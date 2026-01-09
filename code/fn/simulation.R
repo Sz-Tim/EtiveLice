@@ -16,10 +16,10 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
 
 
   #---- transformed data
-  # IP_mx[farm, day, sim]
+  # IP_mx[farm, hour, sim]
   IP_mx <- make_IP_mx(influx_df, info, out_dir)
 
-  # attach_env_mx[farm, day, (1, RW, sal, uv, uv^2)]
+  # attach_env_mx[farm, hour, (1, RW, sal, uv, uv^2)]
   attach_env_mx <- make_attach_env_mx(farm_env, info, params, out_dir)
 
   # sal_mx[day, farm, (1, sal)]
@@ -44,17 +44,18 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
 
   #---- Data structures
   #### Ensemble infection pressure: Number of copepodids in radius
-  # ensIP[day, farm]
-  ensIP <- array(0, dim=c(info$nDays, info$nFarms))
+  # ensIP[hour, farm]
+  ensIP <- array(0, dim=c(info$nHours, info$nFarms))
 
   #### Attachment: Probability of attachment per copepodid
-  # pr_attach[day, farm]
-  pr_attach <- array(0, dim=c(info$nDays, info$nFarms))
+  # pr_attach[hour, farm]
+  pr_attach <- array(0, dim=c(info$nHours, info$nFarms))
 
   #### Number of attached copepodids
   # N_attach[day, farm]
-  N_attach <- array(0, dim=c(info$nDays, info$nFarms))
+  N_attach <- array(0, dim=c(info$nHours, info$nFarms))
   y_attach <- N_attach
+  day_hour <- matrix(1:info$nHours, ncol=24, byrow=T)
 
   #### For each daily cohort of newly attached copepodids by farm, track daily
   #### abundance, stage, and accumulated GDD for each farm, separating M/F
@@ -94,12 +95,12 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   for(farm in 1:info$nFarms) {
     N_attach <- 0.5 *
       (pr_attach*params$IP_halfSat*info$nPens[farm])/(ensIP + params$IP_halfSat*info$nPens[farm]) *
-      ensIP / nFish_mx
+      ensIP
   }
   N_attach[nFish_mx==0] <- 0
-  for(day in 1:info$nDays) {
+  for(hour in 1:info$nHours) {
     for(farm in 1:info$nFarms) {
-      y_attach[day, farm] <- rnbinom(1, mu=N_attach[day, farm], size=params$nb_prec)
+      y_attach[hour, farm] <- rnbinom(1, mu=N_attach[hour, farm], size=params$nb_prec)
     }
   }
 
@@ -144,7 +145,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
     for(cohort in 1:day) {
       if(cohort == day) {
         # initialize cohort
-        cohort_N[cohort, day, , ] <- N_attach[day,]
+        cohort_N[cohort, day, , ] <- colSums(N_attach[day_hour[day,],])  / nFish_mx[day,]
       } else {
         # update cohorts
         for(farm in 1:info$nFarms) {
@@ -215,6 +216,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   saveRDS(treatDays_mx, glue("{out_dir}/treatDays_mx.rds"))
   saveRDS(ensIP, glue("{out_dir}/ensIP.rds"))
   saveRDS(pr_attach, glue("{out_dir}/pr_attach.rds"))
+  saveRDS(day_hours, glue("{out_dir}/day_hours.rds"))
   saveRDS(stage_survRate, glue("{out_dir}/stage_survRate.rds"))
 
   cat(format(now(), "%F %T"), "  Storing cohort structures  \n")
