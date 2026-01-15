@@ -294,6 +294,28 @@ write_csv(site_meta, "data/farm_GSA_metadata.csv")
 
 
 
+
+library(sf)
+wce_raw <- st_read("temp/westcoms2_etive28_union_unresolvedOverlap.gpkg")
+wce <- wce_raw |>
+  mutate(ii=if_else(is.na(i_2), i, i_2),
+         dd=if_else(is.na(depth_2), depth, depth_2),
+         tn1=if_else(is.na(trinode_1_2), trinode_1, trinode_1_2),
+         tn2=if_else(is.na(trinode_2_2), trinode_2, trinode_2_2),
+         tn3=if_else(is.na(trinode_3_2), trinode_3, trinode_3_2)) |>
+  group_by(ii) |>
+  summarise(dd=first(dd),
+            tn1=first(tn1),
+            tn2=first(tn2),
+            tn3=first(tn3),
+            do_union=T) |>
+  ungroup() %>%
+  mutate(area=st_area(.),
+         vol=as.numeric(area)*dd) |>
+  rename(depth=dd, trinode_1=tn1, trinode_2=tn2, trinode_3=tn3)
+st_write(wce, "../03_packages/WeStCOMS/data/WeStCOMS2_etive28_mesh.gpkg")
+
+
 # literature --------------------------------------------------------------
 
 library(brms)
