@@ -4,7 +4,7 @@
 # Simulation functions
 
 
-simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir) {
+simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_env_daily, out_dir) {
   # Attached copepodids are immediately translated to 'mean per fish'
   library(tidyverse)
 
@@ -23,20 +23,20 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   attach_env_mx <- make_attach_env_mx(farm_env, info, params, out_dir)
 
   # sal_mx[day, farm, (1, sal)]
-  sal_mx <- make_sal_mx(farm_env, info, params, out_dir)
+  sal_mx <- make_sal_mx(farm_env_daily, info, params, out_dir)
 
   # temp_mx[day, farm, (1, temp)]
-  temp_mx <- make_temp_mx(farm_env, info, out_dir)
-  temp_z_mx <- make_temp_z_mx(farm_env, info, out_dir)
+  temp_mx <- make_temp_mx(farm_env_daily, info, out_dir)
+  temp_z_mx <- make_temp_z_mx(farm_env_daily, info, out_dir)
 
   # nFish_mx[day, farm]
-  nFish_mx <- make_nFish_mx(farm_env, info, out_dir)
+  nFish_mx <- make_nFish_mx(farm_env_daily, info, out_dir)
 
   # sampledDays[sample, c(farm, day)] -- database-like structure for Stan
-  sampledDays <- make_sampledDays(farm_env, out_dir)
+  sampledDays <- make_sampledDays(farm_env_daily, out_dir)
 
   # nFishSampled[day, farm]
-  nFishSampled_mx <- make_nFishSampled_mx(farm_env, info, nFish_mx, out_dir)
+  nFishSampled_mx <- make_nFishSampled_mx(farm_env_daily, info, nFish_mx, out_dir)
 
   # treatDays_mx[day, farm] -- initialize as 0s
   treatDays_mx <- matrix(0, nrow=info$nDays, ncol=info$nFarms)
@@ -191,7 +191,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
     }
   }
 
-  out_df <- farm_env |>
+  out_df <- farm_env_daily |>
     select(date, sepaSite, pen, sampled, nFishSampled) |>
     arrange(day, sepaSite, pen) |>
     mutate(treat=c(treatDays_mx)) |>
@@ -216,7 +216,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, out_dir
   saveRDS(treatDays_mx, glue("{out_dir}/treatDays_mx.rds"))
   saveRDS(ensIP, glue("{out_dir}/ensIP.rds"))
   saveRDS(pr_attach, glue("{out_dir}/pr_attach.rds"))
-  saveRDS(day_hours, glue("{out_dir}/day_hours.rds"))
+  saveRDS(day_hour, glue("{out_dir}/day_hour.rds"))
   saveRDS(stage_survRate, glue("{out_dir}/stage_survRate.rds"))
 
   cat(format(now(), "%F %T"), "  Storing cohort structures  \n")

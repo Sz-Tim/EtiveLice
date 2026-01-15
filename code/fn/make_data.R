@@ -5,9 +5,11 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
   info <- readRDS(glue("{dat_dir}info.rds"))
   params <- readRDS(glue("{dat_dir}params.rds"))
   dates <- 1:info$nDays
+  hours <- 1:info$nHours
 
   stan_dat <- list(
     nDays = info$nDays,
+    nHours = info$nHours,
     nFarms = info$nFarms,
     nSims = info$nSims,
     nStages = info$nStages,
@@ -23,9 +25,9 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     nFish_mx = readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
     treatDays = readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
     # IP from biotracker
-    IP_mx = readRDS(glue("{dat_dir}IP_mx.rds"))[,dates,],
+    IP_mx = readRDS(glue("{dat_dir}IP_mx.rds"))[,hours,],
     # farm environment
-    attach_env_mx = readRDS(glue("{dat_dir}attach_env_mx.rds"))[,dates,],
+    attach_env_mx = readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours,],
     surv_env_mx = readRDS(glue("{dat_dir}sal_mx.rds"))[,dates,],
     temp_mx = readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
     temp_z_mx = readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
@@ -72,8 +74,8 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
 
 
 make_IP_mx <- function(influx_df, info, out_dir=NULL) {
-  IP_mx <- arrange(influx_df, sim, day, sepaSite, pen)$influx_pen |>
-    array(dim=c(info$nFarms, info$nDays, info$nSims))
+  IP_mx <- arrange(influx_df, sim, day, sepaSite, pen)$influx |>
+    array(dim=c(info$nFarms, info$nHours, info$nSims))
   if(!is.null(out_dir)) {
     saveRDS(IP_mx, glue("{out_dir}/IP_mx.rds"))
   }
@@ -83,8 +85,8 @@ make_IP_mx <- function(influx_df, info, out_dir=NULL) {
 
 
 make_attach_env_mx <- function(farm_env, info, params, out_dir=NULL) {
-  farm_env <- farm_env |> arrange(day, sepaSite, pen)
-  attach_env_mx <- array(1, dim=c(info$nFarms, info$nDays, 5))
+  farm_env <- farm_env |> arrange(time, sepaSite, pen)
+  attach_env_mx <- array(1, dim=c(info$nFarms, info$nHours, 5))
   attach_env_mx[,,1] <- farm_env$RW_logit
   attach_env_mx[,,2] <- farm_env$salinity_z
   attach_env_mx[,,3] <- farm_env$uv_z
