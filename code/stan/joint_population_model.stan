@@ -32,8 +32,9 @@ data {
   array[nSurvCov, nStages, 2] real prior_surv_beta; // p(surv) intercept & slopes
   array[2, nStages-1, 2] real prior_mnDaysStage_F; // mean days per stage (Ch, PA)
   array[nStages-1, 2] real prior_logit_detect_p; // detection probability
+  vector[2] prior_IP_bg_m3; // background IP
   vector[2] prior_nb_prec; // negative binomial precision
-  vector[3] prior_IP_halfSat_m3; // half saturation constant
+  vector[3] prior_IP_halfSat_m3; // half saturation constant; student_t(nu, mu, sd)
 }
 
 transformed data {
@@ -200,7 +201,8 @@ transformed parameters {
   }
   // priors
   {
-    lprior += normal_lpdf(IP_bg_m3 | 0, 0.5) - normal_lccdf(0 | 0, 0.5);
+    lprior += normal_lpdf(IP_bg_m3 | prior_IP_bg_m3[1], prior_IP_bg_m3[2]) -
+      normal_lccdf(0 | prior_IP_bg_m3[1], prior_IP_bg_m3[2]);
     lprior += std_normal_lpdf(ensWts_p_uc);
     lprior += std_normal_lpdf(attach_beta_z);
     for(i in 1:nSurvCov) {

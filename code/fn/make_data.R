@@ -54,6 +54,8 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     # logit_detect_p: [c(Ch, Pr), c(mu, sd)]
     prior_logit_detect_p = cbind(c(-1, 1),
                                  c(0.5, 0.5)),
+    # IP_bg_m3: c(mu, sigma); normal, T(0, )
+    prior_IP_bg_m3 = c(0, 0.25),
     # nb_prec: c(mu, sigma); normal, T(0, )
     prior_nb_prec = c(0, 2),
     # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
