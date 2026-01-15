@@ -95,7 +95,7 @@ transformed parameters {
   matrix[2, nStages-1] mnDaysStage_beta; // [Int, temp][Ch-Pr, Pr-Ad]
   vector[nStages] detect_p;
   // intermediate quantities
-  matrix[nDays, nFarms] ensIP;
+  matrix[nHours, nFarms] ensIP;
   // matrix[nDays, nFarms] pr_attach;
   matrix[nHours, nFarms] pr_attachSaturated;
   matrix[nHours, nFarms] N_attach;

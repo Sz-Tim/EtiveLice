@@ -57,7 +57,7 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     # nb_prec: c(mu, sigma); normal, T(0, )
     prior_nb_prec = c(0, 2),
     # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
-    prior_IP_halfStat_m3 = c(3, 5, 10)
+    prior_IP_halfSat_m3 = c(3, 5, 10)
   )
   # reformat sample info for Stan
   stan_dat$nSamples <- nrow(stan_dat$sample_i)
