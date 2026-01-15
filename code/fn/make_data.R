@@ -18,6 +18,7 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     nSurvCov = nrow(params$surv_beta),
     IP_volume = info$IP_penVolume,
     y_bar_minimum = 1e-5,
+    day_hour = readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
     # farm counts, treatments, sampling info
     y = readRDS(glue("{dat_dir}y.rds"))[,,dates,],
     sample_i = readRDS(glue("{dat_dir}sampledDays.rds")),
@@ -33,22 +34,30 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     temp_z_mx = readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
     # priors
     sample_prior_only = as.numeric(priors_only),
+    # attach_beta: [c(RW, Sal, UV, UV^2, Temp), c(mu, sigma)]; normal (logit scale)
     prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), -0.1),
                               c(rep(0.25, length(params$attach_beta)-1), 0.1)),
+    # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
     prior_surv_beta = array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
                               rep(c(0.5, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
                             dim=c(nrow(params$surv_beta), info$nStages, 2),
                             dimnames=list(c("int", "temp"),
                                           c("Ch", "Pr", "Ad"),
                                           c("mu", "sd"))),
+    # mnDaysStage: [c(Int, Temp), c(Ch-Pr, Pr-Ad), c(mu, sd)]; normal
     prior_mnDaysStage_F = array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
                                   params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
                                 dim=c(2, info$nStages-1, 2),
                                 dimnames=list(c("int", "temp"),
                                               c("Pr", "Ad"),
                                               c("mu", "sd"))),
+    # logit_detect_p: [c(Ch, Pr), c(mu, sd)]
     prior_logit_detect_p = cbind(c(-1, 1),
-                                 c(0.5, 0.5))
+                                 c(0.5, 0.5)),
+    # nb_prec: c(mu, sigma); normal, T(0, )
+    prior_nb_prec = c(0, 2),
+    # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
+    prior_IP_halfStat_m3 = c(3, 5, 10)
   )
   # reformat sample info for Stan
   stan_dat$nSamples <- nrow(stan_dat$sample_i)
