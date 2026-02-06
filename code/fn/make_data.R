@@ -44,6 +44,8 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
                             dimnames=list(c("int", "temp"),
                                           c("Ch", "Pr", "Ad"),
                                           c("mu", "sd"))),
+    # surv beta: sd for farm-level intercepts: student_t(nu, mu, sd)
+    prior_surv_int_farm_sd = c(3, 0, 0.75),
     # mnDaysStage: [c(Int, Temp), c(Ch-Pr, Pr-Ad), c(mu, sd)]; normal
     prior_mnDaysStage_F = array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
                                   params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
@@ -56,8 +58,8 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
                                  c(0.5, 0.5)),
     # IP_bg_m3: c(mu, sigma); normal, T(0, )
     prior_IP_bg_m3 = c(0, 0.05),
-    # nb_prec: c(mu, sigma); normal, T(0, )
-    prior_nb_prec = c(0, 2),
+    # nb_prec: df; chisq
+    prior_nb_prec = 3.5,
     # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
     prior_IP_halfSat_m3 = c(3, 5, 10)
   )

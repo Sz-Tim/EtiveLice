@@ -9,7 +9,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   library(tidyverse)
 
   cat(format(now(), "%F %T"), "Initializing", out_dir, "\n")
-  dir.create(out_dir, recursive=T)
+  dir.create(out_dir, recursive=T, showWarnings=F)
   cat(format(now(), "%F %T"), "  Creating and storing inputs \n")
   saveRDS(info, glue("{out_dir}/info.rds"))
   saveRDS(params, glue("{out_dir}/params.rds"))
@@ -82,19 +82,19 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
 
   #---- Ensemble IP, attachement, survival rates
   for(farm in 1:info$nFarms) {
-    ensIP[,farm] <- IP_mx[farm,,] %*% params$ensWts_p + params$IP_bg*info$nPens[farm]
+    ensIP[,farm] <- IP_mx[farm,,] %*% params$ensWts_p + params$IP_bg[farm]
     if(length(params$attach_beta) > 1) {
       pr_attach[,farm] <- plogis(attach_env_mx[farm,,] %*% params$attach_beta)
     } else {
       pr_attach[,farm] <- plogis(attach_env_mx[farm,,] * params$attach_beta)
     }
-    stage_survRate[farm,,] <- plogis(sal_mx[farm,,] %*% params$surv_beta)
+    stage_survRate[farm,,] <- plogis(sal_mx[farm,,] %*% params$surv_beta_farms[[farm]])
   }
   # assume even sex ratio
   # N_attach <- (ensIP^(1/params$IP_scale) * pr_attach)^params$IP_scale / nFish_mx / 2
   for(farm in 1:info$nFarms) {
     N_attach <- 0.5 *
-      (pr_attach*params$IP_halfSat*info$nPens[farm])/(ensIP + params$IP_halfSat*info$nPens[farm]) *
+      (pr_attach*params$IP_halfSat[farm])/(ensIP + params$IP_halfSat[farm]) *
       ensIP
   }
   N_attach[nFish_mx==0] <- 0

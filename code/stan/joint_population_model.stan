@@ -12,9 +12,8 @@ data {
   int<lower=1> nAttachCov; // number of covariates for p(Attach)
   int<lower=1> nSurvCov; // number of covariates for p(Surv) incl. intercept
   int<lower=1> nSamples; // total number of sampling bouts across all farms
-  real<lower=0> IP_volume; // per-pen volume to use for scaling IP_m3 to N_copepodids
+  vector<lower=0>[nFarms] IP_volume; // per-farm volume to use for scaling IP_m3 to N_copepodids
   real<lower=0> y_bar_minimum; // minimum possible expected lice counts (0 not allowed)
-  array[nFarms] int<lower=0> nPens; // number of pens per farm
   array[nDays,24] int<lower=1,upper=nHours> day_hour; // hour numbers corresponding to each day
   array[nStages, nDays, nFarms] int y_F; // FEMALE lice counts for each day 1:nDays
   array[nFarms] matrix<lower=0>[nHours, nSims] IP_mx; // IP from particle tracking simulations
@@ -30,10 +29,11 @@ data {
   // priors: [mean, sd]
   array[nAttachCov, 2] real prior_attach_beta; // p(attach) slopes
   array[nSurvCov, nStages, 2] real prior_surv_beta; // p(surv) intercept & slopes
+  vector<lower=0>[3] prior_surv_int_farm_sd; // p(surv) int sd: student_t(nu, mu, sd)
   array[2, nStages-1, 2] real prior_mnDaysStage_F; // mean days per stage (Ch, PA)
   array[nStages-1, 2] real prior_logit_detect_p; // detection probability
   vector[2] prior_IP_bg_m3; // background IP
-  vector[2] prior_nb_prec; // negative binomial precision
+  real<lower=0> prior_nb_prec; // negative binomial precision: chisq df
   vector[3] prior_IP_halfSat_m3; // half saturation constant; student_t(nu, mu, sd)
 }
 
@@ -77,6 +77,8 @@ parameters {
   vector[nSims] ensWts_p_uc;  // unconstrained mixture proportions
   vector[nAttachCov] attach_beta_z; // p(attach) [Int, RW_logit, sal_z, uv, uv^2]
   matrix[nSurvCov, nStages] surv_beta_z; // p(surv) [Int, sal][Ch, Pr, Ad, Gr]
+  row_vector<lower=0>[nStages] surv_int_farm_sd; // p(surv) sd for farm-level Int; logit-scale
+  matrix[nFarms, nStages] surv_int_farm_z; // p(surv) [farm][Ch, Pr, Ad]
   real<lower=0,upper=1> treatEfficacy; // mortality induced by treatment
   matrix[2, nStages-1] mnDaysStage_beta_z; // [Int, temp][Ch-Pr, Pr-Ad, Ad-Gr]
   vector[nStages] logit_detect_p; // p(detect) by stage
@@ -88,11 +90,12 @@ parameters {
 transformed parameters {
   // parameters
   real lprior = 0;  // prior contributions to the log posterior
-  real<lower=0> IP_bg = IP_bg_m3 * IP_volume; // background N_copepodids per pen
-  real<lower=0> IP_halfSat = IP_halfSat_m3 * IP_volume; // half-saturation constant for attachment rate per pen
+  vector<lower=0>[nFarms] IP_bg = IP_bg_m3 * IP_volume; // background N_copepodids per pen
+  vector<lower=0>[nFarms] IP_halfSat = IP_halfSat_m3 * IP_volume; // half-saturation constant for attachment rate per pen
   simplex[nSims] ensWts_p = softmax(ensWts_p_uc);  // mixture proportions
   vector[nAttachCov] attach_beta; // p(attach) [RW_logit, sal_z, uv, uv^2]
   matrix[nSurvCov, nStages] surv_beta; // p(surv) [Int, sal][Ch, Pr, Ad]
+  array[nFarms] matrix[nSurvCov, nStages] surv_beta_farm; // p(surv) [farmInt, sal][Ch, Pr, Ad]
   matrix[2, nStages-1] mnDaysStage_beta; // [Int, temp][Ch-Pr, Pr-Ad]
   vector[nStages] detect_p;
   // intermediate quantities
@@ -119,6 +122,10 @@ transformed parameters {
                                prior_surv_beta[i,stage,1]);
     }
   }
+  for(farm in 1:nFarms) {
+      surv_beta_farm[farm,1,] = surv_beta[1,] + surv_int_farm_z[farm,] .* surv_int_farm_sd;
+      surv_beta_farm[farm,2,] = surv_beta[2,];
+  }
   for(i in 1:(nStages-1)) {
     for(stage in 1:(nStages-1)) {
       mnDaysStage_beta[i,stage] = fma(mnDaysStage_beta_z[i,stage],
@@ -135,9 +142,9 @@ transformed parameters {
 
   // calculate ensIP, pr_attach, N_attach, stage_logSurv
   for(farm in 1:nFarms) {
-    ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg * nPens[farm];
+    ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg[farm];
     // pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
-    stage_Surv[farm] = inv_logit(surv_env_mx[farm] * surv_beta);
+    stage_Surv[farm] = inv_logit(surv_env_mx[farm] * surv_beta_farm[farm]);
     for(stage in 1:(nStages-1)) {
       pMolt[farm, , stage] = 1 / (temp_X[farm] * mnDaysStage_beta[, stage]);
     }
@@ -149,8 +156,8 @@ transformed parameters {
   }
   // N_attach = (ensIP.^(1/IP_scale) .* pr_attach).^IP_scale .* fishPresent * 0.5 ./ nFishNoZero_mx;
   for(farm in 1:nFarms) {
-    pr_attachSaturated[,farm] = (inv_logit(attach_env_mx[farm] * attach_beta) * IP_halfSat * nPens[farm])
-    ./ (ensIP[,farm] + IP_halfSat * nPens[farm]);
+    pr_attachSaturated[,farm] = (inv_logit(attach_env_mx[farm] * attach_beta) * IP_halfSat[farm])
+    ./ (ensIP[,farm] + IP_halfSat[farm]);
   }
   N_attach = 0.5 * ensIP .* pr_attachSaturated;
 
@@ -208,14 +215,18 @@ transformed parameters {
     for(i in 1:nSurvCov) {
       lprior += std_normal_lpdf(surv_beta_z[i,]);
     }
+    for(stage in 1:nStages) {
+      lprior += std_normal_lpdf(surv_int_farm_z[,stage]);
+    }
     for(i in 1:2) {
       lprior += std_normal_lpdf(mnDaysStage_beta_z[i,]);
     }
     lprior += std_normal_lpdf(logit_detect_p);
-    lprior += normal_lpdf(nb_prec | prior_nb_prec[1], prior_nb_prec[2]) -
-      normal_lccdf(0 | prior_nb_prec[1], prior_nb_prec[2]);
+    lprior += chi_square_lpdf(nb_prec | prior_nb_prec);
     lprior += student_t_lpdf(IP_halfSat_m3 | prior_IP_halfSat_m3[1], prior_IP_halfSat_m3[2], prior_IP_halfSat_m3[3]) -
       student_t_lccdf(0 | prior_IP_halfSat_m3[1], prior_IP_halfSat_m3[2], prior_IP_halfSat_m3[3]);
+    lprior += student_t_lpdf(surv_int_farm_sd | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]) -
+      student_t_lccdf(0 | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]);
   }
 }
 
