@@ -17,7 +17,7 @@ dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
 prior_only <- TRUE
-keep_licePreds <- TRUE
+keep_licePreds <- FALSE
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
@@ -27,7 +27,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            "IP_bg", "IP_bg_m3",
                            paste0("surv_beta[1,", 1:3, "]"),
                            paste0("surv_beta[2,", 1:3, "]"),
-                           paste0("surv_beta_farm_sd[", 1:3, "]"),
+                           paste0("surv_int_farm_sd[", 1:3, "]"),
                            paste0("mnDaysStage_beta[1,", 1:2, "]"),
                            paste0("mnDaysStage_beta[2,", 1:2, "]"),
                            paste0("thresh_GDD[", 1:2, ",1]"),
@@ -43,7 +43,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                             "IP_bg", "IP_bg_m3",
                             paste0("surv_Int_", stages),
                             paste0("surv_Sal_", stages),
-                            paste0("surv_farm_sd_", stages),
+                            paste0("surv_int_farm_sd_", stages),
                             paste0("mnDaysStage_Int_", stages[1:2]),
                             paste0("mnDaysStage_Temp_", stages[1:2]),
                             paste0("moltF_GDD_", stage_trans),
@@ -72,7 +72,7 @@ for(sim_dir in sim_dirs) {
     chains=n_chains, parallel_chains=n_chains
   )
 
-  keep_pars <- c("IP_bg", "IP_bg_m3", "IP_halfSat", "IP_halfSat_m3",
+  keep_pars <- c("IP_bg_m3", "IP_halfSat_m3",
             "ensWts_p", "attach_beta",
             "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
             "detect_p", "nb_prec", "treatEfficacy")
@@ -93,7 +93,7 @@ for(sim_dir in sim_dirs) {
 
   dat_full_df <- tibble(
     name=c(paste0("attach_beta[", 1:5, "]"),
-           "IP_bg", "IP_bg_m3", "IP_halfSat", "IP_halfSat_m3",
+           "IP_bg_m3", "IP_halfSat_m3",
            paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
            paste0("surv_beta[1,", 1:3, "]"), paste0("surv_beta[2,", 1:3, "]"),
            paste0("surv_int_farm_sd[", 1:3, "]"),
@@ -102,11 +102,11 @@ for(sim_dir in sim_dirs) {
            paste0("detect_p[", 1:stan_dat$dat$nStages, "]"), "nb_prec",
            "treatEfficacy"),
     value=c(stan_dat$params$attach_beta,
-            stan_dat$params$IP_bg, stan_dat$params$IP_bg_m3,
-            stan_dat$params$IP_halfSat, stan_dat$params$IP_halfSat_m3,
+            stan_dat$params$IP_bg_m3,
+            stan_dat$params$IP_halfSat_m3,
             stan_dat$params$ensWts_p,
             t(stan_dat$params$surv_beta),
-            stan_dat$params$surv_beta_farm_sd,
+            stan_dat$params$surv_int_farm_sd,
             stan_dat$params$thresh_GDD,
             stan_dat$params$lifespan,
             stan_dat$params$detect_p,
@@ -133,6 +133,12 @@ for(sim_dir in sim_dirs) {
   p_surv <- post_summary_plot(surv_ls, ncol=3, scales="free") +
     geom_vline(xintercept=0, linetype=3)
 
+  surv_sd_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
+                 ~.x |> filter(grepl("surv_int_farm_sd", name)) |>
+                   inner_join(param_key, by=join_by(name)))
+  p_surv_sd <- post_summary_plot(surv_sd_ls, ncol=3, scales="free") +
+    geom_vline(xintercept=0, linetype=3)
+
   pMoltInt_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
                      ~.x |> filter(grepl("mnDaysStage_beta\\[1", name)) |>
                        inner_join(param_key, by=join_by(name)))
@@ -156,8 +162,8 @@ for(sim_dir in sim_dirs) {
                    inner_join(param_key, by=join_by(name)))
   p_else <- post_summary_plot(else_ls, ncol=5, scales="free")
 
-  p <- plot_grid(p_ensWts, p_attach, p_surv, p_pMoltInt, p_pMoltTemp, p_detectp, p_else,
-            nrow=7, align="hv", axis="trbl", rel_heights=c(1, 1, 2, 1, 1, 1, 1))
+  p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_pMoltInt, p_pMoltTemp, p_detectp, p_else,
+            nrow=8, align="hv", axis="trbl", rel_heights=c(1, 1, 2, 1, 1, 1, 1, 1))
   ggsave(glue("{sim_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=12)
 
   if(keep_licePreds) {
@@ -177,7 +183,7 @@ for(sim_dir in sim_dirs) {
       mutate(type="Fitted",
              value=pmax(value, 0)) |>
       rename(mu=value) |>
-      bind_rows(expand_grid(farm=as.character(1:5),
+      bind_rows(expand_grid(farm=as.character(1:stan_dat$dat$nFarms),
                             day=1:stan_dat$dat$nDays,
                             stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
                   mutate(mu=c(readRDS(glue("{sim_dir}/mu.rds"))[,1,,])) |>
@@ -194,7 +200,7 @@ for(sim_dir in sim_dirs) {
       scale_x_date(date_labels="%b") +
       ylim(0, 15) +
       facet_grid(farm~., scales="free_y")
-    ggsave(glue("{sim_dir}/fig_mu_draws{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
+    ggsave(glue("{sim_dir}/fig_mu_draws{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
 
 
     # mu_df <- out_full_df |>
@@ -219,29 +225,29 @@ for(sim_dir in sim_dirs) {
     #               mutate(type="True")) |>
     #   mutate(day=ymd("2023-01-01") + day - 1,
     #          farm=paste("Farm", farm))
-    mu_df |>
-      saveRDS(glue("{sim_dir}/mu_sim_fitted{ifelse(prior_only, '_PRIORS', '')}.rds"))
-
-    p <- mu_df |>
-      ggplot(aes(day, mu)) +
-      geom_ribbon(aes(ymin=L10, ymax=L90, group=type), colour=NA, fill="grey80") +
-      geom_line(aes(colour=type)) +
-      scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
-      labs(x="Date", y="Mean lice per fish (latent) [50% CI]") +
-      scale_x_date(date_labels="%b") +
-      facet_grid(stage~farm, scales="free_y")
-    ggsave(glue("{sim_dir}/fig_mu{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
-
-    p <- mu_df |>
-      filter(stage=="Ad") |>
-      ggplot(aes(day, mu)) +
-      geom_ribbon(aes(ymin=L10, ymax=L90, group=type), colour=NA, fill="grey80") +
-      geom_line(aes(colour=type)) +
-      scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
-      labs(x="Date", y="Mean adult female lice per fish (latent) [50% CI]") +
-      scale_x_date(date_labels="%b") +
-      facet_grid(farm~., scales="free_y")
-    ggsave(glue("{sim_dir}/fig_mu_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
+    # mu_df |>
+    #   saveRDS(glue("{sim_dir}/mu_sim_fitted{ifelse(prior_only, '_PRIORS', '')}.rds"))
+    #
+    # p <- mu_df |>
+    #   ggplot(aes(day, mu)) +
+    #   geom_ribbon(aes(ymin=L10, ymax=L90, group=type), colour=NA, fill="grey80") +
+    #   geom_line(aes(colour=type)) +
+    #   scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
+    #   labs(x="Date", y="Mean lice per fish (latent) [50% CI]") +
+    #   scale_x_date(date_labels="%b") +
+    #   facet_grid(stage~farm, scales="free_y")
+    # ggsave(glue("{sim_dir}/fig_mu{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=15, height=7)
+    #
+    # p <- mu_df |>
+    #   filter(stage=="Ad") |>
+    #   ggplot(aes(day, mu)) +
+    #   geom_ribbon(aes(ymin=L10, ymax=L90, group=type), colour=NA, fill="grey80") +
+    #   geom_line(aes(colour=type)) +
+    #   scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
+    #   labs(x="Date", y="Mean adult female lice per fish (latent) [50% CI]") +
+    #   scale_x_date(date_labels="%b") +
+    #   facet_grid(farm~., scales="free_y")
+    # ggsave(glue("{sim_dir}/fig_mu_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=15)
 
 
     sampledDays <- readRDS(glue("{sim_dir}/sampledDays.rds")) |>
@@ -299,7 +305,7 @@ for(sim_dir in sim_dirs) {
       left_join(sampledDays, by=join_by(sample)) |>
       select(-sample) |>
       mutate(type="Fitted") |> rename(y=med) |>
-      bind_rows(expand_grid(farm=as.character(1:5),
+      bind_rows(expand_grid(farm=as.character(1:stan_dat$dat$nFarms),
                             day=1:stan_dat$dat$nDays,
                             stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
                   mutate(y=c(readRDS(glue("{sim_dir}/y.rds"))[,1,,])) |>
@@ -320,7 +326,7 @@ for(sim_dir in sim_dirs) {
       labs(x="Date", y="Mean lice per fish (observed) [50% CI]") +
       scale_x_date(date_labels="%b") +
       facet_grid(stage~farm, scales="free_y")
-    ggsave(glue("{sim_dir}/fig_y{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=7)
+    ggsave(glue("{sim_dir}/fig_y{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=15, height=7)
 
     p <- y_df |>
       filter(stage=="Ad") |>
@@ -332,7 +338,7 @@ for(sim_dir in sim_dirs) {
       labs(x="Date", y="Mean adult female lice per fish (observed) [50% CI]") +
       scale_x_date(date_labels="%b") +
       facet_grid(farm~., scales="free_y")
-    ggsave(glue("{sim_dir}/fig_y_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=8)
+    ggsave(glue("{sim_dir}/fig_y_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=15)
   }
 }
 
