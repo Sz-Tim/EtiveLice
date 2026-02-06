@@ -4,7 +4,9 @@
 # Run biotracker simulations
 
 
-# setup
+
+# setup -------------------------------------------------------------------
+
 library(tidyverse); library(glue)
 library(sevcheck) # devtools::install_github("Sz-Tim/sevcheck")
 library(biotrackR) # devtools::install_github("Sz-Tim/biotrackR")
@@ -13,12 +15,12 @@ library(sf)
 dirf("code/fn", ".R") |> walk(source)
 theme_set(theme_bw() + theme(panel.grid=element_blank()))
 
-set.seed(1001)
+set.seed(1003)
 
 
 # define parameters -------------------------------------------------------
 
-cores_per_sim <- 15
+cores_per_sim <- 30
 parallel_sims <- 2
 start_date <- "2023-01-01"
 end_date <- "2024-12-31"
@@ -32,7 +34,8 @@ dirs <- switch(
              hf0="/home/sa04ts/hydro/etive28/Archive",
              hf1="/home/sa04ts/hydro/WeStCOMS2/Archive",
              jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
-             jar="/home/sa04ts/biotracker/biotracker_v2-2-1.jar",
+             jar="/home/sa04ts/biotracker/biotracker_v2-2-2.jar",
+             dat="/home/sa04ts/EtiveLice/data",
              out=glue("{getwd()}/out/biotracker")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
@@ -40,7 +43,8 @@ dirs <- switch(
                hf1="E:/hydro/WeStCOMS2/Archive",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
                jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-1.jar",
-               out=glue("E:/EtiveLice/out/biotracker"))
+               dat="E:/EtiveLice/dat",
+               out="E:/EtiveLice/out/biotracker")
 )
 
 n_sim <- 20
@@ -93,12 +97,9 @@ walk(sim_seq,
        hfDirPrefix1="netcdf_",
        hfFilePrefix1="westcoms2",
        # sites
-       sitefile=glue("E:/EtiveLice/data/pen_sites_linnhe_2023-2024.csv"),
-       sitefileEnd=glue("E:/EtiveLice/data/pen_sites_linnhe_2023-2024.csv"),
-       siteDensityPath=glue("E:/EtiveLice/data/lice_daily_2023-01-01_2024-12-31_05lpf_maxB.csv"),
-       # sitefile="D:/EtiveLice/data/pen_sites_linnhe_2023-2024.csv",
-       # sitefileEnd="D:/EtiveLice/data/pen_sites_etive_2023-2024.csv",
-       # siteDensityPath="D:/EtiveLice/data/lice_daily_2023-01-01_2024-12-31.csv",
+       sitefile=glue("{dirs$dat}/pen_sites_linnhe_2023-2024.csv"),
+       sitefileEnd=glue("{dirs$dat}/pen_sites_linnhe_2023-2024.csv"),
+       siteDensityPath=glue("{dirs$dat}/lice_daily_2023-01-01_2024-12-31_05lpf_maxB.csv"),
        # dynamics
        variableDh=sim.i$variableDh[.x],
        variableDhV=sim.i$variableDhV[.x],
@@ -200,7 +201,7 @@ data.table::fwrite(site_env_df, "data/sim/inputs/farm_env_hourly.csv")
 
 
 # Influx
-mesh_wce <- st_read("../03_packages/WeStCOMS/data/WeStCOMS2_etive28_mesh.gpkg")
+mesh_wce <- st_read(glue("{dirs$mesh}/WeStCOMS2_etive28_mesh.gpkg"))
 site_vols <- sim.i |>
   mutate(connectivityThresh=30) |>
   select(i, connectivityThresh) |>
