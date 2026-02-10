@@ -35,8 +35,8 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     # priors
     sample_prior_only = as.numeric(priors_only),
     # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
-    prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), -0.1),
-                              c(rep(0.25, length(params$attach_beta)-1), 0.1)),
+    prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), 0),
+                              c(rep(0.25, length(params$attach_beta)-1), 0.15)),
     # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
     prior_surv_beta = array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
                               rep(c(0.5, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
@@ -74,7 +74,7 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     select(-sepaSite) |>
     as.matrix()
   if(source=="sim") {
-    # add male Ch/PA, assume 50:50 ratio
+    # add male Ch/PA, re-divide assuming a 50:50 ratio
     stan_dat$y_F <- stan_dat$y[,1,,]
     stan_dat$y_F[1,,] <- round((stan_dat$y_F[1,,] + stan_dat$y[1,2,,])/2)
     stan_dat$y_F[2,,] <- round((stan_dat$y_F[2,,] + stan_dat$y[2,2,,])/2)
