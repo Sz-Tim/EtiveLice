@@ -16,8 +16,9 @@ library(cowplot)
 dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
-prior_only <- TRUE
-keep_licePreds <- FALSE
+prior_only <- F
+keep_licePreds <- F
+refit <- F
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
@@ -35,8 +36,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            "lifespan",
                            paste0("detect_p[", 1:2, "]"),
                            "nb_prec",
-                           "IP_scale",
-                           "IP_halfSat_m3",
+                           "IP_scale", "IP_halfSat_m3",
                            "treatEfficacy"),
                     label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq", "Temp")),
                             paste0("ensWt_", 1:20),
@@ -51,15 +51,18 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                             "lifespan_GDD",
                             paste0("p_detect_", stages[-3]),
                             "neg_binom_prec",
-                            "IP_scale",
-                            "IP_halfSat_m3",
+                            "IP_scale", "IP_halfSat_m3",
                             "treatEfficacy"
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
-sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/")
+sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/") |>
+  tail(n=10) |> rev()
 for(sim_dir in sim_dirs) {
 
+  if(!refit & file.exists(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.csv"))) {
+    next
+  }
   stan_dat <- make_stan_data(sim_dir, priors_only=prior_only)
 
   # IEM: full model pop -----------------------------------------------------
@@ -72,7 +75,7 @@ for(sim_dir in sim_dirs) {
     chains=n_chains, parallel_chains=n_chains
   )
 
-  keep_pars <- c("IP_bg_m3", "IP_halfSat_m3",
+  keep_pars <- c("IP_bg_m3",# "IP_halfSat_m3",
             "ensWts_p", "attach_beta",
             "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
             "detect_p", "nb_prec", "treatEfficacy")
@@ -93,7 +96,7 @@ for(sim_dir in sim_dirs) {
 
   dat_full_df <- tibble(
     name=c(paste0("attach_beta[", 1:5, "]"),
-           "IP_bg_m3", "IP_halfSat_m3",
+           "IP_bg_m3",# "IP_halfSat_m3",
            paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
            paste0("surv_beta[1,", 1:3, "]"), paste0("surv_beta[2,", 1:3, "]"),
            paste0("surv_int_farm_sd[", 1:3, "]"),
@@ -103,7 +106,7 @@ for(sim_dir in sim_dirs) {
            "treatEfficacy"),
     value=c(stan_dat$params$attach_beta,
             stan_dat$params$IP_bg_m3,
-            stan_dat$params$IP_halfSat_m3,
+            # stan_dat$params$IP_halfSat_m3,
             stan_dat$params$ensWts_p,
             t(stan_dat$params$surv_beta),
             stan_dat$params$surv_int_farm_sd,

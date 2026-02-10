@@ -34,7 +34,7 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     temp_z_mx = readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
     # priors
     sample_prior_only = as.numeric(priors_only),
-    # attach_beta: [c(RW, Sal, UV, UV^2, Temp), c(mu, sigma)]; normal (logit scale)
+    # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
     prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), -0.1),
                               c(rep(0.25, length(params$attach_beta)-1), 0.1)),
     # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
@@ -61,7 +61,7 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     # nb_prec: df; chisq
     prior_nb_prec = 3.5,
     # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
-    prior_IP_halfSat_m3 = c(3, 5, 10)
+    prior_IP_halfSat_m3 = c(3, 20, 10)
   )
   # reformat sample info for Stan
   stan_dat$nSamples <- nrow(stan_dat$sample_i)
@@ -102,9 +102,9 @@ make_attach_env_mx <- function(farm_env, info, params, out_dir=NULL) {
   attach_env_mx <- array(1, dim=c(info$nFarms, info$nHours, 5))
   attach_env_mx[,,1] <- farm_env$RW_logit
   attach_env_mx[,,2] <- farm_env$salinity_z
-  attach_env_mx[,,3] <- farm_env$uv_z
-  attach_env_mx[,,4] <- farm_env$uv_z_sq
-  attach_env_mx[,,5] <- farm_env$temperature_z
+  attach_env_mx[,,3] <- farm_env$temperature_z
+  attach_env_mx[,,4] <- farm_env$uv_z
+  attach_env_mx[,,5] <- farm_env$uv_z_sq
   attach_env_mx <- attach_env_mx[,,1:length(params$attach_beta), drop=F]
   if(!is.null(out_dir)) {
     saveRDS(attach_env_mx, glue("{out_dir}/attach_env_mx.rds"))

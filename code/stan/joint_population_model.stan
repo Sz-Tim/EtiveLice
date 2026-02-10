@@ -34,7 +34,7 @@ data {
   array[nStages-1, 2] real prior_logit_detect_p; // detection probability
   vector[2] prior_IP_bg_m3; // background IP
   real<lower=0> prior_nb_prec; // negative binomial precision: chisq df
-  vector[3] prior_IP_halfSat_m3; // half saturation constant; student_t(nu, mu, sd)
+  // vector[3] prior_IP_halfSat_m3; // half saturation constant; student_t(nu, mu, sd)
 }
 
 transformed data {
@@ -75,7 +75,8 @@ transformed data {
 parameters {
   real<lower=0> IP_bg_m3; // background infection pressure per m3
   vector[nSims] ensWts_p_uc;  // unconstrained mixture proportions
-  vector[nAttachCov] attach_beta_z; // p(attach) [Int, RW_logit, sal_z, uv, uv^2]
+  vector[nAttachCov-1] attach_beta_z; // p(attach) [Int, RW_logit, sal_z, temp_z, uv_z]
+  real<upper=0> attach_betaUV2_z; // p(attach) uv_z^2 coefficient: constrain to concave down
   matrix[nSurvCov, nStages] surv_beta_z; // p(surv) [Int, sal][Ch, Pr, Ad, Gr]
   row_vector<lower=0>[nStages] surv_int_farm_sd; // p(surv) sd for farm-level Int; logit-scale
   matrix[nFarms, nStages] surv_int_farm_z; // p(surv) [farm][Ch, Pr, Ad]
@@ -83,7 +84,7 @@ parameters {
   matrix[2, nStages-1] mnDaysStage_beta_z; // [Int, temp][Ch-Pr, Pr-Ad, Ad-Gr]
   vector[nStages] logit_detect_p; // p(detect) by stage
   // real<lower=1,upper=4> IP_scale; // scaling factor for IP -> N_attach
-  real<lower=0> IP_halfSat_m3; // half-saturation constant for attachment rate (cop/m3)
+  // real<lower=0> IP_halfSat_m3; // half-saturation constant for attachment rate (cop/m3)
   real<lower=0> nb_prec; // neg_binom precision
 }
 
@@ -91,17 +92,17 @@ transformed parameters {
   // parameters
   real lprior = 0;  // prior contributions to the log posterior
   vector<lower=0>[nFarms] IP_bg = IP_bg_m3 * IP_volume; // background N_copepodids per pen
-  vector<lower=0>[nFarms] IP_halfSat = IP_halfSat_m3 * IP_volume; // half-saturation constant for attachment rate per pen
+  // vector<lower=0>[nFarms] IP_halfSat = IP_halfSat_m3 * IP_volume; // half-saturation constant for attachment rate per pen
   simplex[nSims] ensWts_p = softmax(ensWts_p_uc);  // mixture proportions
-  vector[nAttachCov] attach_beta; // p(attach) [RW_logit, sal_z, uv, uv^2]
+  vector[nAttachCov] attach_beta; // p(attach) [RW_logit, sal_z, temp_z, uv_z, uv_z^2]
   matrix[nSurvCov, nStages] surv_beta; // p(surv) [Int, sal][Ch, Pr, Ad]
   array[nFarms] matrix[nSurvCov, nStages] surv_beta_farm; // p(surv) [farmInt, sal][Ch, Pr, Ad]
   matrix[2, nStages-1] mnDaysStage_beta; // [Int, temp][Ch-Pr, Pr-Ad]
   vector[nStages] detect_p;
   // intermediate quantities
   matrix[nHours, nFarms] ensIP;
-  // matrix[nDays, nFarms] pr_attach;
-  matrix[nHours, nFarms] pr_attachSaturated;
+  matrix[nHours, nFarms] pr_attach;
+  // matrix[nHours, nFarms] pr_attachSaturated;
   matrix[nHours, nFarms] N_attach;
   array[nFarms] matrix[nDays, nStages] stage_Surv; // survival rates
   array[nFarms] matrix[nDays, nStages-1] pMolt; // transition probabilities
@@ -110,11 +111,14 @@ transformed parameters {
   array[nStages] row_vector[nSamples] y_bar;
 
   // re-scale and de-center parameters
-  for(i in 1:nAttachCov) {
+  for(i in 1:(nAttachCov-1)) {
     attach_beta[i] = fma(attach_beta_z[i],
                          prior_attach_beta[i,2],
                          prior_attach_beta[i,1]);
   }
+  attach_beta[nAttachCov] = fma(attach_betaUV2_z,
+                                prior_attach_beta[nAttachCov,2],
+                                prior_attach_beta[nAttachCov,1]);
   for(i in 1:nSurvCov) {
     for(stage in 1:nStages) {
       surv_beta[i,stage] = fma(surv_beta_z[i,stage],
@@ -143,7 +147,7 @@ transformed parameters {
   // calculate ensIP, pr_attach, N_attach, stage_logSurv
   for(farm in 1:nFarms) {
     ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg[farm];
-    // pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
+    pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
     stage_Surv[farm] = inv_logit(surv_env_mx[farm] * surv_beta_farm[farm]);
     for(stage in 1:(nStages-1)) {
       pMolt[farm, , stage] = 1 / (temp_X[farm] * mnDaysStage_beta[, stage]);
@@ -154,12 +158,12 @@ transformed parameters {
                                     (1 - (treatDays[, farm] * treatEfficacy));
     }
   }
-  // N_attach = (ensIP.^(1/IP_scale) .* pr_attach).^IP_scale .* fishPresent * 0.5 ./ nFishNoZero_mx;
-  for(farm in 1:nFarms) {
-    pr_attachSaturated[,farm] = (inv_logit(attach_env_mx[farm] * attach_beta) * IP_halfSat[farm])
-    ./ (ensIP[,farm] + IP_halfSat[farm]);
-  }
-  N_attach = 0.5 * ensIP .* pr_attachSaturated;
+  N_attach = 0.5 * ensIP .* pr_attach;
+  // for(farm in 1:nFarms) {
+  //   pr_attachSaturated[,farm] = (inv_logit(attach_env_mx[farm] * attach_beta) * IP_halfSat[farm])
+  //   ./ (ensIP[,farm] + IP_halfSat[farm]);
+  // }
+  // N_attach = 0.5 * ensIP .* pr_attachSaturated;
 
   trans_mx = trans_mx_init;
   for(farm in 1:nFarms) {
@@ -212,6 +216,7 @@ transformed parameters {
       normal_lccdf(0 | prior_IP_bg_m3[1], prior_IP_bg_m3[2]);
     lprior += std_normal_lpdf(ensWts_p_uc);
     lprior += std_normal_lpdf(attach_beta_z);
+    lprior += std_normal_lpdf(attach_betaUV2_z) - std_normal_lcdf(0);
     for(i in 1:nSurvCov) {
       lprior += std_normal_lpdf(surv_beta_z[i,]);
     }
@@ -223,8 +228,8 @@ transformed parameters {
     }
     lprior += std_normal_lpdf(logit_detect_p);
     lprior += chi_square_lpdf(nb_prec | prior_nb_prec);
-    lprior += student_t_lpdf(IP_halfSat_m3 | prior_IP_halfSat_m3[1], prior_IP_halfSat_m3[2], prior_IP_halfSat_m3[3]) -
-      student_t_lccdf(0 | prior_IP_halfSat_m3[1], prior_IP_halfSat_m3[2], prior_IP_halfSat_m3[3]);
+    // lprior += student_t_lpdf(IP_halfSat_m3 | prior_IP_halfSat_m3[1], prior_IP_halfSat_m3[2], prior_IP_halfSat_m3[3]) -
+    //   student_t_lccdf(0 | prior_IP_halfSat_m3[1], prior_IP_halfSat_m3[2], prior_IP_halfSat_m3[3]);
     lprior += student_t_lpdf(surv_int_farm_sd | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]) -
       student_t_lccdf(0 | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]);
   }

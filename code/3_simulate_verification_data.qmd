@@ -35,6 +35,7 @@ The final output is stored in a directory created within `./data/sim` along with
 
 ```{r}
 #| results: false
+#| label: "setup1"
 
 library(tidyverse)
 library(sf)
@@ -323,6 +324,8 @@ Copepodid infestation pressure was taken from 6 `biotracker` simulations which r
 ```{r}
 #| message: false
 #| echo: false
+#| eval: false
+
 read_csv(glue("E:/EtiveLice/out/biotracker/sim_i.csv")) |>
   select(-i, -outDir, -ends_with("_b")) |>
   mutate(across(where(is.numeric), ~signif(.x, 3))) |>
@@ -353,6 +356,7 @@ glimpse(influx_df)
 #| fig-cap: "Daily copepodid infestation pressure by farm."
 #| fig-dpi: 400
 #| echo: false
+#| eval: false
 ggplot(influx_df, aes(time, influx_m3, colour=sepaSite, group=pen)) +
   geom_line(linewidth=0.1) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
@@ -368,6 +372,7 @@ ggplot(influx_df, aes(time, influx_m3, colour=sepaSite, group=pen)) +
 #| fig-cap: "Daily copepodid infestation pressure (4th root) by farm."
 #| fig-dpi: 400
 #| echo: false
+#| eval: false
 ggplot(influx_df, aes(time, influx_m3^0.25, colour=sepaSite, group=pen)) +
   geom_line(linewidth=0.1) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
@@ -417,38 +422,38 @@ library(plotly)
 
 # Pr(attach)
 # attach_mn <- c(-2.25, .8, 0.2, 0.2, -0.005)
-attach_mn <- c(0, 1, 0.2, 0.25, -0.1, 0.1)
+attach_mn <- c(0, 1, 0.2, 0.25, 0.2, -0.1)
 attach_sigma <- 0.7
 attach_df <- expand_grid(
   salinity_z=seq_range(farm_env$salinity_z, length.out=100),
-  uv=seq_range(farm_env$uv_z, length.out=100),
-  RW=seq_range(farm_env$RW, length.out=100),
+  uv_z=seq_range(farm_env$uv_z, length.out=100),
+  RW=seq_range(filter(farm_env, RW>0)$RW, length.out=100),
   temp_z=seq_range(farm_env$temperature_z, length.out=100)
 ) |>
-  filter(RW > 0) |>
   slice_sample(n=50) |>
   mutate(RW_logit=brms::logit_scaled(RW, lb=-1e-5),
          salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
          temp=temp_z*farm_env_avg$temperature[2] + farm_env_avg$temperature[1]) |>
   mutate(eta=attach_mn[1] + 
            attach_mn[2] * RW_logit + 
-           attach_mn[3] * salinity_z +
-           attach_mn[4] * uv +
-           attach_mn[5] * uv^2 +
-           attach_mn[6] * temp_z,
+           attach_mn[3] * salinity_z + +
+           attach_mn[4] * temp_z +
+           attach_mn[5] * uv_z +
+           attach_mn[6] * uv_z^2,
          obs=eta + rnorm(n(), 0, attach_sigma))
-ggplot(attach_df, aes(uv, plogis(eta), colour=RW)) + geom_point() + ylim(0, 1)
+ggplot(attach_df, aes(uv_z, plogis(eta), colour=RW)) + geom_point() + ylim(0, 1)
 ggplot(attach_df, aes(temp, plogis(eta), colour=RW)) + geom_point() + ylim(0, 1)
-ggplot(attach_df, aes(RW, plogis(eta), colour=uv)) + geom_point() + ylim(0, 1) + 
+ggplot(attach_df, aes(RW, plogis(eta), colour=uv_z)) + geom_point() + ylim(0, 1) + 
   geom_abline() + scale_colour_viridis_c(option="turbo")
 ggplot(attach_df, aes(RW, plogis(eta), colour=temp)) + geom_point() + ylim(0, 1) + 
   geom_abline() + scale_colour_viridis_c(option="turbo")
-plot_ly(attach_df, x=~uv, y=~RW, z=~salinity, color=~plogis(eta), type="scatter3d")
+plot_ly(attach_df, x=~uv_z, y=~RW, z=~salinity, color=~plogis(eta), type="scatter3d")
+plot_ly(attach_df, x=~uv_z, y=~RW, z=~temp, color=~plogis(eta), type="scatter3d")
 summary(plogis(attach_df$eta))
 hist(plogis(attach_df$eta), xlim=c(0,1))
 
 
-attach_out <- brm(obs ~ 0 + RW_logit + salinity_z + uv + I(uv^2) + temp_z,
+attach_out <- brm(obs ~ 0 + RW_logit + salinity_z + temp_z + uv_z + I(uv_z^2),
                   data=attach_df, cores=4)
 as_draws_df(attach_out) |>
   select(starts_with("b_")) |>
@@ -500,7 +505,7 @@ info <- list(nDays=n_distinct(influx_df$date),
 params <- list(
   # Ensemble proportional weight for each biotracker simulation
   ensWts_p=rlnorm(info$nSims, sdlog=0.75) |> make_compositional(),
-  # Pr(copepodid attachment): RW_logit, salinity, uv, uv^2
+  # Pr(copepodid attachment): RW_logit, salinity, temp, uv, uv^2
   attach_beta=glue("{inputs_dir}/posterior_prAttach.csv") |>
     read_csv() |> sample_n(1) |> unlist(),
   # On-fish survival: chalimus, pre-adult, adult, gravid
@@ -523,22 +528,23 @@ params <- list(
   # Precision parameter for fish-level lice counts ~negbinom(mu, phi)
   # Distribution tends toward poisson as phi -> Inf
   # nb_prec=abs(rnorm(1, 0, 2)),
-  nb_prec=rchisq(1, 3.5),
+  nb_prec=rchisq(1, 2),
   # Background infestation rate from wild fish (copepodids/m3/d)
   IP_bg_m3=(runif(1, min=(1e-5)^0.5, max=(0.1)^0.5))^2,
   # Scaling factor for IP -> attached: from linear to 4th root with mean = sq root 
   #IP_scale=rbeta(n=1, 1.5, 3)*3 + 1, # !!! DEPRECATED !!!
   # Half saturation constant for attachment (cop/m3/day) 
-  IP_halfSat_m3=runif(n=1, 1, 50),
+  IP_halfSat_m3=1e6,#runif(n=1, 1, 50),
   # Treatment threshold for AF
   treat_thresh=sample(c(0.5, 1), 1),
   treat_efficacy=rbeta(1, 4, 2)
 )
 # Randomly set salinity and uv effects to 0 for attachment
-params$attach_beta[2:5] <- params$attach_beta[2:5] * rbinom(3, 1, 0.75)[c(1,2,2,3)]
+params$attach_beta[2:5] <- params$attach_beta[2:5] * rbinom(3, 1, 0.75)[c(1,2,3,3)]
 # Randomly set salinity effects to 0 for survival
 params$surv_beta[2,] <- params$surv_beta[2,] * rbinom(4, 1, 0.75)
 params$surv_beta <- params$surv_beta[,1:info$nStages]
+params$surv_int_farm_sd <- params$surv_int_farm_sd[1:info$nStages]
 # Background copepodid count per pen
 params$IP_bg <- params$IP_bg_m3*info$IP_penVolume
 # Attachment half saturation IP per pen
@@ -576,27 +582,35 @@ map(params, ~signif(.x, 3))
 p_prAttach <- expand_grid(
   salinity_z=seq_range(farm_env$salinity_z, length.out=100),
   uv_z=seq_range(farm_env$uv_z, length.out=100),
-  RW=seq(0.05, max(farm_env$RW), length.out=4),
-  temp_z=seq_range(farm_env$temperature_z, length.out=100)[c(5,95)]
+  RW=c(0.25, 0.5),
+  temp_z=seq_range(farm_env$temperature_z, length.out=100)[c(5,30,70,95)]
 ) |>
   mutate(uv_sq=uv_z^2,
          uv=uv_z*farm_env_avg$uv[2] + farm_env_avg$uv[1],
          salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
          temp=temp_z*farm_env_avg$temperature[2] + farm_env_avg$temperature[1],
          temp_lab=paste(round(temp, 1), " C"),
+         temp_lab=factor(temp_lab, levels=unique(temp_lab)),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5),
          RW_lab=paste("RW:", round(RW, 2))) |>
   mutate(pr_attach=plogis(params$attach_beta[1] * RW_logit + 
                             params$attach_beta[2] * salinity_z +
-                            params$attach_beta[3] * uv_z +
-                            params$attach_beta[4] * uv_sq +
-                            params$attach_beta[5] * temp_z)) |>
+                            params$attach_beta[3] * temp_z +
+                            params$attach_beta[4] * uv_z +
+                            params$attach_beta[5] * uv_sq)) |>
   ggplot(aes(salinity, uv, fill=pr_attach)) + 
   geom_raster() + 
-  scale_fill_viridis_c("Max P(attach)", option="turbo", 
-                       limits=c(0, 1), breaks=seq(0, 1, by=0.25),
-                       labels=c("0", "0.25", "0.5", "0.75", "1")) +
-  facet_grid(temp_lab~RW_lab) +
+  # scale_fill_viridis_b("P(attach)", option="turbo", 
+  #                      limits=c(0, 1), breaks=seq(0, 1, by=0.05),
+  #                      labels=c("0", rep("", 4), "0.25", rep("", 4), "0.5", rep("", 4),
+  #                               "0.75", rep("", 4), "1")) +
+  scale_fill_viridis_b("P(attach)", option="turbo", 
+                       limits=c(0, 1), breaks=seq(0, 1, by=0.1),
+                       labels=c("0", rep("", 4), "0.5", rep("", 4), "1")) +
+  # scale_fill_viridis_c("Max P(attach)", option="turbo", 
+  #                      limits=c(0, 1), breaks=seq(0, 1, by=0.25),
+  #                      labels=c("0", "0.25", "0.5", "0.75", "1")) +
+  facet_grid(RW_lab~temp_lab) +
   scale_x_continuous("Salinity (psu)", breaks=c(10, 20, 30)) +
   labs(y="Water speed (cm/s)") +
   theme(legend.position="bottom",
@@ -614,9 +628,16 @@ p_prAttachIP <- expand_grid(
   annotate("text", x=0.5, y=0.75, parse=T, hjust=0, vjust=0, size=3,
            label=paste0("P[attach]~halfSat.:~", round(params$IP_halfSat_m3, 1), 
                         "~cop~m^-3~h^-1")) +
-  scale_fill_viridis_c("P(attach)", option="turbo", 
-                       limits=c(0, 1), breaks=seq(0, 1, by=0.25),
-                       labels=c("0", "0.25", "0.5", "0.75", "1")) +
+  # scale_fill_viridis_b("P(attach)", option="turbo", 
+  #                      limits=c(0, 1), breaks=seq(0, 1, by=0.05),
+  #                      labels=c("0", rep("", 4), "0.25", rep("", 4), "0.5", rep("", 4),
+  #                               "0.75", rep("", 4), "1")) +
+  scale_fill_viridis_b("P(attach)", option="turbo", 
+                       limits=c(0, 1), breaks=seq(0, 1, by=0.1),
+                       labels=c("0", rep("", 4), "0.5", rep("", 4), "1")) +
+  # scale_fill_viridis_c("P(attach)", option="turbo", 
+  #                      limits=c(0, 1), breaks=seq(0, 1, by=0.25),
+  #                      labels=c("0", "0.25", "0.5", "0.75", "1")) +
   ylim(0, 1) +
   labs(x="IP (copepodids/m3/h)", y="Max P(attach)") +
   theme(legend.position="bottom",
@@ -777,7 +798,7 @@ if(use_farm_avg) {
               influx=sum(influx)) |>
     ungroup()
   info$nFarms <- n_distinct(influx_df$sepaSite)
-  info$nPens <- NULL
+  info$nPens <- 1
   info$IP_penVolume <- farm_i$vol
   params$IP_bg <- params$IP_bg_m3*info$IP_penVolume
   params$IP_halfSat <- params$IP_halfSat_m3*info$IP_penVolume
