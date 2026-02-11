@@ -59,6 +59,7 @@ etive_fp <- st_read(glue("{mesh_dir}/etive28_mesh_footprint.gpkg"))
 ```
 
 ```{r}
+#| label: "setup2"
 # generate simulation number
 sim_num <- str_pad(length(dir(glue("{proj_dir}/data/sim"), "sim"))+1, 2, 'left', '0')
 out_dir <- glue("{proj_dir}/data/sim/sim_{sim_num}")
@@ -66,11 +67,13 @@ inputs_dir <- glue("{proj_dir}/data/sim/inputs")
 ```
 
 ```{r}
+#| label: "setup3"
 seed <- sample(1e6, 1)
 set.seed(seed)
 ```
 
 ```{r}
+#| label: "setup4"
 #| echo: false
 
 cat("Sim", sim_num, "running with seed:", seed)
@@ -82,6 +85,7 @@ dir.create(out_dir, recursive=T)
 `farm_i`: Farm metadata. Location and volume = $\sum{Area_i \times \min(depth_i, 20)}$ for elements $i$ clipped to the 30m radius around each farm. The 20m depth limit and 30m radius corresponds with the connectivity calculations as parameterized in biotracker (*2_run_biotracker.R*).
 
 ```{r}
+#| label: "pen_df"
 pen_df <- read_csv(glue("{proj_dir}/data/pen_sites_linnhe_2023-2024.csv"), 
                    show_col_types=F) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
@@ -93,6 +97,7 @@ glimpse(pen_df)
 ```
 
 ```{r}
+#| label: "farm_i"
 farm_i <- read_csv(glue("{inputs_dir}/farm_sites_2023-2024.csv"), show_col_types=F) |>
   inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
                filter(sim=="01") |>
@@ -116,6 +121,7 @@ farm_i
 ```
 
 ```{r}
+#| label: "farm_map"
 #| fig-width: 3
 #| fig-height: 6
 #| fig-cap: "Sites in and near Loch Etive."
@@ -140,6 +146,7 @@ ggplot() +
 `farm_dat`: Daily interpolation of mean adult female lice per fish, reported fish biomass, estimated number of fish assuming 240 fish per tonne, estimated total adult female lice assuming 240 fish per tonne, area within 100m radius, receiving area ratio, logit-transformed receiving area ratio, and whether lice were sampled on a given day. Receiving area ratio is calculated following @kragesteen2023 as $R(W_i) = \sqrt{\frac{W_i}{DV_r}}$ (recommended Method 3), with biomass $W$ = `actualBiomassOnSiteTonnes * 1000` ($kg$), stocking density $D = 20 kg \cdot m^{-3}$, and receiving area $V_r$ = `vol` ($m^3$). I assume here a depth of 20m for the receiving area. Thus, $R(W_i)$ = `RW` is the proportion of copepodids that successfully attach.
 
 ```{r}
+#| label: "farm_dat"
 mort_weekly <- 0.000878 # mean rate from Szewczyk et al 2024
 prod_cycles <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
   select(sepaSite, date, actualBiomassOnSiteTonnes) |>
@@ -188,6 +195,7 @@ gc()
 ```
 
 ```{r}
+#| label: "farm_dat_fig"
 #| fig-width: 15
 #| fig-height: 9
 #| fig-cap: "Farm data based on reported values. Rug on x-axis shows dates where simulated lice will be sampled."
@@ -232,6 +240,7 @@ gc()
 From `etive28`, I've calculated daily averages across the top 20m at each farm location to summarise the environmental conditions.
 
 ```{r}
+#| label: "farm_env"
 farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F) |>
   filter(sepaSite %in% farm_order) |>
   mutate(sepaSite=factor(sepaSite, levels=farm_order),
@@ -267,6 +276,7 @@ farm_env_daily <- farm_env |>
 ```
 
 ```{r}
+#| label: "farm_env_fig"
 #| fig-width: 10
 #| fig-height: 8
 #| fig-cap: "Etive28 or WeStCOMs2 at farm locations. Farms are ordered from lowest salinity (light) to highest (dark)."
@@ -333,6 +343,7 @@ read_csv(glue("E:/EtiveLice/out/biotracker/sim_i.csv")) |>
 ```
 
 ```{r}
+#| label: "influx_df"
 influx_df <- read_csv(glue("{inputs_dir}/influx_hourly.csv"), show_col_types=F) |>
   filter(sepaSite %in% farm_order) |>
   full_join(tibble(time=seq_range(range(farm_env$time), by=3600),
@@ -351,6 +362,7 @@ glimpse(influx_df)
 ```
 
 ```{r}
+#| label: "influx_fig1"
 #| fig-width: 10
 #| fig-height: 10
 #| fig-cap: "Daily copepodid infestation pressure by farm."
@@ -367,6 +379,7 @@ ggplot(influx_df, aes(time, influx_m3, colour=sepaSite, group=pen)) +
 ```
 
 ```{r}
+#| label: "influx_fig2"
 #| fig-width: 10
 #| fig-height: 10
 #| fig-cap: "Daily copepodid infestation pressure (4th root) by farm."
@@ -386,6 +399,7 @@ if(save_figs) {
 ```
 
 ```{r}
+#| label: "influx_fig3"
 #| fig-width: 10
 #| fig-height: 10
 #| fig-cap: "Daily copepodid infestation pressure (log) by farm."
@@ -414,6 +428,7 @@ Progression on-fish is more reasonable to model with a daily timestep given that
 :::
 
 ```{r}
+#| label: "brms"
 #| eval: false
 #| echo: false
 # Generate realistic variability in parameters using Bayesian regression
@@ -489,6 +504,7 @@ as_draws_df(surv_out) |>
 ```
 
 ```{r}
+#| label: "set_params"
 use_farm_avg <- TRUE # F: use pens
 info <- list(nDays=n_distinct(influx_df$date),
              nHours=n_distinct(influx_df$time),
@@ -534,7 +550,7 @@ params <- list(
   # Scaling factor for IP -> attached: from linear to 4th root with mean = sq root 
   #IP_scale=rbeta(n=1, 1.5, 3)*3 + 1, # !!! DEPRECATED !!!
   # Half saturation constant for attachment (cop/m3/day) 
-  IP_halfSat_m3=1e6,#runif(n=1, 1, 50),
+  IP_halfSat_m3=runif(n=1, 1, 50) + rbinom(1, 1, 0.5)*1e6,
   # Treatment threshold for AF
   treat_thresh=sample(c(0.5, 1), 1),
   treat_efficacy=rbeta(1, 4, 2)
@@ -582,7 +598,7 @@ map(params, ~signif(.x, 3))
 # attachment
 p_prAttach <- expand_grid(
   salinity_z=seq_quantiles(farm_env$salinity_z, 0.05, 0.995, length.out=100),
-  uv_z=seq_quantiles(farm_env$uv_z, 0.05, 0.995, length.out=100),
+  uv_z=seq_quantiles(farm_env$uv_z, 0, 0.9995, length.out=100),
   RW=c(0.25, 0.5),
   temp_z=seq_quantiles(farm_env$temperature_z, 0.05, 0.995, length.out=4)
 ) |>
@@ -771,6 +787,7 @@ The simulation function is wrapped into `simulate_farm_pops()` in `code/fn/simul
 ```
 
 ```{r}
+#| label: "use_farm_avg"
 #| message: false
 if(use_farm_avg) {
   farm_env <- farm_env |>
@@ -815,6 +832,7 @@ if(use_farm_avg) {
 To run it:
 
 ```{r}
+#| label: "simulate"
 #| warning: false
 #| message: false
 out_df <- simulate_farm_pops_mn_lpf(params, info, influx_df, 
@@ -829,6 +847,7 @@ In addition to the dataframe returned (daily mean lice per fish: latent (`mu`) a
 ## Ensemble infestation pressure
 
 ```{r}
+#| label: "ensIP_fig"
 #| fig-width: 10
 #| fig-height: 8
 #| fig-cap: "Ensemble daily copepodid infestation pressure. Farms are ordered from uploch (light) to downloch (dark). Thin lines are individual pens with thick lines as farm-level averages."
@@ -887,6 +906,7 @@ cowplot::plot_grid(plotlist=p_ls, ncol=1, align="hv")
 ## Attachment rates
 
 ```{r}
+#| label: "attach_fig"
 #| fig-width: 10
 #| fig-height: 3.5
 #| fig-cap: "Daily copepodid infestation pressure by simulation. Farms are ordered from uploch (light) to downloch (dark). Thin lines are individual pens with thick lines as farm-level averages."
@@ -928,6 +948,7 @@ ggplot(pr_attach_df, aes(time, pr_attach, colour=sepaSite)) +
 ## Survival rates
 
 ```{r}
+#| label: "surv_fig"
 #| fig-width: 10
 #| fig-height: 7
 #| fig-cap: "Daily survival rates by stage. Farms are ordered from uploch (light) to downloch (dark). Thin lines are individual pens with thick lines as farm-level averages."
@@ -975,6 +996,7 @@ ggplot(pr_surv_df, aes(date, pr_surv, colour=sepaSite)) +
 We can look at both the latent mean lice per fish (`mu`) and the observed mean lice per fish (`y`). The latent mean is recorded each day, with observations taken once each week on the corresponding day (`farm_i$firstDay`) as the average of `farm_env$nFishSample[farm,day]` fish.
 
 ```{r}
+#| label: "lice_fig1"
 #| fig-width: 10
 #| fig-height: 15
 #| fig-cap: "Daily mean latent lice per fish (mu)."
@@ -1016,6 +1038,7 @@ ggplot(mu_df, aes(date)) +
 ```
 
 ```{r}
+#| label: "lice_fig2"
 #| fig-width: 10
 #| fig-height: 15
 #| fig-cap: "Population composition."
@@ -1038,6 +1061,7 @@ if(save_figs) {
 ```
 
 ```{r}
+#| label: "lice_fig3"
 #| fig-width: 10
 #| fig-height: 10
 #| fig-cap: "Daily mean lice per fish, including latent (mu, lines) and observed (y, points)."
@@ -1057,6 +1081,7 @@ if(save_figs) {
 ```
 
 ```{r}
+#| label: "lice_fig4"
 #| fig-width: 10
 #| fig-height: 10
 #| fig-cap: "Daily mean lice per fish for adult female stages (af: all, gr: gravid, ng: non-gravid), including latent (mu, lines) and observed (y, points)."
@@ -1088,6 +1113,7 @@ ggplot(mu_df |> filter(stage %in% af), aes(date)) +
 ```
 
 ```{r}
+#| label: "lice_fig5"
 #| fig-width: 15
 #| fig-height: 5
 #| fig-cap: "Daily mean lice per fish for adult female stages (af: all, gr: gravid, ng: non-gravid), including latent (mu, lines) and observed (y, points)."
@@ -1112,6 +1138,7 @@ if(save_figs) {
 ```
 
 ```{r}
+#| label: "lice_fig6"
 #| fig-width: 10
 #| fig-height: 5
 #| fig-cap: "Daily mean lice per fish for adult female stages (af: all, gr: gravid, ng: non-gravid), including latent (mu, lines) and observed (y, points)."
