@@ -434,25 +434,29 @@ full_sum_df |>
 #| fig-width: 6
 #| fig-height: 15
 #| echo: false
-attach_rng <- apply(readRDS(glue("{proj_dir}/data/sim/sim_01/attach_env_mx.rds")), 3, range)
+
+farm_env_avg <- readRDS(glue("{proj_dir}/data/sim/sim_01/farm_env_avg.rds"))
+
+attach_mx <- readRDS(glue("{proj_dir}/data/sim/sim_01/attach_env_mx.rds"))
 attach_df <- expand_grid(
-  RW=qlogis(c(0.1, 0.2, 0.3, 0.4)),
-  Sal=seq_range(attach_rng[,2], length.out=3),
-  UV=seq_range(attach_rng[,3], length.out=20)
+  RW=qlogis(c(0.25, 0.5)),
+  Sal=seq_quantiles(attach_mx[,2], 0.005, 0.995, length.out=3),
+  Temp=seq_quantiles(attach_mx[,3], 0.005, 0.995, length.out=3),
+  UV=seq_quantiles(attach_mx[,4], 0.005, 0.995,  length.out=20)
 ) |>
-  mutate(UV_sq=UV^2)
+  mutate(UV_sq=UV^2) 
 
 ```
 
 ```{r}
-pAttach_post <- dir(sim_dir, "sim_") |>
+pAttach_post <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior_pop5stage.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
-        read_csv(glue("{sim_dir}/{.x}/params_pop_5stage.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
@@ -461,43 +465,46 @@ pAttach_post <- dir(sim_dir, "sim_") |>
   pivot_wider(names_from="beta", values_from="value") |>
   mutate(attach_df=list(attach_df)) |>
   unnest(attach_df) |>
-  mutate(pAttach=plogis(b1*RW + b2*Sal + b3*UV + b4*UV_sq),
-         salinity=Sal*4.01 + 26.2,
-         UV_raw=UV*6.14 + 14.2,
-         RW=plogis(RW))
+  mutate(pAttach=plogis(b1*RW + b2*Sal + b3*Temp + b4*UV + b5*UV_sq),
+         salinity=Sal*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
+         UV_raw=UV*farm_env_avg$uv[2] + farm_env_avg$uv[1],
+         RW=plogis(RW),
+         temperature=Temp*farm_env_avg$temperature[2] + farm_env_avg$temperature[1])
 pAttach_quantiles <- pAttach_post |>
   filter(sim %in% paste0("dat_0", 1)) |>
-  group_by(.draw, fit, sim, RW, salinity, UV_raw) |>
+  group_by(.draw, fit, sim, RW, salinity, UV_raw, temperature) |>
   sevcheck::get_intervals(pAttach)
 ```
 
 ```{r}
 
- pAttach_post |>
-  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 500))) |>
-  filter(sim %in% unique(pAttach_post$sim)[35]) |>
+pAttach_post |>
+  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 50))) |>
+  filter(sim %in% unique(pAttach_post$sim)[1]) |>
   ggplot(aes(UV_raw, pAttach, alpha=fit, linewidth=fit,
-             group=paste(RW, salinity, .draw, fit), colour=salinity)) + 
+             group=paste(RW, salinity, temperature, .draw, fit), colour=temperature)) + 
   geom_line() +
-  scale_colour_viridis_c(option="mako", end=0.9) +
+  scale_colour_viridis_c(option="turbo", end=0.9) +
   scale_alpha_manual(values=c(0.1, 1)) +
   scale_linewidth_manual(values=c(0.2, 1)) +
   ylim(0, NA) + 
   labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
   facet_grid(salinity~RW, scales="free_y")
  
- pAttach_post |>
-  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 10))) |>
-  filter(sim %in% unique(pAttach_post$sim)[21:35]) |>
+p <- pAttach_post |>
+  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 50))) |>
+  filter(sim %in% unique(pAttach_post$sim)[1:6]) |>
   ggplot(aes(UV_raw, pAttach, alpha=fit, linewidth=fit,
-             group=paste(RW, salinity, .draw, fit), colour=salinity)) + 
+             group=paste(RW, salinity, temperature, .draw, fit), colour=temperature)) + 
   geom_line() +
-  scale_colour_viridis_c(option="mako", end=0.9) +
-  scale_alpha_manual(values=c(0.4, 1)) +
+  scale_colour_viridis_c(option="turbo", end=0.9) +
+  scale_alpha_manual(values=c(0.2, 1)) +
   scale_linewidth_manual(values=c(0.2, 1)) +
   ylim(0, NA) + 
   labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
-  facet_grid(sim~RW, scales="free_y")
+  facet_grid(sim~RW*salinity, scales="free_y")
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/NEW_dataExamp_postAttachReg.png"),
+       p, width=12, height=6)
 ```
 
 ```{r}

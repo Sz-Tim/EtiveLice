@@ -5,9 +5,13 @@
 
 
 seq_range <- function(x, ...) {
-  x_min <- min(x)
-  x_max <- max(x)
-  seq(x_min, x_max, ...)
+  x_range <- range(x)
+  seq(x_range[1], x_range[2], ...)
+}
+
+seq_quantiles <- function(x, lo=0.025, hi=0.975, ...) {
+  x_q <- quantile(x, probs=c(lo, hi))
+  seq(x_q[1], x_q[2], ...)
 }
 
 

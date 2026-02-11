@@ -574,16 +574,17 @@ map(params, ~signif(.x, 3))
 ```
 
 ```{r}
+#| label: "param_fig"
 #| echo: false
 #| message: false
 #| fig-width: 10
 #| fig-height: 8
 # attachment
 p_prAttach <- expand_grid(
-  salinity_z=seq_range(farm_env$salinity_z, length.out=100),
-  uv_z=seq_range(farm_env$uv_z, length.out=100),
+  salinity_z=seq_quantiles(farm_env$salinity_z, 0.05, 0.995, length.out=100),
+  uv_z=seq_quantiles(farm_env$uv_z, 0.05, 0.995, length.out=100),
   RW=c(0.25, 0.5),
-  temp_z=seq_range(farm_env$temperature_z, length.out=100)[c(5,30,70,95)]
+  temp_z=seq_quantiles(farm_env$temperature_z, 0.05, 0.995, length.out=4)
 ) |>
   mutate(uv_sq=uv_z^2,
          uv=uv_z*farm_env_avg$uv[2] + farm_env_avg$uv[1],
