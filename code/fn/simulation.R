@@ -54,7 +54,6 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   #### Number of attached copepodids
   # N_attach[day, farm]
   N_attach <- array(0, dim=c(info$nHours, info$nFarms))
-  y_attach <- N_attach
   day_hour <- matrix(1:info$nHours, ncol=24, byrow=T)
 
   #### For each daily cohort of newly attached copepodids by farm, track daily
@@ -98,11 +97,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
       ensIP
   }
   N_attach[nFish_mx==0] <- 0
-  for(hour in 1:info$nHours) {
-    for(farm in 1:info$nFarms) {
-      y_attach[hour, farm] <- rnbinom(1, mu=N_attach[hour, farm], size=params$nb_prec)
-    }
-  }
+
 
   #---- Calculate GDD by cohort through simulation period
   for(cohort in 1:info$nDays) {
@@ -226,7 +221,6 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
 
   cat(format(now(), "%F %T"), "  Storing lice structures  \n")
   saveRDS(N_attach, glue("{out_dir}/N_attach.rds"))
-  saveRDS(y_attach, glue("{out_dir}/y_attach.rds"))
   saveRDS(mu, glue("{out_dir}/mu.rds"))
   saveRDS(y_bar, glue("{out_dir}/y_bar.rds"))
   saveRDS(y, glue("{out_dir}/y.rds"))
