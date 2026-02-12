@@ -13,12 +13,14 @@ library(glue)
 library(cmdstanr)
 library(ggdist)
 library(cowplot)
+library(doFuture)
 dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
 prior_only <- F
 keep_licePreds <- F
-refit <- F
+refit <- T
+n_parallel <- 5
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
@@ -38,7 +40,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            "nb_prec",
                            "IP_scale", "IP_halfSat_m3",
                            "treatEfficacy"),
-                    label=c(paste0("attach_", c("RW", "Sal", "UV", "UVsq", "Temp")),
+                    label=c(paste0("attach_", c("RW", "Sal", "Temp", "UV", "UVsq")),
                             paste0("ensWt_", 1:20),
                             "IP_bg", "IP_bg_m3",
                             paste0("surv_Int_", stages),
@@ -56,10 +58,12 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
-sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/") |>
-  tail(n=10) |> rev()
-for(sim_dir in sim_dirs) {
+sim_dirs <- (paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/"))[11:20]
 
+plan(multicore, workers=n_parallel)
+
+# for(sim_dir in sim_dirs) {
+foreach(sim_dir=sim_dirs) %dofuture% {
   if(!refit & file.exists(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.csv"))) {
     next
   }
