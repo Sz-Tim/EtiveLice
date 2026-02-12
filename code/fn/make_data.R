@@ -36,7 +36,7 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     sample_prior_only = as.numeric(priors_only),
     # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
     prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), 0),
-                              c(rep(0.25, length(params$attach_beta)-1), 0.15)),
+                              c(rep(0.25, length(params$attach_beta)-1), 0.25)),
     # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
     prior_surv_beta = array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
                               rep(c(0.5, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
@@ -58,8 +58,8 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
                                  c(0.5, 0.5)),
     # IP_bg_m3: c(mu, sigma); normal, T(0, )
     prior_IP_bg_m3 = c(0, 0.05),
-    # nb_prec: df; chisq
-    prior_nb_prec = 3.5,
+    # nb_prec: df; cauchy(mu, sd)
+    prior_nb_prec = c(1, 3),
     # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
     prior_IP_halfSat_m3 = c(3, 20, 10)
   )
