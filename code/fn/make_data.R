@@ -1,4 +1,4 @@
-make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
+make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE, prior_ls=NULL) {
   library(tidyverse)
   library(glue)
 
@@ -35,6 +35,8 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
     # priors
     sample_prior_only = as.numeric(priors_only),
     # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
+    # prior_attach_beta = cbind(c(1, 0.25, 0.25, 0, 0),
+    #                           c(0.5, 0.5, 0.5, 0.5, 0.5)),
     prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), 0),
                               c(rep(0.25, length(params$attach_beta)-1), 0.25)),
     # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
@@ -73,6 +75,12 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE) {
               end=max(index)) |>
     select(-sepaSite) |>
     as.matrix()
+  # update any priors specified in prior_ls argument
+  if(!is.null(prior_ls)) {
+    for(i in 1:length(prior_ls)) {
+      stan_dat[[names(prior_ls)[i]]] <- prior_ls[[i]]
+    }
+  }
   if(source=="sim") {
     # add male Ch/PA, re-divide assuming a 50:50 ratio
     stan_dat$y_F <- stan_dat$y[,1,,]
