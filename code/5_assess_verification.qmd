@@ -505,10 +505,10 @@ pAttach_post2 <- sim_finished |>
 
 ```{r}
 
-pAttach_quantiles <- pAttach_post |>
-  filter(sim %in% paste0("dat_0", 1)) |>
-  group_by(.draw, fit, sim, RW, salinity, UV_raw, temperature) |>
-  sevcheck::get_intervals(pAttach)
+# pAttach_quantiles <- pAttach_post |>
+#   filter(sim %in% paste0("dat_0", 1)) |>
+#   group_by(.draw, fit, sim, RW, salinity, UV_raw, temperature) |>
+#   sevcheck::get_intervals(pAttach)
 ```
 
 ```{r}
@@ -558,22 +558,22 @@ ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/NEW_dataExamp_postAttac
 ```
 
 ```{r}
-pAttach_df <- out_df |>
-  filter(grepl("attach_beta", name)) |>
-  mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
-  select(beta, mn, value, sim, fit) |>
-  pivot_longer(2:3, names_to="src", values_to="value") |>
-  mutate(fit=case_when(src=="value"~"True",
-                       src!="value" & fit=="model" ~ "Model")) |>
-  select(-src) |>
-  pivot_wider(names_from="beta", values_from="value") |>
-  mutate(attach_df=list(attach_df)) |>
-  unnest(attach_df) |>
-  mutate(pAttach=plogis(b1*RW + b2*Sal + b3*UV + b4*UV_sq + b5*Temp),
-         salinity=Sal*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
-         UV_raw=UV*farm_env_avg$uv[2] + farm_env_avg$uv[1],
-         RW=plogis(RW),
-         temperature=Temp*farm_env_avg$temperature[2] + farm_env_avg$temperature[1])
+# pAttach_df <- out_df |>
+#   filter(grepl("attach_beta", name)) |>
+#   mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
+#   select(beta, mn, value, sim, fit) |>
+#   pivot_longer(2:3, names_to="src", values_to="value") |>
+#   mutate(fit=case_when(src=="value"~"True",
+#                        src!="value" & fit=="model" ~ "Model")) |>
+#   select(-src) |>
+#   pivot_wider(names_from="beta", values_from="value") |>
+#   mutate(attach_df=list(attach_df)) |>
+#   unnest(attach_df) |>
+#   mutate(pAttach=plogis(b1*RW + b2*Sal + b3*UV + b4*UV_sq + b5*Temp),
+#          salinity=Sal*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
+#          UV_raw=UV*farm_env_avg$uv[2] + farm_env_avg$uv[1],
+#          RW=plogis(RW),
+#          temperature=Temp*farm_env_avg$temperature[2] + farm_env_avg$temperature[1])
 
 ```
 
@@ -583,26 +583,26 @@ pAttach_df <- out_df |>
 #| fig-width: 14
 #| fig-height: 15
 #| echo: false
-p1 <- pAttach_df |>
-  filter(sim %in% unique(pAttach_df$sim)[1:15]) |>
-  ggplot(aes(UV_raw, pAttach, group=paste(RW,salinity,fit), colour=salinity, linetype=fit)) + 
-  geom_line() +
-  scale_colour_viridis_c(option="mako", end=0.9) +
-  scale_linetype_manual(values=c(2, 1)) +
-  ylim(0, NA) + 
-  labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
-  facet_grid(sim~RW, scales="free_y")
-
-p2 <- pAttach_df |>
-  filter(sim %in% unique(pAttach_df$sim)[16:30]) |>
-  ggplot(aes(UV_raw, pAttach, group=paste(RW,salinity,fit), colour=salinity, linetype=fit)) + 
-  geom_line() +
-  scale_colour_viridis_c(option="mako", end=0.9) +
-  scale_linetype_manual(values=c(2, 1)) +
-  ylim(0, NA) + 
-  labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
-  facet_grid(sim~RW, scales="free_y")
-ggpubr::ggarrange(p1, p2, nrow=1, common.legend=TRUE, legend="right")
+# p1 <- pAttach_df |>
+#   filter(sim %in% unique(pAttach_df$sim)[1:15]) |>
+#   ggplot(aes(UV_raw, pAttach, group=paste(RW,salinity,fit), colour=salinity, linetype=fit)) + 
+#   geom_line() +
+#   scale_colour_viridis_c(option="mako", end=0.9) +
+#   scale_linetype_manual(values=c(2, 1)) +
+#   ylim(0, NA) + 
+#   labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
+#   facet_grid(sim~RW, scales="free_y")
+# 
+# p2 <- pAttach_df |>
+#   filter(sim %in% unique(pAttach_df$sim)[16:30]) |>
+#   ggplot(aes(UV_raw, pAttach, group=paste(RW,salinity,fit), colour=salinity, linetype=fit)) + 
+#   geom_line() +
+#   scale_colour_viridis_c(option="mako", end=0.9) +
+#   scale_linetype_manual(values=c(2, 1)) +
+#   ylim(0, NA) + 
+#   labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
+#   facet_grid(sim~RW, scales="free_y")
+# ggpubr::ggarrange(p1, p2, nrow=1, common.legend=TRUE, legend="right")
 
 # pAttach_df |>
 #   filter(sim %in% unique(pAttach_df$sim)[1:10]) |>
@@ -644,39 +644,39 @@ pSurv_df <- out_df |>
 #| fig-width: 15
 #| fig-height: 15
 #| echo: false
-p1 <- pSurv_df |>
-  filter(sim %in% unique(pSurv_df$sim)[1:9]) |>
-  ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
-  geom_line() +
-  scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
-  scale_linetype_manual(values=c(2, 1)) +
-  ylim(0, 1) + 
-  labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
-  facet_grid(stage~sim)
-p2 <- pSurv_df |>
-  filter(sim %in% unique(pAttach_df$sim)[16:30]) |>
-  ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
-  geom_line() +
-  scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
-  scale_linetype_manual(values=c(2, 1)) +
-  ylim(0, 1) + 
-  labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
-  facet_grid(stage~sim)
-
-ggpubr::ggarrange(p1, p2, nrow=2, common.legend=TRUE, legend="right")
-
-pSurv_df |>
-  filter(sim %in% unique(pAttach_df$sim)[21:27]) |>
-  ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
-  geom_line() +
-  scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
-  scale_linetype_manual(values=c(2, 1)) +
-  ylim(0, 1) + 
-  labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
-  facet_grid(stage~sim) +
-  theme(legend.position="bottom")
-ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/dataExamp_fittedSalReg.png"),
-       width=12, height=6)
+# p1 <- pSurv_df |>
+#   filter(sim %in% unique(pSurv_df$sim)[1:9]) |>
+#   ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
+#   geom_line() +
+#   scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
+#   scale_linetype_manual(values=c(2, 1)) +
+#   ylim(0, 1) + 
+#   labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
+#   facet_grid(stage~sim)
+# p2 <- pSurv_df |>
+#   filter(sim %in% unique(pAttach_df$sim)[16:30]) |>
+#   ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
+#   geom_line() +
+#   scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
+#   scale_linetype_manual(values=c(2, 1)) +
+#   ylim(0, 1) + 
+#   labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
+#   facet_grid(stage~sim)
+# 
+# ggpubr::ggarrange(p1, p2, nrow=2, common.legend=TRUE, legend="right")
+# 
+# pSurv_df |>
+#   filter(sim %in% unique(pAttach_df$sim)[21:27]) |>
+#   ggplot(aes(salinity, pSurv, group=paste(stage, fit), colour=stage, linetype=fit)) + 
+#   geom_line() +
+#   scale_colour_manual(values=RColorBrewer::brewer.pal(n=4, name="Paired")[c(1,2,4)]) +
+#   scale_linetype_manual(values=c(2, 1)) +
+#   ylim(0, 1) + 
+#   labs(x="Salinity (psu)", y="Daily Pr(Survival)") +
+#   facet_grid(stage~sim) +
+#   theme(legend.position="bottom")
+# ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/dataExamp_fittedSalReg.png"),
+#        width=12, height=6)
 ```
 
 ```{r}
