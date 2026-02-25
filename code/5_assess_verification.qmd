@@ -27,6 +27,7 @@ library(tidyverse)
 library(sf)
 library(glue)
 library(here)
+fread <- data.table::fread
 proj_dir <- "~/EtiveLice/"
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
@@ -524,11 +525,13 @@ attach_df <- expand_grid(
 pAttach_post <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
+        fread(glue("{sim_dir}/{.x}/posterior.csv")) |>
+          as_tibble() |>
           filter(grepl("attach_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
-        read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F) |>
+        fread(glue("{sim_dir}/{.x}/params.csv")) |>
+          as_tibble() |>
           filter(grepl("attach_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
@@ -553,7 +556,8 @@ attach_df2 <- expand_grid(
 pAttach_post2 <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
+        fread(glue("{sim_dir}/{.x}/posterior.csv")) |>
+          as_tibble() |>
           filter(grepl("attach_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
