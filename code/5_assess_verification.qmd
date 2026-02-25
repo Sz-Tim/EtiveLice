@@ -153,8 +153,8 @@ sim_finished <- dir(sim_dir, "posterior_summary", recursive=T) |> str_sub(1, 6) 
 out_df <- sim_finished |>
   map_dfr(
     ~full_join(
-      data.table::fread(glue("{sim_dir}/{.x}/posterior_summary_LOOSE.csv")) |> as_tibble(),
-      data.table::fread(glue("{sim_dir}/{.x}/params_LOOSE.csv")) |> as_tibble(), 
+      data.table::fread(glue("{sim_dir}/{.x}/posterior_summary.csv")) |> as_tibble(),
+      data.table::fread(glue("{sim_dir}/{.x}/params.csv")) |> as_tibble(), 
       by=join_by(name)
     ) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
@@ -524,11 +524,11 @@ attach_df <- expand_grid(
 pAttach_post <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior_LOOSE.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
-        read_csv(glue("{sim_dir}/{.x}/params_LOOSE.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
@@ -553,11 +553,11 @@ attach_df2 <- expand_grid(
 pAttach_post2 <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior_LOOSE.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
-        read_csv(glue("{sim_dir}/{.x}/params_LOOSE.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
@@ -753,11 +753,11 @@ pSurv_df <- out_df |>
 pSurv_post <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior_LOOSE.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
           filter(grepl("surv_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
-        read_csv(glue("{sim_dir}/{.x}/params_LOOSE.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F) |>
           filter(grepl("surv_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
