@@ -31,7 +31,7 @@ proj_dir <- "~/EtiveLice/"
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 
-farm_order <- c("FFMC27", "SAR1", "APT1", "FFMC32", "FFMC84")
+# farm_order <- c("FFMC27", "SAR1", "APT1", "FFMC32", "FFMC84")
 sim_dir <- glue("{proj_dir}/data/sim/")
 ```
 
@@ -73,18 +73,88 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
   mutate(label=factor(label, levels=unique(label)))
 ```
 
+# Summary of simulations
+
+```{r}
+sims <- dir(sim_dir, "out_df.csv", recursive=T) |> str_sub(1, 6) |> unique()
+sim_df <- sims |>
+  map_dfr(~data.table::fread(glue("{sim_dir}/{.x}/out_df.csv")) |> 
+            as_tibble() |>
+            mutate(sim=paste0("dat_", str_sub(.x, -2, -1))))
+```
+
+```{r}
+sim_df |> 
+  ggplot(aes(date, mu_af, group=sim, colour=sim)) + 
+  geom_line(linewidth=0.1) + 
+  scale_colour_viridis_d(option="turbo", guide="none") + 
+  scale_y_continuous(trans="log1p") + 
+  facet_wrap(~sepaSite)
+
+sim_df |> 
+  group_by(sepaSite, sim) |>
+  summarise(mn_mu_af=mean(mu_af)) |>
+  group_by(sim) |>
+  mutate(grand_mn=mean(mn_mu_af)) |>
+  ungroup() |>
+  arrange(grand_mn, sepaSite) |>
+  mutate(sim=factor(sim, levels=unique(sim))) |>
+  ggplot(aes(mn_mu_af, sim)) + 
+  geom_point(shape=1, aes(colour=sepaSite)) + 
+  geom_line(aes(group=sim)) +
+  scale_colour_viridis_d(option="turbo", guide="none") + 
+  scale_x_continuous(trans="log1p")
+```
+
+```{r}
+sim_df |> 
+  ggplot(aes(date, y_af, group=sim, colour=sim)) + 
+  geom_point(shape=1, size=0.8, alpha=0.7) + 
+  scale_colour_viridis_d(option="turbo", guide="none") + 
+  scale_y_continuous(trans="log1p") + 
+  facet_wrap(~sepaSite, scales="free_y")
+```
+
+
+
+# Performance metrics on $\mu$
+
+```{r}
+sim_finished <- dir(sim_dir, "mu_fitted_metrics", recursive=T) |> str_sub(1, 6) |> unique()
+metric_wk_df <- map_dfr(sim_finished,
+                        ~read_csv(glue("{sim_dir}/{.x}/mu_fitted_metrics_weekly.csv")) |>
+                          mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) 
+
+metric_wk_df |>
+  select(-(2:5)) |>
+  pivot_longer(2:10) |>
+  ggplot(aes(value, name, fill=sim)) + 
+  ggdist::stat_halfeye(colour=NA, alpha=0.5) +
+  scale_fill_viridis_d(option="turbo", guide="none")
+
+metric_wk_df |>
+  select(-(2:5)) |>
+  pivot_longer(2:10) |>
+  ggplot(aes(value, name, fill=sim, group=name)) + 
+  ggdist::geom_swarm(colour=NA) +
+  scale_fill_viridis_d(option="turbo", guide="none")
+```
+
+
+
+
 # Load data and posterior summaries
 
 ```{r}
 #| message: false
 #| warning: false
 
-sim_finished <- dir(sim_dir, "posterior_summary_LOOSE", recursive=T) |> str_sub(1, 6) |> unique()
+sim_finished <- dir(sim_dir, "posterior_summary", recursive=T) |> str_sub(1, 6) |> unique()
 out_df <- sim_finished |>
   map_dfr(
     ~full_join(
-      read_csv(glue("{sim_dir}/{.x}/posterior_summary_LOOSE.csv"), show_col_types=F),
-      read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F), 
+      data.table::fread(glue("{sim_dir}/{.x}/posterior_summary_LOOSE.csv")) |> as_tibble(),
+      data.table::fread(glue("{sim_dir}/{.x}/params_LOOSE.csv")) |> as_tibble(), 
       by=join_by(name)
     ) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1))) |>
@@ -392,7 +462,7 @@ p <- full_sum_df |>
   labs(x="Posterior mean + 50% CI", 
        y="True value",
        title="Verification across simulated datasets")
-ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/NEW_pop_freeDet_performance_LOOSE.png"), p,
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/NEW_pop_freeDet_performance.png"), p,
        width=10, height=4.5, dpi=300)
 # p
 ```
@@ -417,7 +487,7 @@ p <- full_sum_df |>
   labs(x="True value",
        y="Posterior mean + 50% CI", 
        title="Verification across simulated datasets")
-ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/NEW_pop_freeDet_performance_all_LOOSE.png"), p,
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/NEW_pop_freeDet_performance_all.png"), p,
        width=12, height=10, dpi=300)
 # p
 full_sum_df |>
@@ -454,11 +524,11 @@ attach_df <- expand_grid(
 pAttach_post <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/posterior_LOOSE.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
-        read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/params_LOOSE.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
@@ -483,11 +553,11 @@ attach_df2 <- expand_grid(
 pAttach_post2 <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/posterior_LOOSE.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
-        read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/params_LOOSE.csv"), show_col_types=F) |>
           filter(grepl("attach_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
@@ -683,11 +753,11 @@ pSurv_df <- out_df |>
 pSurv_post <- sim_finished |>
   map_dfr(
       ~bind_rows(
-        read_csv(glue("{sim_dir}/{.x}/posterior.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/posterior_LOOSE.csv"), show_col_types=F) |>
           filter(grepl("surv_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
-        read_csv(glue("{sim_dir}/{.x}/params.csv"), show_col_types=F) |>
+        read_csv(glue("{sim_dir}/{.x}/params_LOOSE.csv"), show_col_types=F) |>
           filter(grepl("surv_beta", name)) |>
           mutate(fit="True", .draw=1)) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>

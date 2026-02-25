@@ -14,13 +14,14 @@ library(cmdstanr)
 library(ggdist)
 library(cowplot)
 library(doFuture)
+fread <- data.table::fread
 dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
 prior_only <- F
-keep_licePreds <- F
-refit <- T
-n_parallel <- 5
+keep_licePreds <- T
+refit <- F
+n_parallel <- 3
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
@@ -58,69 +59,80 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
-sim_dirs <- (paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/"))[11:20]
+sim_dirs <- (paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/"))
 
 plan(multicore, workers=n_parallel)
 
-# for(sim_dir in sim_dirs) {
-foreach(sim_dir=sim_dirs) %dofuture% {
+foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
   if(!refit & file.exists(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.csv"))) {
-    next
-  }
-  stan_dat <- make_stan_data(sim_dir, priors_only=prior_only)
-
-  # IEM: full model pop -----------------------------------------------------
-
-  iter <- 1000
-  mod_full <- cmdstan_model("code/stan/joint_population_model.stan")
-  fit_full <- mod_full$sample(
-    data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
-    iter_warmup=iter, iter_sampling=iter,
-    chains=n_chains, parallel_chains=n_chains
-  )
-
-  keep_pars <- c("IP_bg_m3",# "IP_halfSat_m3",
-            "ensWts_p", "attach_beta",
-            "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
-            "detect_p", "nb_prec", "treatEfficacy")
-  if(keep_licePreds) {
-    keep <- c(keep_pars, "mu", "y_pred")
+    out_full_df <- fread(glue("{sim_dir}posterior{ifelse(prior_only, '_PRIORS', '')}.csv")) |>
+      as_tibble()
+    out_full_sum <- fread(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.csv")) |>
+      as_tibble()
+    dat_full_df <- fread(glue("{sim_dir}params{ifelse(prior_only, '_PRIORS', '')}.csv")) |>
+      as_tibble()
   } else {
-    keep <- keep_pars
-  }
-  out_full_df <- fit_full$draws(
-    variables=keep,
-    format="df") |>
-    pivot_longer(-starts_with("."))
-  write_csv(out_full_df, glue("{sim_dir}posterior{ifelse(prior_only, '_PRIORS', '')}.csv"))
-  out_full_sum <- out_full_df |>
-    group_by(name) |>
-    sevcheck::get_intervals(value, type="qi")
-  write_csv(out_full_sum, glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.csv"))
+    stan_dat <- make_stan_data(sim_dir, priors_only=prior_only)
+    # stan_dat <- make_stan_data(sim_dir, priors_only=prior_only,
+    #                            prior_ls=list(prior_attach_beta=cbind(c(1, 0.25, 0.25, 0, 0),
+    #                                                                  c(0.5, 0.5, 0.5, 0.5, 0.5))))
 
-  dat_full_df <- tibble(
-    name=c(paste0("attach_beta[", 1:5, "]"),
-           "IP_bg_m3",# "IP_halfSat_m3",
-           paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
-           paste0("surv_beta[1,", 1:3, "]"), paste0("surv_beta[2,", 1:3, "]"),
-           paste0("surv_int_farm_sd[", 1:3, "]"),
-           paste0("thresh_GDD[", 1:2, ",1]"), paste0("thresh_GDD[", 1:2, ",2]"),
-           "lifespan",
-           paste0("detect_p[", 1:stan_dat$dat$nStages, "]"), "nb_prec",
-           "treatEfficacy"),
-    value=c(stan_dat$params$attach_beta,
-            stan_dat$params$IP_bg_m3,
-            # stan_dat$params$IP_halfSat_m3,
-            stan_dat$params$ensWts_p,
-            t(stan_dat$params$surv_beta),
-            stan_dat$params$surv_int_farm_sd,
-            stan_dat$params$thresh_GDD,
-            stan_dat$params$lifespan,
-            stan_dat$params$detect_p,
-            stan_dat$params$nb_prec,
-            stan_dat$params$treat_efficacy)
-  )
-  write_csv(dat_full_df, glue("{sim_dir}params{ifelse(prior_only, '_PRIORS', '')}.csv"))
+    # IEM: full model pop -----------------------------------------------------
+
+    iter <- 1000
+    mod_full <- cmdstan_model("code/stan/joint_population_model.stan")
+    fit_full <- mod_full$sample(
+      data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
+      iter_warmup=iter, iter_sampling=iter,
+      chains=n_chains, parallel_chains=n_chains
+    )
+
+    keep_pars <- c("IP_bg_m3",# "IP_halfSat_m3",
+                   "ensWts_p", "attach_beta",
+                   "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
+                   "detect_p", "nb_prec", "treatEfficacy")
+    if(keep_licePreds) {
+      keep <- c(keep_pars, "mu", "y_pred")
+    } else {
+      keep <- keep_pars
+    }
+    out_full_df <- fit_full$draws(
+      variables=keep,
+      format="df") |>
+      pivot_longer(-starts_with("."))
+    write_csv(out_full_df, glue("{sim_dir}posterior{ifelse(prior_only, '_PRIORS', '')}.csv"))
+    out_full_sum <- out_full_df |>
+      group_by(name) |>
+      sevcheck::get_intervals(value, type="qi")
+    write_csv(out_full_sum, glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.csv"))
+
+    dat_full_df <- tibble(
+      name=c(paste0("attach_beta[", 1:5, "]"),
+             "IP_bg_m3",# "IP_halfSat_m3",
+             paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
+             paste0("surv_beta[1,", 1:3, "]"), paste0("surv_beta[2,", 1:3, "]"),
+             paste0("surv_int_farm_sd[", 1:3, "]"),
+             paste0("thresh_GDD[", 1:2, ",1]"), paste0("thresh_GDD[", 1:2, ",2]"),
+             "lifespan",
+             paste0("detect_p[", 1:stan_dat$dat$nStages, "]"), "nb_prec",
+             "treatEfficacy"),
+      value=c(stan_dat$params$attach_beta,
+              stan_dat$params$IP_bg_m3,
+              # stan_dat$params$IP_halfSat_m3,
+              stan_dat$params$ensWts_p,
+              t(stan_dat$params$surv_beta),
+              stan_dat$params$surv_int_farm_sd,
+              stan_dat$params$thresh_GDD,
+              stan_dat$params$lifespan,
+              stan_dat$params$detect_p,
+              stan_dat$params$nb_prec,
+              stan_dat$params$treat_efficacy)
+    )
+    write_csv(dat_full_df, glue("{sim_dir}params{ifelse(prior_only, '_PRIORS', '')}.csv"))
+
+  }
+
+  info <- readRDS(glue("{sim_dir}info.rds"))
 
   ensWts_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
                    ~.x |> filter(grepl("ensWts", name)) |>
@@ -190,8 +202,8 @@ foreach(sim_dir=sim_dirs) %dofuture% {
       mutate(type="Fitted",
              value=pmax(value, 0)) |>
       rename(mu=value) |>
-      bind_rows(expand_grid(farm=as.character(1:stan_dat$dat$nFarms),
-                            day=1:stan_dat$dat$nDays,
+      bind_rows(expand_grid(farm=as.character(1:info$nFarms),
+                            day=1:info$nDays,
                             stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
                   mutate(mu=c(readRDS(glue("{sim_dir}/mu.rds"))[,1,,])) |>
                   mutate(type="True")) |>
@@ -205,9 +217,93 @@ foreach(sim_dir=sim_dirs) %dofuture% {
       scale_alpha_manual("", values=c("True"=1, "Fitted"=0.1)) +
       labs(x="Date", y="Mean lice per fish (latent) [50% CI]") +
       scale_x_date(date_labels="%b") +
-      ylim(0, 15) +
+      # ylim(0, 15) +
       facet_grid(farm~., scales="free_y")
     ggsave(glue("{sim_dir}/fig_mu_draws{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
+
+    lice_thresh <- 0.5
+    mu_true <- mu_draws_df |>
+      filter(is.na(.draw)) |>
+      select(farm, stage, day, mu) |>
+      rename(mu_true=mu)
+    mu_draw_metrics <- mu_draws_df |>
+      filter(!is.na(.draw)) |>
+      filter(stage=="Ad") |>
+      left_join(mu_true, by=join_by(farm, stage, day)) |>
+      group_by(.draw) |>
+      summarise(TP=sum(mu_true > lice_thresh & mu > lice_thresh),
+                TN=sum(mu_true < lice_thresh & mu < lice_thresh),
+                FP=sum(mu_true < lice_thresh & mu > lice_thresh),
+                FN=sum(mu_true > lice_thresh & mu < lice_thresh),
+                N=n()) |>
+      mutate(accuracy=(TP+TN)/(TP+TN+FP+FN),
+             PPV=TP/(TP+FP),
+             NPV=TN/(TN+FN),
+             TPR=TP/(TP+FN),
+             TNR=TN/(TN+FP),
+             S=(TP+FN)/N,
+             P=(TP+FP)/N,
+             F1=(2*PPV*TPR)/(PPV+TPR),
+             MCC=(TP/N - S*P)/sqrt(P*S*(1-S)*(1-P)),
+             TSS=(TP*TN - FP*FN)/((TP+FN)*(TN+FP)),
+             accBal=(TPR+TNR)/2) |>
+      ungroup() |>
+      select(-S, -P, -N)
+
+    mu_draw_metrics_wk <- mu_draws_df |>
+      filter(!is.na(.draw)) |>
+      filter(stage=="Ad") |>
+      left_join(mu_true, by=join_by(farm, stage, day)) |>
+      mutate(wk=floor_date(day, "week")) |>
+      group_by(.draw, farm, stage, wk) |>
+      summarise(mu=max(mu), mu_true=max(mu_true)) |>
+      group_by(.draw) |>
+      summarise(TP=sum(mu_true > lice_thresh & mu > lice_thresh),
+                TN=sum(mu_true < lice_thresh & mu < lice_thresh),
+                FP=sum(mu_true < lice_thresh & mu > lice_thresh),
+                FN=sum(mu_true > lice_thresh & mu < lice_thresh),
+                N=n()) |>
+      mutate(accuracy=(TP+TN)/(TP+TN+FP+FN),
+             PPV=TP/(TP+FP),
+             NPV=TN/(TN+FN),
+             TPR=TP/(TP+FN),
+             TNR=TN/(TN+FP),
+             S=(TP+FN)/N,
+             P=(TP+FP)/N,
+             F1=(2*PPV*TPR)/(PPV+TPR),
+             MCC=(TP/N - S*P)/sqrt(P*S*(1-S)*(1-P)),
+             TSS=(TP*TN - FP*FN)/((TP+FN)*(TN+FP)),
+             accBal=(TPR+TNR)/2) |>
+      ungroup() |>
+      select(-S, -P, -N)
+
+    write_csv(mu_draw_metrics, glue("{sim_dir}/mu_fitted_metrics_daily.csv"))
+    write_csv(mu_draw_metrics_wk, glue("{sim_dir}/mu_fitted_metrics_weekly.csv"))
+    # mu_draw_metrics |>
+    #   select(-(2:5)) |>
+    #   pivot_longer(-1) |>
+    #   ggplot(aes(value, name)) +
+    #   ggdist::stat_halfeye() +
+    #   xlim(NA,1)
+    #
+    # mu_draw_metrics_wk |>
+    #   select(-(2:5)) |>
+    #   pivot_longer(-1) |>
+    #   ggplot(aes(value, name)) +
+    #   ggdist::stat_halfeye() +
+    #   xlim(NA,1)
+
+    # mu_draw_metrics |>
+    #   select(-(2:5)) |>
+    #   pivot_longer(-1) |>
+    #   group_by(name) |>
+    #   sevcheck::get_intervals(value)
+    #
+    # mu_draw_metrics_wk |>
+    #   select(-(2:5)) |>
+    #   pivot_longer(-1) |>
+    #   group_by(name) |>
+    #   sevcheck::get_intervals(value)
 
 
     # mu_df <- out_full_df |>
@@ -226,7 +322,7 @@ foreach(sim_dir=sim_dirs) %dofuture% {
     #   ungroup() |>
     #   mutate(type="Fitted") |> rename(mu=med) |>
     #   bind_rows(expand_grid(farm=as.character(1:5),
-    #                         day=1:stan_dat$dat$nDays,
+    #                         day=1:info$nDays,
     #                         stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
     #               mutate(mu=c(readRDS(glue("{sim_dir}/mu.rds"))[,1,,])) |>
     #               mutate(type="True")) |>
@@ -280,7 +376,7 @@ foreach(sim_dir=sim_dirs) %dofuture% {
     #          value=pmax(value, 0)) |>
     #   rename(y=value) |>
     #   bind_rows(expand_grid(farm=as.character(1:5),
-    #                         day=1:stan_dat$dat$nDays,
+    #                         day=1:info$nDays,
     #                         stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
     #               mutate(y=c(readRDS(glue("{sim_dir}/mu.rds"))[,1,,])) |>
     #               mutate(type="True")) |>
@@ -312,8 +408,8 @@ foreach(sim_dir=sim_dirs) %dofuture% {
       left_join(sampledDays, by=join_by(sample)) |>
       select(-sample) |>
       mutate(type="Fitted") |> rename(y=med) |>
-      bind_rows(expand_grid(farm=as.character(1:stan_dat$dat$nFarms),
-                            day=1:stan_dat$dat$nDays,
+      bind_rows(expand_grid(farm=as.character(1:info$nFarms),
+                            day=1:info$nDays,
                             stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
                   mutate(y=c(readRDS(glue("{sim_dir}/y.rds"))[,1,,])) |>
                   mutate(type="True") |>
@@ -349,3 +445,4 @@ foreach(sim_dir=sim_dirs) %dofuture% {
   }
 }
 
+plan(sequential)
