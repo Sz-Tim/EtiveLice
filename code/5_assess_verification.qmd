@@ -149,7 +149,7 @@ metric_wk_df |>
 #| message: false
 #| warning: false
 
-sim_finished <- dir(sim_dir, "posterior_summary", recursive=T) |> str_sub(1, 6) |> unique()
+sim_finished <- dir(sim_dir, "posterior_summary.csv", recursive=T) |> str_sub(1, 6) |> unique()
 out_df <- sim_finished |>
   map_dfr(
     ~full_join(
