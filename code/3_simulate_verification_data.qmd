@@ -634,15 +634,15 @@ p_prAttach <- expand_grid(
         legend.key.width=unit(0.6, "cm"),
         legend.key.height=unit(0.2, "cm"))
 p_prAttachIP <- expand_grid(
-  IP=seq(0, 10, by=0.1)*max(info$IP_penVolume),
+  IP=seq_quantiles(influx_df$influx_m3, 0, 0.99995, by=0.01)*max(info$IP_penVolume),
   maxPrAttach=seq(0, 1, by=0.01)
   ) |>
   mutate(pr_attach=(maxPrAttach*max(params$IP_halfSat))/(IP + max(params$IP_halfSat))) |>
   ggplot(aes(IP/max(info$IP_penVolume), maxPrAttach, fill=pr_attach)) + 
   geom_raster() +
-  annotate("text", x=0.5, y=0.85, parse=T, hjust=0, vjust=0, size=3,
+  annotate("text", x=0.075, y=0.85, parse=T, hjust=0, vjust=0, size=3,
            label=paste0("IP[bg]:~", round(params$IP_bg_m3, 3), "~cop~m^-3~h^-1")) +
-  annotate("text", x=0.5, y=0.75, parse=T, hjust=0, vjust=0, size=3,
+  annotate("text", x=0.075, y=0.75, parse=T, hjust=0, vjust=0, size=3,
            label=paste0("P[attach]~halfSat.:~", round(params$IP_halfSat_m3, 1), 
                         "~cop~m^-3~h^-1")) +
   # scale_fill_viridis_b("P(attach)", option="turbo", 
