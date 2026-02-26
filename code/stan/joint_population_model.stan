@@ -4,6 +4,11 @@
 // Integrated ensemble model
 
 data {
+  // control switches
+  int<lower=0,upper=1> sample_prior_only; // 0: include likelihood, 1: prior only
+  int<lower=0,upper=1> GQ_ypred; // 0: don't, 1: generate ypred for each sample
+  int<lower=0,upper=1> GQ_new; // 0: don't, 1: simulate new dates
+  // info
   int<lower=0> nDays; // number of days from start to end
   int<lower=0> nHours; // number of hours from start to end
   int<lower=0> nFarms; // number of farms
@@ -15,6 +20,7 @@ data {
   vector<lower=0>[nFarms] IP_volume; // per-farm volume to use for scaling IP_m3 to N_copepodids
   real<lower=0> y_bar_minimum; // minimum possible expected lice counts (0 not allowed)
   array[nDays,24] int<lower=1,upper=nHours> day_hour; // hour numbers corresponding to each day
+  // data
   array[nStages, nDays, nFarms] int y_F; // FEMALE lice counts for each day 1:nDays
   array[nFarms] matrix<lower=0>[nHours, nSims] IP_mx; // IP from particle tracking simulations
   array[nFarms] matrix[nHours, nAttachCov] attach_env_mx; // covariates for p(Attach)
@@ -25,7 +31,6 @@ data {
   array[nSamples, 2] int sample_i; // rows: sample; cols: farm, day; sorted by farm, day
   array[nFarms, 2] int sample_ii; // start/end indexes for each farm in sample_i
   matrix[nDays, nFarms] nFishSampled_mx; // number of fish sampled on each farm each day
-  int<lower=0,upper=1> sample_prior_only; // 0: include likelihood, 1: prior only
   // priors: [mean, sd]
   array[nAttachCov, 2] real prior_attach_beta; // p(attach) slopes
   array[nSurvCov, nStages, 2] real prior_surv_beta; // p(surv) intercept & slopes
@@ -33,8 +38,8 @@ data {
   array[2, nStages-1, 2] real prior_mnDaysStage_F; // mean days per stage (Ch, PA)
   array[nStages-1, 2] real prior_logit_detect_p; // detection probability
   vector[2] prior_IP_bg_m3; // background IP
-  // real<lower=0> prior_nb_prec; // negative binomial precision: chisq(df)
   vector[2] prior_nb_prec; // negative binomial precision: cauchy(mu, sd)
+  // real<lower=0> prior_nb_prec; // negative binomial precision: chisq(df)
 }
 
 transformed data {
@@ -83,7 +88,7 @@ parameters {
   real<lower=0,upper=1> treatEfficacy; // mortality induced by treatment
   matrix[2, nStages-1] mnDaysStage_beta_z; // [Int, temp][Ch-Pr, Pr-Ad, Ad-Gr]
   vector[nStages] logit_detect_p; // p(detect) by stage
-  real<lower=0> nb_prec; // neg_binom precision
+  real<lower=0> inv_sqrt_nb_prec;
 }
 
 transformed parameters {
@@ -105,6 +110,7 @@ transformed parameters {
   array[nFarms, nDays] matrix[nStages+2, nStages+2] trans_mx; // transition matrix
   array[nFarms] matrix[nStages+2, nDays] mu; // latent daily mean lice per fish
   array[nStages] row_vector[nSamples] y_bar;
+  real<lower=0> nb_prec = 1 / inv_sqrt_nb_prec^2; // neg_binom precision
 
   // re-scale and de-center parameters
   for(i in 1:(nAttachCov-1)) {
@@ -219,8 +225,8 @@ transformed parameters {
     }
     lprior += std_normal_lpdf(logit_detect_p);
     // lprior += chi_square_lpdf(nb_prec | prior_nb_prec);
-    lprior += cauchy_lpdf(nb_prec | prior_nb_prec[1], prior_nb_prec[2]) -
-      cauchy_lccdf(0 | prior_nb_prec[1], prior_nb_prec[2]);
+    lprior += normal_lpdf(inv_sqrt_nb_prec | prior_nb_prec[1], prior_nb_prec[2]) -
+      normal_lccdf(0 | prior_nb_prec[1], prior_nb_prec[2]);
     lprior += student_t_lpdf(surv_int_farm_sd | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]) -
       student_t_lccdf(0 | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]);
   }
@@ -237,8 +243,10 @@ model {
 
 generated quantities {
   array[nStages, nSamples] int y_pred;
-  for(stage in 1:nStages) {
-      y_pred[stage] = neg_binomial_2_rng(y_bar[stage], nb_prec);
+  if(GQ_ypred==1) {
+    for(stage in 1:nStages) {
+        y_pred[stage] = neg_binomial_2_rng(y_bar[stage], nb_prec);
+    }
   }
 }
 

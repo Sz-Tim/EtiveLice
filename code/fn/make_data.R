@@ -1,4 +1,4 @@
-make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE, prior_ls=NULL) {
+make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, priors_only=FALSE, prior_ls=NULL) {
   library(tidyverse)
   library(glue)
 
@@ -8,6 +8,8 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE, prior_ls=NU
   hours <- 1:info$nHours
 
   stan_dat <- list(
+    GQ_ypred = as.numeric(GQ_ypred),
+    GQ_new = as.numeric(GQ_new),
     nDays = info$nDays,
     nHours = info$nHours,
     nFarms = info$nFarms,
@@ -59,9 +61,9 @@ make_stan_data <- function(dat_dir, source="sim", priors_only=FALSE, prior_ls=NU
     prior_logit_detect_p = cbind(c(-1, 1),
                                  c(0.5, 0.5)),
     # IP_bg_m3: c(mu, sigma); normal, T(0, )
-    prior_IP_bg_m3 = c(0, 0.05),
-    # nb_prec: df; cauchy(mu, sd)
-    prior_nb_prec = c(1, 3),
+    prior_IP_bg_m3 = c(0.05, 0.05),
+    # inv_sqrt_nb_prec: df; normal(mu, sd); nb_prec = 1/inv_sqrt_nb_prec^2
+    prior_inv_sqrt_nb_prec = c(0, 1),
     # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
     prior_IP_halfSat_m3 = c(3, 20, 10)
   )
