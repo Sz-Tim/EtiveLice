@@ -41,6 +41,7 @@ library(tidyverse)
 library(sf)
 library(glue)
 library(sevcheck)
+fread <- data.table::fread
 proj_dir <- rprojroot::find_rstudio_root_file()
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
@@ -148,7 +149,7 @@ ggplot() +
 ```{r}
 #| label: "farm_dat"
 mort_weekly <- 0.000878 # mean rate from Szewczyk et al 2024
-prod_cycles <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
+prod_cycles <- fread(glue("{inputs_dir}/farm_dat.csv")) |> as_tibble() |>
   select(sepaSite, date, actualBiomassOnSiteTonnes) |>
   mutate(fishIn=actualBiomassOnSiteTonnes > 0) |>
   group_by(sepaSite) |>
@@ -160,7 +161,7 @@ prod_cycles <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
   mutate(productionCycleNumber=row_number()) |>
   ungroup() |>
   select(sepaSite, date, productionCycleNumber)
-farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
+farm_dat <- fread(glue("{inputs_dir}/farm_dat.csv")) |> as_tibble() |>
   right_join(farm_i |> select(sepaSite, firstDay), 
              by=join_by(sepaSite)) |>
   right_join(pen_df |> select(sepaSite, pen, nPens), 
@@ -241,7 +242,7 @@ From `etive28`, I've calculated daily averages across the top 20m at each farm l
 
 ```{r}
 #| label: "farm_env"
-farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F) |>
+farm_env <- fread(glue("{inputs_dir}/farm_env_hourly.csv")) |> as_tibble() |>
   filter(sepaSite %in% farm_order) |>
   mutate(sepaSite=factor(sepaSite, levels=farm_order),
          date=date(time),
@@ -344,7 +345,7 @@ read_csv(glue("E:/EtiveLice/out/biotracker/sim_i.csv")) |>
 
 ```{r}
 #| label: "influx_df"
-influx_df <- read_csv(glue("{inputs_dir}/influx_hourly.csv"), show_col_types=F) |>
+influx_df <- fread(glue("{inputs_dir}/influx_hourly.csv")) |> as_tibble() |>
   filter(sepaSite %in% farm_order) |>
   full_join(tibble(time=seq_range(range(farm_env$time), by=3600),
                    sepaSite=farm_order[1], pen=paste0(farm_order[1], "_01"), sim="01"),
@@ -404,6 +405,7 @@ if(save_figs) {
 #| fig-height: 10
 #| fig-cap: "Daily copepodid infestation pressure (log) by farm."
 #| fig-dpi: 400
+#| eval: false
 #| echo: false
 ggplot(influx_df, aes(time, log1p(influx_m3), colour=sepaSite, group=pen)) +
   geom_line(linewidth=0.1) +
