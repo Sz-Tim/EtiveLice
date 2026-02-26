@@ -38,7 +38,8 @@ data {
   array[2, nStages-1, 2] real prior_mnDaysStage_F; // mean days per stage (Ch, PA)
   array[nStages-1, 2] real prior_logit_detect_p; // detection probability
   vector[2] prior_IP_bg_m3; // background IP
-  vector[2] prior_nb_prec; // negative binomial precision: cauchy(mu, sd)
+  vector[2] prior_inv_sqrt_nb_prec; // negative binomial precision: normal(mu, sd)
+  vector<lower=0>[2] prior_treatEfficacy; // treatment efficacy: beta
   // real<lower=0> prior_nb_prec; // negative binomial precision: chisq(df)
 }
 
@@ -225,10 +226,11 @@ transformed parameters {
     }
     lprior += std_normal_lpdf(logit_detect_p);
     // lprior += chi_square_lpdf(nb_prec | prior_nb_prec);
-    lprior += normal_lpdf(inv_sqrt_nb_prec | prior_nb_prec[1], prior_nb_prec[2]) -
-      normal_lccdf(0 | prior_nb_prec[1], prior_nb_prec[2]);
+    lprior += normal_lpdf(inv_sqrt_nb_prec | prior_inv_sqrt_nb_prec[1], prior_inv_sqrt_nb_prec[2]) -
+      normal_lccdf(0 | prior_inv_sqrt_nb_prec[1], prior_inv_sqrt_nb_prec[2]);
     lprior += student_t_lpdf(surv_int_farm_sd | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]) -
       student_t_lccdf(0 | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]);
+    lprior += beta_lpdf(treatEfficacy | prior_treatEfficacy[1], prior_treatEfficacy[2]);
   }
 }
 

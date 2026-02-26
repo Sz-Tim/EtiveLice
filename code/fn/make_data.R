@@ -64,6 +64,8 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
     prior_IP_bg_m3 = c(0.05, 0.05),
     # inv_sqrt_nb_prec: df; normal(mu, sd); nb_prec = 1/inv_sqrt_nb_prec^2
     prior_inv_sqrt_nb_prec = c(0, 1),
+    # treatEfficacy: beta(alpha, beta)
+    prior_treatEfficacy = c(2, 2),
     # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
     prior_IP_halfSat_m3 = c(3, 20, 10)
   )
