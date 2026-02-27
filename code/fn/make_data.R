@@ -43,7 +43,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
                               c(rep(0.25, length(params$attach_beta)-1), 0.25)),
     # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
     prior_surv_beta = array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
-                              rep(c(0.5, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
+                              rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
                             dim=c(nrow(params$surv_beta), info$nStages, 2),
                             dimnames=list(c("int", "temp"),
                                           c("Ch", "Pr", "Ad"),
