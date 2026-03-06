@@ -1,8 +1,9 @@
 ---
 title: "E(tive)Lice verification assessment"
 author: "Tim Szewczyk"
-format: html
-  fontsize: 11pt
+format:
+  html:
+    fontsize: 11pt
 theme: litera
 editor: source
 toc: true
