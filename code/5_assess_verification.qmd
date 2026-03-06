@@ -2,6 +2,7 @@
 title: "E(tive)Lice verification assessment"
 author: "Tim Szewczyk"
 format: html
+  fontsize: 11pt
 theme: litera
 editor: source
 toc: true
@@ -31,7 +32,7 @@ fread <- data.table::fread
 proj_dir <- "~/EtiveLice/"
 theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
-priors <- T
+priors <- F
 
 # farm_order <- c("FFMC27", "SAR1", "APT1", "FFMC32", "FFMC84")
 sim_dir <- glue("{proj_dir}/data/sim/")
@@ -127,6 +128,40 @@ metric_wk_df |>
   ggdist::stat_halfeye(colour=NA, alpha=0.25, normalize="xy")
 ```
 
+```{r}
+sim_finished <- dir(sim_dir, glue("mu_fitted_metrics_weekly.csv"), recursive=T) |> 
+  str_sub(1, 6) |> unique()
+metric_wk_vPrior <- inner_join(
+  map_dfr(
+    sim_finished,
+    ~read_csv(glue("{sim_dir}/{.x}/mu_fitted_metrics_weekly.csv"), show_col_types=F) |>
+      mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
+    group_by(sim) |>
+    summarise(across(-1, mean)) |>
+    ungroup() |>
+    pivot_longer(-sim, names_to="metric", values_to="post"),
+  map_dfr(
+    sim_finished,
+    ~read_csv(glue("{sim_dir}/{.x}/mu_fitted_metrics_weekly_PRIORS.csv"), show_col_types=F) |>
+      mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
+    group_by(sim) |>
+    summarise(across(-1, mean)) |>
+    ungroup() |>
+    pivot_longer(-sim, names_to="metric", values_to="prior"),
+  by=join_by(sim, metric)
+) |>
+  mutate(diff=post - prior,
+         skill=diff/(1-prior))
+
+metric_wk_vPrior |>
+  drop_na() |>
+  filter(metric %in% c("TSS", "MCC", "F1", "accuracy", "accBal")) |>
+  ggplot(aes(skill, metric)) + 
+  # ggridges::geom_density_ridges(colour=NA, alpha=0.25, fill="grey")
+  ggdist::geom_swarm()
+  # ggdist::stat_halfeye(colour=NA, normalize="xy")
+
+```
 
 
 
