@@ -29,6 +29,7 @@ library(tidyverse)
 library(sf)
 library(glue)
 library(here)
+library(furrr)
 fread <- data.table::fread
 proj_dir <- "~/EtiveLice/"
 theme_set(theme_bw())
@@ -125,8 +126,16 @@ metric_wk_df <- map_dfr(
 metric_wk_df |>
   select(-(2:5)) |>
   pivot_longer(2:10) |>
+  filter(name %in% c("TSS", "MCC", "F1", "accuracy", "accBal")) |>
   ggplot(aes(value, name, group=sim)) + 
-  ggdist::stat_halfeye(colour=NA, alpha=0.25, normalize="xy")
+  ggdist::stat_halfeye(colour=NA, alpha=0.25, normalize="xy") +
+  ggdist::stat_halfeye(fill=NA, colour="grey30", normalize="xy", aes(group=name)) +
+  xlim(0, 1) +
+  labs(x="Posterior distribution",
+       y="Metric (fitted)",
+       title="Binary prediction of weekly AF > 0.5")
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/performance_metrics_dataSim_fitted.png"), 
+       width=10, height=6)
 ```
 
 ```{r}
@@ -157,9 +166,10 @@ metric_wk_vPrior <- inner_join(
 metric_wk_vPrior |>
   drop_na() |>
   filter(metric %in% c("TSS", "MCC", "F1", "accuracy", "accBal")) |>
-  ggplot(aes(skill, metric)) + 
+  ggplot(aes(skill, metric, fill=sim)) + 
   # ggridges::geom_density_ridges(colour=NA, alpha=0.25, fill="grey")
-  ggdist::geom_swarm()
+  ggdist::geom_swarm() +
+  scale_fill_viridis_d(option="turbo") 
   # ggdist::stat_halfeye(colour=NA, normalize="xy")
 
 ```
@@ -529,6 +539,11 @@ full_sum_df |>
 ## Attachment
 
 ```{r}
+set.seed(1)
+```
+
+
+```{r}
 #| message: false
 #| warning: false
 #| fig-width: 6
@@ -538,10 +553,13 @@ full_sum_df |>
 farm_env_avg <- readRDS(glue("{proj_dir}/data/sim/sim_01/farm_env_avg.rds"))
 
 attach_mx <- readRDS(glue("{proj_dir}/data/sim/sim_01/attach_env_mx.rds"))
+draw_sample <- sample.int(1500, 50)
+plan(multicore, workers=25)
 pAttach_post_draws <- sim_finished |>
-  map_dfr(
+  future_map_dfr(
       ~bind_rows(
         readRDS(glue("{sim_dir}/{.x}/posterior{ifelse(priors, '_PRIORS', '')}.rds")) |>
+          filter(.draw %in% draw_sample) |>
           filter(grepl("attach_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
@@ -553,6 +571,7 @@ pAttach_post_draws <- sim_finished |>
   mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
   select(-name) |>
   pivot_wider(names_from="beta", values_from="value")
+plan(sequential)
 
 pAttach_post <- pAttach_post_draws |>
   mutate(attach_df=list(
@@ -613,8 +632,9 @@ pAttach_post2 <- pAttach_post_draws |>
 #   facet_grid(salinity~RW, scales="free_y")
 
 p <- pAttach_post |>
-  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 50))) |>
-  filter(sim %in% sample(unique(pAttach_post$sim), 10)) |>
+  filter(sim %in% sample(unique(pAttach_post$sim), 8)) |>
+  mutate(salinity=paste(round(salinity, 1), "psu"),
+         RW=paste("RW:", RW)) |>
   ggplot(aes(UV_raw, pAttach, alpha=fit, linewidth=fit,
              group=paste(RW, salinity, temperature, .draw, fit), colour=temperature)) + 
   geom_line() +
@@ -629,8 +649,9 @@ ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/NEW_dataExamp_postAttac
 p
 
 p <- pAttach_post2 |>
-  filter(.draw %in% c(1, sample.int(n_distinct(pAttach_post$.draw), 50))) |>
-  filter(sim %in% sample(unique(pAttach_post2$sim), 10)) |>
+  filter(sim %in% sample(unique(pAttach_post2$sim), 8)) |>
+  mutate(UV_raw=paste(round(UV_raw, 1), "cm/s"),
+         RW=paste("RW:", RW)) |>
   ggplot(aes(salinity, pAttach, alpha=fit, linewidth=fit,
              group=paste(RW, UV_raw, temperature, .draw, fit), colour=temperature)) + 
   geom_line() +
@@ -768,10 +789,12 @@ pSurv_df <- out_df |>
 ```
 
 ```{r}
+plan(multicore, workers=25)
 pSurv_post <- sim_finished |>
-  map_dfr(
+  future_map_dfr(
       ~bind_rows(
         readRDS(glue("{sim_dir}/{.x}/posterior{ifelse(priors, '_PRIORS', '')}.rds")) |>
+          filter(.draw %in% draw_sample) |>
           filter(grepl("surv_beta", name)) |>
           select(-.iteration, -.chain) |>
           mutate(fit="Model"),
@@ -791,13 +814,12 @@ pSurv_post <- sim_finished |>
   select(.draw, fit, sim, salinity, starts_with("pSurv")) |>
   pivot_longer(starts_with("pSurv"), names_to="Stage", values_to="pSurv") |>
   mutate(Stage=factor(str_sub(Stage, -2, -1), levels=c("Ch", "PA", "Ad")))
+plan(sequential)
 ```
 
 ```{r}
 selected_sims <- sample(unique(pSurv_post$sim), 10)
-selected_draws <- c(1, sample.int(n_distinct(pSurv_post$.draw), 300))
 p <- pSurv_post |>
-  filter(.draw %in% selected_draws) |>
   filter(sim %in% selected_sims) |>
   filter(fit=="Model") |>
   ggplot(aes(salinity, pSurv, alpha=fit, linewidth=fit, colour=Stage,

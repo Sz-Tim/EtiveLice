@@ -8,7 +8,7 @@
 
 library(tidyverse); library(glue)
 library(sevcheck) # devtools::install_github("Sz-Tim/sevcheck")
-library(biotrackR) # devtools::install_github("Sz-Tim/biotrackR")
+library(biotrackR) # devtools::install_github("Sz-Tim/biotrackR@dev")
 library(doFuture)
 library(sf)
 dirf("code/fn", ".R") |> walk(source)
@@ -19,9 +19,9 @@ set.seed(1003)
 # define parameters -------------------------------------------------------
 
 cores_per_sim <- 26
-parallel_sims <- 6
-start_date <- "2023-01-01"
-end_date <- "2023-12-31"
+parallel_sims <- 5
+start_date <- "2025-01-01"
+end_date <- "2025-12-31"
 nDays <- length(seq(ymd(start_date), ymd(end_date), by=1))
 
 os <- get_os()
@@ -29,17 +29,17 @@ dirs <- switch(
   get_os(),
   linux=list(proj=getwd(),
              mesh="/home/sa04ts/hydro/meshes",
-             hf0="/home/sa04ts/hydro/WeStCOMS2/Archive",
+             hf0="/home/sa04ts/hydro/WeStCOMS3/Archive",
              hf2="/home/sa04ts/hydro/WeStCOMS2/SWAN/Archive_daily/",
              jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
-             jar="/home/sa04ts/biotracker/biotracker_v2-2-0.jar",
+             jar="/home/sa04ts/biotracker/biotracker_v2-2-2.jar",
              out=glue("{getwd()}/out/sensitivity")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
-               hf0="E:/hydro/WeStCOMS2/Archive",
+               hf0="E:/hydro/WeStCOMS3/Archive",
                hf2="E:/hydro/WeStCOMS2/SWAN/Archive_daily/",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
-               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-0.jar",
+               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-2.jar",
                out=glue("{getwd()}/out/sensitivity"))
 )
 
@@ -79,17 +79,17 @@ walk(sim_seq,
        nparts=10,
        checkOpenBoundaries="true",
        # meshes and environment
-       mesh0=glue("{dirs$mesh}/WeStCOMS2_mesh.nc"),
+       mesh0=glue("{dirs$mesh}/WeStCOMS3_mesh.nc"),
        hfDir0=glue("{dirs$hf0}/"),
-       hfFilePrefix0="westcoms2",
+       hfFilePrefix0="westcoms3",
        hfDir2="",
        hfFilePrefix2="",
        hfDirPrefix2="",
        hfDirSuffix2="",
        # sites
-       sitefile=glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"),
-       sitefileEnd=glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"),
-       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2023-01-01_2024-12-31_GSA_05lpf_maxB.csv"),
+       sitefile=glue("{dirs$proj}/data/farm_sites_GSA_2024-2025.csv"),
+       sitefileEnd=glue("{dirs$proj}/data/farm_sites_GSA_2024-2025.csv"),
+       siteDensityPath=glue("{dirs$proj}/data/lice_daily_2025-01-01_2025-12-31_GSA_05lpf_maxB.csv"),
        # dynamics
        variableDh=sim.i$variableDh[.x],
        variableDhV=sim.i$variableDhV[.x],
@@ -139,6 +139,7 @@ walk(sim_seq,
        recordPsteps="true",
        recordImmature="true",
        pstepsInterval=365,
+       recordSiteEnv=ifelse(.x==1, "true", "false"),
        recordElemActivity="false"))
 
 
@@ -152,6 +153,9 @@ if(os=="linux") {
 sim_sets <- split(sim_seq, rep(1:parallel_sims, length(sim_seq)/parallel_sims))
 foreach(j=1:parallel_sims, .options.future=list(globals=structure(TRUE, add="sim.i"))) %dofuture% {
   for(i in sim_sets[[j]]) {
+    if(file.exists(glue("{sim.i$outDir[i]}/pstepsImmature/pstepsImmature_20251231_8760.csv"))) {
+      next
+    }
     setwd(dirs$proj)
     biotrackR::run_biotracker(
       jdk_path=dirs$jdk,
@@ -161,6 +165,7 @@ foreach(j=1:parallel_sims, .options.future=list(globals=structure(TRUE, add="sim
     )
   }
 }
+
 plan(sequential)
 
 
@@ -178,7 +183,7 @@ sim_dirs <- dirrf(dirs$out, "pstepsImmature_20231231") |> dirname() |> dirname()
 c_0_5_summary <- c_5_15_summary <- c_15_30_summary <- c_0_30_summary <- vector("list", length(sim_dirs))
 c_0_5_farm <- c_5_15_farm <- c_15_30_farm <- c_0_30_farm <- vector("list", length(sim_dirs))
 
-cores <- 20
+cores <- 40
 for(i in 1:length(sim_dirs)) {
   f_0_5 <- dirrf(sim_dirs[i], "connectivity_0.0-5.0.*csv")
   f_5_15 <- dirrf(sim_dirs[i], "connectivity_5.0-15.0.*csv")
@@ -541,7 +546,7 @@ c_15_30_sum_df |>
   ggtitle("15-30m") +
   facet_wrap(~param, scales="free_x")
 
-c_0_30_sum_df |>
+p <- c_0_30_sum_df |>
   select(any_of(c("sim", param_names, outcome_names))) |>
   pivot_longer(any_of(param_names), names_to="param", values_to="param_val") |>
   pivot_longer(any_of(outcome_names), names_to="outcome", values_to="outcome_val") |>
@@ -565,7 +570,7 @@ c_0_30_sum_df |>
        y="Mean IP among all farms: (cop / m3 / d)^0.25",
        title="0-30m") +
   facet_wrap(~param, scales="free_x", nrow=4)
-ggsave("admin/project_meetings/figs_temp/sensitivity_0_30m_scatter.png",
+ggsave("admin/project_meetings/figs_temp/sensitivity_0_30m_scatter.png", p,
        width=12, height=8, dpi=300)
 
 
@@ -579,28 +584,28 @@ rf_0_5_ls <- run_sensitivity_ML(outcome_names, param_names,
                                   mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
                                          D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)),
                                 sim.i)
-importance_0_5_df <- summarise_importance(rf_0_5_ls, outcome_names)
+importance_0_5_df <- summarise_importance(rf_0_5_ls$rf, outcome_names)
 
 rf_5_15_ls <- run_sensitivity_ML(outcome_names, param_names,
                                  c_5_15_sum_df |>
                                    mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
                                           D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)),
                                  sim.i)
-importance_5_15_df <- summarise_importance(rf_5_15_ls, outcome_names)
+importance_5_15_df <- summarise_importance(rf_5_15_ls$rf, outcome_names)
 
 rf_15_30_ls <- run_sensitivity_ML(outcome_names, param_names,
                                   c_15_30_sum_df |>
                                     mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
                                            D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)),
                                   sim.i)
-importance_15_30_df <- summarise_importance(rf_15_30_ls, outcome_names)
+importance_15_30_df <- summarise_importance(rf_15_30_ls$rf, outcome_names)
 
 rf_0_30_ls <- run_sensitivity_ML(outcome_names, param_names,
                                  c_0_30_sum_df |>
                                    mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
                                           D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)),
                                  sim.i)
-importance_0_30_df <- summarise_importance(rf_0_30_ls, outcome_names)
+importance_0_30_df <- summarise_importance(rf_0_30_ls$rf, outcome_names)
 
 importance_df <- bind_rows(
   importance_0_5_df |> mutate(depth="0-5m"),
@@ -890,7 +895,8 @@ mesh_sf <- st_read(glue("{dirs$mesh}/WeStCOMS2_mesh.gpkg"))
 farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
 linnhe_fp <- mesh_fp |> st_crop(unlist(farm_bbox))
 linnhe_sf <- mesh_sf |> st_crop(unlist(farm_bbox))
-sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
+sim_dirs <- dirrf(dirs$out, "siteConditions_20231231") |>
+  str_remove("/siteConditions_20231231_8760.csv")
 
 ip_ls <- vector("list", length(sim_dirs))
 
@@ -903,7 +909,7 @@ if(get_os()=="windows") {
 # TODO: This is obviously too unwieldy for a large number of simulations.
 # Read by time step and store temporary files
 # Also worth using data.table
-for(i in (1:length(sim_dirs))[25:50]) {
+for(i in (1:length(sim_dirs))) {
   sim <- str_sub(sim_dirs[i], -4, -1)
   fN <- dirrf(sim_dirs[i], "pstepsImmature")
   fC <- dirrf(sim_dirs[i], "pstepsMature")
@@ -921,7 +927,7 @@ for(i in (1:length(sim_dirs))[25:50]) {
 plan(sequential)
 
 ip_df <- data.table::rbindlist(ip_ls) |> as_tibble()
-
+rm(ip_ls); gc()
 # ip_sf <- inner_join(linnhe_sf |> select(i, area, depth, geom),
 #            ip_df,
 #            by="i") |>
@@ -955,71 +961,74 @@ ip_sum_df <- inner_join(
               .by=c("i", "date"))
 ) |>
   mutate(month=as.numeric(as.factor(date)))
-pA <- ip_sum_df |>
-  ggplot() +
-  geom_sf(data=linnhe_fp) +
-  geom_sf(aes(fill=mnN^4), colour=NA) +
-  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
-  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
-  # scale_fill_viridis_c(option="turbo") +
-  facet_wrap(~date) +
-  theme(legend.position="bottom",
-        legend.key.width=unit(3, "cm"),
-        legend.key.height=unit(0.2, "cm"))
-pB <- ip_sum_df |>
-  ggplot() +
-  geom_sf(data=linnhe_fp) +
-  geom_sf(aes(fill=(sdN)), colour=NA) +
-  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
-  scale_fill_viridis_c(option="turbo") +
-  facet_wrap(~date) +
-  theme(legend.position="bottom",
-        legend.key.width=unit(3, "cm"),
-        legend.key.height=unit(0.2, "cm"))
-pC <- ip_sum_df |>
-  ggplot() +
-  geom_sf(data=linnhe_fp) +
-  geom_sf(aes(fill=sdN/mnN), colour=NA) +
-  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
-  scale_fill_viridis_c(option="turbo") +
-  facet_wrap(~date) +
-  theme(legend.position="bottom",
-        legend.key.width=unit(3, "cm"),
-        legend.key.height=unit(0.2, "cm"))
-pD <- ip_sum_df |>
-  ggplot() +
-  geom_sf(data=linnhe_fp) +
-  geom_sf(aes(fill=mnC^4), colour=NA) +
-  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
-  scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
-  # scale_fill_viridis_c(option="turbo") +
-  facet_wrap(~date) +
-  theme(legend.position="bottom",
-        legend.key.width=unit(3, "cm"),
-        legend.key.height=unit(0.2, "cm"))
-pE <- ip_sum_df |>
-  ggplot() +
-  geom_sf(data=linnhe_fp) +
-  geom_sf(aes(fill=(sdC)), colour=NA) +
-  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
-  scale_fill_viridis_c(option="turbo") +
-  facet_wrap(~date) +
-  theme(legend.position="bottom",
-        legend.key.width=unit(3, "cm"),
-        legend.key.height=unit(0.2, "cm"))
-pF <- ip_sum_df |>
-  ggplot() +
-  geom_sf(data=linnhe_fp) +
-  geom_sf(aes(fill=sdC/mnC), colour=NA) +
-  geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
-  scale_fill_viridis_c(option="turbo") +
-  facet_wrap(~date) +
-  theme(legend.position="bottom",
-        legend.key.width=unit(3, "cm"),
-        legend.key.height=unit(0.2, "cm"))
-ggpubr::ggarrange(pA, pD, ncol=2, nrow=1, common.legend=TRUE, legend="right")
-ggpubr::ggarrange(pB, pE, ncol=2, nrow=1, common.legend=TRUE, legend="right")
-ggpubr::ggarrange(pC, pF, ncol=2, nrow=1, common.legend=TRUE, legend="right")
+
+rm(ip_df); gc()
+
+# pA <- ip_sum_df |>
+#   ggplot() +
+#   geom_sf(data=linnhe_fp) +
+#   geom_sf(aes(fill=mnN^4), colour=NA) +
+#   geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+#   scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
+#   # scale_fill_viridis_c(option="turbo") +
+#   facet_wrap(~date) +
+#   theme(legend.position="bottom",
+#         legend.key.width=unit(3, "cm"),
+#         legend.key.height=unit(0.2, "cm"))
+# pB <- ip_sum_df |>
+#   ggplot() +
+#   geom_sf(data=linnhe_fp) +
+#   geom_sf(aes(fill=(sdN)), colour=NA) +
+#   geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+#   scale_fill_viridis_c(option="turbo") +
+#   facet_wrap(~date) +
+#   theme(legend.position="bottom",
+#         legend.key.width=unit(3, "cm"),
+#         legend.key.height=unit(0.2, "cm"))
+# pC <- ip_sum_df |>
+#   ggplot() +
+#   geom_sf(data=linnhe_fp) +
+#   geom_sf(aes(fill=sdN/mnN), colour=NA) +
+#   geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+#   scale_fill_viridis_c(option="turbo") +
+#   facet_wrap(~date) +
+#   theme(legend.position="bottom",
+#         legend.key.width=unit(3, "cm"),
+#         legend.key.height=unit(0.2, "cm"))
+# pD <- ip_sum_df |>
+#   ggplot() +
+#   geom_sf(data=linnhe_fp) +
+#   geom_sf(aes(fill=mnC^4), colour=NA) +
+#   geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+#   scale_fill_viridis_b(option="turbo", breaks=c(0.001, 0.01, 0.1, 1, 5, 10)) +
+#   # scale_fill_viridis_c(option="turbo") +
+#   facet_wrap(~date) +
+#   theme(legend.position="bottom",
+#         legend.key.width=unit(3, "cm"),
+#         legend.key.height=unit(0.2, "cm"))
+# pE <- ip_sum_df |>
+#   ggplot() +
+#   geom_sf(data=linnhe_fp) +
+#   geom_sf(aes(fill=(sdC)), colour=NA) +
+#   geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+#   scale_fill_viridis_c(option="turbo") +
+#   facet_wrap(~date) +
+#   theme(legend.position="bottom",
+#         legend.key.width=unit(3, "cm"),
+#         legend.key.height=unit(0.2, "cm"))
+# pF <- ip_sum_df |>
+#   ggplot() +
+#   geom_sf(data=linnhe_fp) +
+#   geom_sf(aes(fill=sdC/mnC), colour=NA) +
+#   geom_point(data=farms_GSA, aes(easting, northing), colour="red", shape=1) +
+#   scale_fill_viridis_c(option="turbo") +
+#   facet_wrap(~date) +
+#   theme(legend.position="bottom",
+#         legend.key.width=unit(3, "cm"),
+#         legend.key.height=unit(0.2, "cm"))
+# ggpubr::ggarrange(pA, pD, ncol=2, nrow=1, common.legend=TRUE, legend="right")
+# ggpubr::ggarrange(pB, pE, ncol=2, nrow=1, common.legend=TRUE, legend="right")
+# ggpubr::ggarrange(pC, pF, ncol=2, nrow=1, common.legend=TRUE, legend="right")
 
 ip_dates <- unique(ip_sum_df$date)
 lims_sdN <- range(ip_sum_df$sdN)

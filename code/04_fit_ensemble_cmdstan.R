@@ -20,14 +20,14 @@ theme_set(theme_classic())
 
 prior_only <- T
 keep_licePreds <- T
-refit <- T
-n_parallel <- 3
+refit <- F
+n_parallel <- 4
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch-PA", "PA-Ad")
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
-                           paste0("ensWts_p[", 1:20, "]"),
+                           paste0("ensWts_p[", 1:10, "]"),
                            "IP_bg", "IP_bg_m3",
                            paste0("surv_beta[1,", 1:3, "]"),
                            paste0("surv_beta[2,", 1:3, "]"),
@@ -42,7 +42,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            "IP_scale", "IP_halfSat_m3",
                            "treatEfficacy"),
                     label=c(paste0("attach_", c("RW", "Sal", "Temp", "UV", "UVsq")),
-                            paste0("ensWt_", 1:20),
+                            paste0("ensWt_", 1:10),
                             "IP_bg", "IP_bg_m3",
                             paste0("surv_Int_", stages),
                             paste0("surv_Sal_", stages),
@@ -64,6 +64,12 @@ sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/")
 plan(multicore, workers=n_parallel)
 
 foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
+
+  keep_pars <- c("IP_bg_m3",
+                 "ensWts_p", "attach_beta",
+                 "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
+                 "detect_p", "nb_prec", "treatEfficacy")
+
   if(!refit & file.exists(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.rds"))) {
     out_full_df <- readRDS(glue("{sim_dir}posterior{ifelse(prior_only, '_PRIORS', '')}.rds"))
     out_full_sum <- readRDS(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.rds"))
@@ -82,10 +88,6 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
       chains=n_chains, parallel_chains=n_chains
     )
 
-    keep_pars <- c("IP_bg_m3",
-                   "ensWts_p", "attach_beta",
-                   "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
-                   "detect_p", "nb_prec", "treatEfficacy")
     if(keep_licePreds) {
       keep <- c(keep_pars, "mu")
     } else {

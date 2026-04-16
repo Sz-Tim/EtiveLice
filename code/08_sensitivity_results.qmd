@@ -1,0 +1,352 @@
+---
+title: "Sensitivity Analysis"
+subtitle: "E(tive)Lice"
+author: "Tim Szewczyk"
+format: html
+theme: litera
+mainfont: Garamond
+monofont: Lucida Console
+editor: source
+code-fold: true
+toc: true
+number-sections: true
+embed-resources: true
+bibliography: references.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(glue)
+library(sevcheck)
+theme_set(theme_bw() + theme(panel.grid=element_blank()))
+os <- get_os()
+dirs <- switch(
+  get_os(),
+  linux=list(proj=getwd(),
+             out=glue("{getwd()}/out/sensitivity")),
+  windows=list(proj=rprojroot::find_rstudio_root_file(),
+               out=glue("{rprojroot::find_rstudio_root_file()}/out/sensitivity"))
+)
+dirf(glue("{dirs$proj}/code/fn"), ".R") |> walk(source)
+sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
+
+if(file.exists(glue("{dirs$out}/sim_dist.rds"))) {
+  sim.dist <- readRDS(glue("{dirs$out}/sim_dist.rds"))
+} else {
+  n_sim <- 1e4
+  post_dir <- glue("{dirs$proj}/data/lit/fit")
+  egg_post <- list(constant=read_csv(glue("{post_dir}/egg_temp_constant_post.csv"), show_col_type=F),
+                   logistic=read_csv(glue("{post_dir}/egg_temp_logistic_post.csv"), show_col_types=F),
+                   linear=read_csv(glue("{post_dir}/egg_temp_linear_post.csv"), show_col_types=F)) |>
+    map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
+          unite("all", everything(), sep=",") %>%
+          .$all)
+  mort_post <- list(constant=read_csv(glue("{post_dir}/mort_sal_constant_post.csv"), show_col_types=F),
+                    logistic=read_csv(glue("{post_dir}/mort_sal_logistic_post.csv"), show_col_types=F)) |>
+    map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
+          unite("all", everything(), sep=",") %>%
+          .$all)
+  sink_post <- read_csv(glue("{post_dir}/sink_sal_linear_post.csv"), show_col_types=F) |>
+    mutate(across(everything(), ~.x/1e3)) #mm/s to m/s
+  sim.dist <- sample_parameter_distributions(n_sim, dirs$out, "lhs", egg_post, mort_post, sink_post) |>
+    mutate(across(any_of(c("swimColdNauplius", "variableDh", "variableDhV")), 
+                  ~.x=="true"))
+  saveRDS(sim.dist, glue("{dirs$out}/sim_dist.rds"))
+}
+```
+
+# Parameter ranges
+
+In the sensitivity analysis, all investigated parameters were varied simultaneously across 1,000 random draws from the distributions defined for each. Note that in Kragesteen 2023:
+
+> Here, connectivity is expressed as the total number of particles entering a 3 by 3 grid (each grid is 160 m × 160 m) area around a farm in a day divided by the number of particles released by a farm in a day.
+
+A 3 by 3 grid gives a `{r} 160*3` by `{r} 160*3` m area. If the farm is directly in the center, this corresponds with a NS/EW distance of `{r} 160*3/2` m, or a diagonal distance of `{r} round(sqrt(2*(160*3/2)^2))` m, capturing an area of `{r} round(160^2 * 9)` m^2, assuming no land overlap. A radius of `{r} round(sqrt(160^2*9/pi))` m would be needed for a circle of the same area.
+
+The IP distance assessed here is the radius of a circle centered on the farm location. 
+
+```{r}
+#| echo: false
+
+var_pretty <- list("D_h"="Diffusion: horizontal", 
+                   "D_hVert"="Diffusion: vertical",
+                   "variableDh"="WeStCOMS horizontal diffusion",
+                   "variableDhV"="WeStCOMS vertical diffusion",
+                   "eggTemp_fn"="Gravid egg production", 
+                   "mortSal_fn"="Larval mortality rate", 
+                   "swimUpSpeedNaupliusMean"="Upward swimming speed: N", 
+                   "swimDownSpeedNaupliusMean"="Downward sinking speed: N",
+                   "swimUpSpeedCopepodidMean"="Upward swimming speed: C", 
+                   "swimDownSpeedCopepodidMean"="Downward sinking speed: C",
+                   "passiveSinkRateSal"="Salinity-dependent sink rate",
+                   "salinityThreshNaupliusMin"="Salinity: Lower threshold: N", 
+                   "salinityThreshNaupliusMax"="Salinity: Upper threshold: N", 
+                   "salinityThreshCopepodidMin"="Salinity: Lower threshold: C", 
+                   "salinityThreshCopepodidMax"="Salinity: Upper threshold: C", 
+                   "salRangeN"="Salinity range: N",
+                   "salRangeC"="Salinity range: C",
+                   "lightThreshNauplius"="Light threshold: N", 
+                   "lightThreshCopepodid"="Light threshold: C",
+                   "swimColdNauplius"="Cold preference: N",
+                   "viableDegreeDays"="Development: N",
+                   "maxDepth"="Maximum preferred depth",
+                   "connectivityThresh"="IP radius") |>
+  as_tibble() |>
+  pivot_longer(everything(), names_to="var", values_to="var_pretty") |>
+  mutate(var_order=factor(var, 
+                          levels=c("D_h", "D_hVert", "variableDh", "variableDhV",
+                                   "maxDepth", "connectivityThresh", "passiveSinkRateSal",
+                                   "eggTemp_fn", "mortSal_fn", "viableDegreeDays",
+                                   "swimColdNauplius",
+                                   "salinityThreshNaupliusMin", "salinityThreshNaupliusMax",
+                                   "salinityThreshCopepodidMin", "salinityThreshCopepodidMax",
+                                   "salRangeN", "salRangeC",
+                                   "swimDownSpeedNaupliusMean", "swimUpSpeedNaupliusMean",
+                                   "swimDownSpeedCopepodidMean", "swimUpSpeedCopepodidMean",
+                                   "lightThreshNauplius", "lightThreshCopepodid"))) |>
+  arrange(var_order) |>
+  mutate(
+    units=list(expression(m^2 %.% s^-1), expression(m^2 %.% s^-1), "", "", "m", "m", "",
+               "Function", "Function", expression(degree*C %.% d), "",
+               "psu", "psu", "psu", "psu",  "psu", "psu", 
+               expression(cm %.% s^-1), expression(cm %.% s^-1),
+               expression(cm %.% s^-1), expression(cm %.% s^-1),
+               expression(mu*'mol' %.%~'m'^-2 %.% s^-1), expression(mu*'mol' %.%~'m'^-2 %.% s^-1)),
+    varNumeric=c(1, 1, 0, 0,
+                 1, 1, 0, 
+                 0, 0, 1, 0, 
+                 1, 1, 
+                 1, 1,
+                 1, 1, 
+                 1, 1,
+                 1, 1,
+                 1, 1),
+    var_cor=c(0, 0, 0, 0,
+              0, 0, 0, 
+              0, 0, 0, 0,
+              1, 1, 
+              1, 1, 
+              1, 1,
+              1, 1,
+              1, 1,
+              1, 1),
+    var_pairs=c(1, 2, 3, 4, 
+                5, 6, 7,
+                8, 9, 10, 11,
+                12, 13,
+                12, 13,
+                14, 14,
+                15, 15, 
+                15, 15,
+                16, 16),
+    var_scale=c("log", "log", "binary", "binary",
+                "sqrt", "sqrt", "binary", 
+                "binary", "binary", "natural", "binary",
+                "natural", "natural", 
+                "natural", "natural", 
+                "natural", "natural", 
+                "sqrt", "sqrt",
+                "sqrt", "sqrt",
+                "sqrt", "sqrt"),
+    var_range=list(log10(c(1e-4, 1e1)), log10(c(1e-6, 1e0)), c(FALSE, TRUE), c(FALSE, TRUE),
+                   c(10, 300)^0.5, c(15, 300)^0.5, c(FALSE, TRUE),
+                   c("constant", "logistic"), c("constant", "logistic"), c(30, 55), c(FALSE, TRUE),
+                   c(5, 32), c(20, 32), 
+                   c(5, 32), c(20, 32),
+                   c(0, 15), c(0, 15),
+                   c(5e-5, 1e-2)^0.5*100, c(5e-5, 5e-3)^0.5*100,
+                   c(1e-4, 5e-3)^0.5*100, c(1e-4, 1e-2)^0.5*100,
+                   c(0.05, 0.5)^0.5, c(2e-6, 2e-4)^0.5)
+  )
+var_pretty <- var_pretty |>
+  filter(! var %in% c("salinityThreshNaupliusMax", "salinityThreshNaupliusMin",
+                      "salinityThreshCopepodidMax", "salinityThreshCopepodidMin",
+                      "salRangeN", "salRangeC",
+                      "passiveSinkRateSal",
+                      "eggTemp_fn", "mortSal_fn"))
+```
+
+```{r}
+#| fig-width: 11
+#| fig-height: 15
+
+sim.used <- sim.i |>
+  mutate(across(starts_with("swimDown"), ~.x*100)) |>
+  mutate(across(starts_with("swimUp"), ~-.x*100)) |>
+  mutate(salRangeN=salinityThreshNaupliusMax - salinityThreshNaupliusMin,
+         salRangeC=salinityThreshCopepodidMax - salinityThreshCopepodidMin)
+sim.distr <- sim.dist |>
+  mutate(across(starts_with("swimDown"), ~.x*100)) |>
+  mutate(across(starts_with("swimUp"), ~-.x*100)) |>
+  mutate(salRangeN=salinityThreshNaupliusMax - salinityThreshNaupliusMin,
+         salRangeC=salinityThreshCopepodidMax - salinityThreshCopepodidMin)
+p_ls <- vector("list", nrow(var_pretty))
+for(i in seq_along(p_ls)) {
+  if(var_pretty$varNumeric[i]) {
+    if(var_pretty$var_scale[i] == "natural") {
+      x_scale <- scale_x_continuous()
+    } else if (var_pretty$var_scale[i] == "sqrt") {
+      x_scale <- scale_x_continuous()
+    } else if (var_pretty$var_scale[i] == "log") {
+      x_scale <- scale_x_log10(guide="axis_logticks", labels=scales::label_log())
+    }
+    p_ls[[i]] <- ggplot(sim.distr, aes(.data[[var_pretty$var[i]]])) +
+      # geom_density(trim=T, bounds=var_pretty$var_range[[i]]) +
+      # geom_histogram(aes(y=after_stat(count)/sum(after_stat(count))),
+                     # colour="grey30", bins=30, closed="right") +
+      ggdist::geom_dots(layout="weave", side="top", colour="grey30", fill="grey30") +
+      geom_rug(data=sim.used, aes(.data[[var_pretty$var[i]]]), sides="b", alpha=0.05) +
+      x_scale +
+      labs(subtitle=var_pretty$var_pretty[i],
+           x=var_pretty$units[[i]],
+           y="Probability") +
+      theme(axis.title.y=element_blank())
+  } else {
+    p_ls[[i]] <- ggplot(sim.distr, aes(.data[[var_pretty$var[i]]])) +
+      geom_bar(aes(y=after_stat(count)/sum(after_stat(count))), 
+               colour="grey30") +
+      geom_point(data=sim.used |> group_by(.data[[var_pretty$var[i]]]) |> 
+                   summarise(N=n()) |> ungroup() |> mutate(p=N/sum(N)),
+                 aes(y=p), shape=3) +
+      labs(subtitle=var_pretty$var_pretty[i],
+           x=var_pretty$units[[i]],
+           y="Probability") + 
+      ylim(0, 1) +
+      theme(axis.title.y=element_blank())
+  }
+}
+sim.distrSub <- sim.distr |>
+  sample_n(5000)
+p_ls[[length(p_ls)+1]] <- sim.distrSub |>
+  select(i, starts_with("salinity")) |>
+  mutate(salinity=list(seq(5, 33, by=0.1))) |>
+  unnest(salinity) |>
+  mutate(pSink=pmin(pmax((salinityThreshNaupliusMax - salinity) / 
+                           (salinityThreshNaupliusMax - salinityThreshNaupliusMin), 
+                         0), 1)) |>
+  ggplot() + 
+  geom_line(aes(salinity, pSink, group=i), alpha=0.02) +
+  geom_rug(data=sim.distr, aes(salinityThreshNaupliusMax), alpha=0.05, sides="b") +
+  geom_rug(data=sim.distr, aes(salinityThreshNaupliusMin), alpha=0.05, sides="t") +
+  labs(subtitle="Sinking probability: N",
+       x="Salinity (psu)",
+       y="Probability") +
+  theme(legend.position="none")
+p_ls[[length(p_ls)+1]] <- sim.distrSub |>
+  select(i, starts_with("salinity")) |>
+  mutate(salinity=list(seq(5, 33, by=0.1))) |>
+  unnest(salinity) |>
+  mutate(pSink=pmin(pmax((salinityThreshCopepodidMax - salinity) / 
+                           (salinityThreshCopepodidMax - salinityThreshCopepodidMin), 
+                         0), 1)) |>
+  ggplot() + 
+  geom_line(aes(salinity, pSink, group=i), alpha=0.02) +
+  geom_rug(data=sim.distr, aes(salinityThreshCopepodidMax), alpha=0.05, sides="b") +
+  geom_rug(data=sim.distr, aes(salinityThreshCopepodidMin), alpha=0.05, sides="t") +
+  labs(subtitle="Sinking probability: C",
+       x="Salinity (psu)",
+       y="Probability") +
+  theme(legend.position="none")
+p_ls[[length(p_ls)+1]] <- sim.distrSub |>
+  select(i, starts_with("passive")) |>
+  mutate(salinity=list(seq(0, 32, by=0.1))) |>
+  unnest(salinity) |>
+  mutate(sinkRate=100*(passiveSinkInt + passiveSinkSlope*salinity)) |>
+  ggplot(aes(salinity, sinkRate, group=i, colour=passiveSinkRateSal)) + 
+  geom_line(alpha=0.02) +
+  scale_colour_manual("Salinity-dependent\nsink rate", values=c("#762a83", "#1b7837")) +
+  guides(colour=guide_legend(override.aes=list(alpha=0.8, linewidth=1))) +
+  labs(subtitle="Sink rate",
+       x="Salinity (psu)",
+       y=expression(cm %.% s^-1)) +
+  theme(legend.position="none")
+p_ls[[length(p_ls)+1]] <- sim.distrSub |>
+  select(i, starts_with("eggTemp")) |>
+  separate_wider_delim(eggTemp_b, ",", names=paste0("b", 1:4), too_few="align_start") |>
+  mutate(across(starts_with("b"), as.numeric)) |>
+  mutate(Temp=list(seq(5, 20, by=0.1))) |>
+  unnest(Temp) |>
+  mutate(eggs=if_else(eggTemp_fn=="constant",
+                      b1,
+                      b1 / (1+exp(-b2*(Temp-b3))) + b4)) |>
+  ggplot() + 
+  geom_line(aes(Temp, eggs, group=i, colour=eggTemp_fn), alpha=0.02) +
+  scale_colour_manual(values=c("#762a83", "#1b7837")) +
+  guides(colour=guide_legend(override.aes=list(alpha=0.8, linewidth=1))) +
+  labs(subtitle="Egg production",
+       x="Temperature (C)",
+       y="Eggs per adult female") +
+  theme(legend.position="none")
+p_ls[[length(p_ls)+1]] <- sim.distrSub |>
+  select(i, starts_with("mortSal")) |>
+  separate_wider_delim(mortSal_b, ",", names=paste0("b", 1:4), too_few="align_start") |>
+  mutate(across(starts_with("b"), as.numeric)) |>
+  mutate(salinity=list(seq(5, 33, by=0.1))) |>
+  unnest(salinity) |>
+  mutate(pMort=if_else(mortSal_fn=="constant",
+                      b1,
+                      b1 / (1+exp(-b2*(salinity-b3))) + b4)) |>
+  ggplot() + 
+  geom_line(aes(salinity, pMort, colour=mortSal_fn, group=i), alpha=0.02) +
+  scale_colour_manual(values=c("#762a83", "#1b7837")) +
+  guides(colour=guide_legend(override.aes=list(alpha=0.8, linewidth=1))) +
+  labs(subtitle="Hourly mortality rate",
+       x="Salinity (psu)",
+       y="Mortality rate") +
+  theme(legend.position="none")
+
+cowplot::plot_grid(plotlist=p_ls, nrow=5, ncol=4, align="hv", axis="trbl")
+```
+
+
+
+# Smolt migration: Spring IP
+
+## Overall
+
+## By location
+
+### Variability
+
+### Maps: Overall mean, variability
+
+### Characteristics
+
+## Variable Importance
+
+### Overall
+
+### By location 
+
+### Maps
+
+### Accumulated Local Effects
+
+
+# Farm infestations: Late summer - autumn IP
+
+## Overall 
+
+## By location
+
+### Variability
+
+### Map
+
+### Characteristics
+
+## Variable Importance
+
+## Accumulated Local Effects
+
+
+
+
+
+# Farm connectivity
+
+How much do connectivity networks change across parameterizations?

@@ -68,6 +68,7 @@ sim.i <- sample_parameter_distributions(n_sim, dirs$out, "lhs", egg_post, mort_p
          variableDhV="false")
 write_csv(sim.i, glue("{dirs$out}/sim_i.csv"))
 sim_seq <- 1:nrow(sim.i)
+sim_seq <- sim_seq[-c(3:6,8)]
 
 
 # set properties ----------------------------------------------------------
@@ -184,7 +185,7 @@ write_csv(farm_dat, "data/sim/inputs/farm_dat.csv")
 
 # Site conditions
 library(furrr); library(future)
-plan(multisession, workers=20)
+plan(multisession, workers=30)
 site_env_df <- future_map_dfr(
   dirf(glue("{dirs$out}/sim_01"), "siteEnv_2"),
   ~data.table::fread(.x)[, elapsedHours:=str_sub(str_split_fixed(basename(.x), "_", 3)[,3], 1, -5)]
@@ -221,7 +222,7 @@ write_csv(site_vols, "data/sim/inputs/farm_influx_vols.csv")
 
 # hourly IP for each day per pen
 library(furrr); library(future)
-plan(multisession, workers=20)
+plan(multisession, workers=30)
 c_df <- future_map_dfr(
   dirrf(dirs$out, "connectivity.*csv"),
   ~load_connectivity(.x,
