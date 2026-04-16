@@ -3,6 +3,65 @@
 // tim.szewczyk@sams.ac.uk
 // Integrated ensemble model
 
+functions {
+  array[,] matrix make_trans_mx(array[,] matrix trans_mx_init,
+                                int nFarms,
+                                int nDays,
+                                array[] matrix stage_Surv,
+                                array[] matrix pMolt) {
+    array[nFarms, nDays] matrix[5, 5] trans_mx = trans_mx_init;
+    for(farm in 1:nFarms) {
+      for(day in 1:nDays) {
+        // Chalimus 1-2
+        trans_mx[farm, day, 1, 1] = (1-pMolt[farm, day, 1]) * stage_Surv[farm, day, 1];
+        trans_mx[farm, day, 2, 1] = pMolt[farm, day, 1] * stage_Surv[farm, day, 1];
+        trans_mx[farm, day, 2, 2] = (1-pMolt[farm, day, 1]) * stage_Surv[farm, day, 1];
+        trans_mx[farm, day, 3, 2] = pMolt[farm, day, 1] * stage_Surv[farm, day, 1];
+        // Pre-adult 1-2
+        trans_mx[farm, day, 3, 3] = (1-pMolt[farm, day, 2]) * stage_Surv[farm, day, 2];
+        trans_mx[farm, day, 4, 3] = pMolt[farm, day, 2] * stage_Surv[farm, day, 2];
+        trans_mx[farm, day, 4, 4] = (1-pMolt[farm, day, 2]) * stage_Surv[farm, day, 2];
+        trans_mx[farm, day, 5, 4] = pMolt[farm, day, 2] * stage_Surv[farm, day, 2];
+        // Adult
+        trans_mx[farm, day, 5, 5] = stage_Surv[farm, day, 3];
+      }
+    }
+    return trans_mx;
+  }
+
+  array[] row_vector calc_y_bar(array[] matrix mu,
+                                int nFarms,
+                                int nStages,
+                                int nSamples,
+                                array[,] int sample_i,
+                                array[,] int sample_ii,
+                                matrix nFishSampled_mx,
+                                vector detect_p,
+                                real y_bar_minimum) {
+    array[nStages] row_vector[nSamples] y_bar;
+    for(farm in 1:nFarms) {
+      array[2] int farmInd = sample_ii[farm, ];
+      // Chalimus: (mu[Ch1] + mu[Ch2]) * nFishSampled * pDet[Ch]
+      y_bar[1, farmInd[1]:farmInd[2]] =
+        ones_row_vector(2) * mu[farm, 1:2, sample_i[farmInd[1]:farmInd[2], 2]] .*
+        nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
+        detect_p[1] + y_bar_minimum;
+      // Pre-adult: (mu[PA1] + mu[PA2]) * nFishSampled * pDet[PA]
+      y_bar[2, farmInd[1]:farmInd[2]] =
+        ones_row_vector(2) * mu[farm, 3:4, sample_i[farmInd[1]:farmInd[2], 2]] .*
+        nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
+        detect_p[2] + y_bar_minimum;
+      // Adult: mu[Ad] * nFishSampled * pDet[Ad]
+      y_bar[3, farmInd[1]:farmInd[2]] =
+        mu[farm, 5, sample_i[farmInd[1]:farmInd[2], 2]] .*
+        nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
+        detect_p[3] + y_bar_minimum;
+    }
+    return(y_bar);
+  }
+
+}
+
 data {
   // control switches
   int<lower=0,upper=1> sample_prior_only; // 0: include likelihood, 1: prior only
@@ -30,7 +89,7 @@ data {
   matrix[nDays, nFarms] nFish_mx; // number of fish on each farm each day
   array[nSamples, 2] int sample_i; // rows: sample; cols: farm, day; sorted by farm, day
   array[nFarms, 2] int sample_ii; // start/end indexes for each farm in sample_i
-  matrix[nDays, nFarms] nFishSampled_mx; // number of fish sampled on each farm each day
+  matrix[nFarms, nDays] nFishSampled_mx; // number of fish sampled on each farm each day
   // priors: [mean, sd]
   array[nAttachCov, 2] real prior_attach_beta; // p(attach) slopes
   array[nSurvCov, nStages, 2] real prior_surv_beta; // p(surv) intercept & slopes
@@ -40,19 +99,38 @@ data {
   vector[2] prior_IP_bg_m3; // background IP
   vector[2] prior_inv_sqrt_nb_prec; // negative binomial precision: normal(mu, sd)
   vector<lower=0>[2] prior_treatEfficacy; // treatment efficacy: beta
-  // real<lower=0> prior_nb_prec; // negative binomial precision: chisq(df)
+  // Generated Quantities: For predicting new observations starting nDays+1
+  int<lower=0> nDays_GQ; // number of days from start to end
+  int<lower=0> nHours_GQ; // number of hours from start to end
+  int<lower=1> nSamples_GQ; // total number of sampling bouts across all farms
+  array[nDays_GQ,24] int<lower=1,upper=nHours_GQ> day_hour_GQ; // hour numbers corresponding to each day
+  array[nFarms] matrix<lower=0>[nHours_GQ, nSims] IP_mx_GQ; // IP from particle tracking simulations
+  array[nFarms] matrix[nHours_GQ, nAttachCov] attach_env_mx_GQ; // covariates for p(Attach)
+  array[nFarms] matrix[nDays_GQ, nSurvCov] surv_env_mx_GQ; // covariates for p(Surv) incl. intercept
+  matrix[nDays_GQ, nFarms] temp_z_mx_GQ; // z-transformed temperature
+  matrix[nDays_GQ, nFarms] nFish_mx_GQ; // number of fish on each farm each day
+  matrix<lower=0,upper=1>[nDays_GQ, nFarms] treatDays_GQ; // indicator for treatment application
+  array[nSamples_GQ, 2] int sample_i_GQ; // rows: sample; cols: farm, day; sorted by farm, day
+  array[nFarms, 2] int sample_ii_GQ; // start/end indexes for each farm in sample_i
+  matrix[nFarms, nDays_GQ] nFishSampled_mx_GQ; // number of fish sampled on each farm each day
 }
 
 transformed data {
-  array[nFarms] matrix[nDays, 2] temp_X;
+  array[nStages, nSamples] int y2_F; // sparse: observations only
+  array[nFarms] matrix[nDays, 2] temp_X; // reshape and add intercept 1's
   matrix[nStages+2, nStages+2] zero_matrix_stages_stages = rep_matrix(0, nStages+2, nStages+2);
-  array[nFarms, nDays] matrix[nStages+2, nStages+2] trans_mx_init;
-  array[nFarms] matrix[nStages+2, nDays] N_init;
-  matrix[nFarms, nDays] t_nFishSampled_mx = nFishSampled_mx';
-  array[nStages, nSamples] int y2_F;
-  matrix[nDays, nFarms] nFishNoZero_mx = nFish_mx;
-  matrix[nDays, nFarms] fishPresent;
-  matrix[nDays, nFarms] fishScale;
+  array[nFarms, nDays] matrix[nStages+2, nStages+2] trans_mx_init; // initial 0's
+  array[nFarms] matrix[nStages+2, nDays] N_init; // initial 0's
+  matrix[nDays, nFarms] nFishNoZero_mx = nFish_mx; // nFish with 0's replaced by 1's
+  matrix[nDays, nFarms] fishPresent; // indicator; 1=yes, 0=no
+  matrix[nDays, nFarms] fishScale; // number of attached copepodids --> mean per fish
+  // Generated Quantities: For predicting new observations starting nDays+1
+  array[nFarms] matrix[nDays_GQ, 2] temp_X_GQ;
+  array[nFarms, nDays_GQ] matrix[nStages+2, nStages+2] trans_mx_init_GQ;
+  array[nFarms] matrix[nStages+2, nDays_GQ] N_init_GQ;
+  matrix[nDays_GQ, nFarms] nFishNoZero_mx_GQ = nFish_mx_GQ;
+  matrix[nDays_GQ, nFarms] fishPresent_GQ;
+  matrix[nDays_GQ, nFarms] fishScale_GQ;
 
   for(farm in 1:nFarms) {
     temp_X[farm, ,1] = ones_vector(nDays);
@@ -76,6 +154,26 @@ transformed data {
       y2_F[stage, sample] = y_F[stage, sample_i[sample, 2], sample_i[sample, 1]];
     }
   }
+
+  if(GQ_new==1) {
+    for(farm in 1:nFarms) {
+      temp_X_GQ[farm, ,1] = ones_vector(nDays_GQ);
+      temp_X_GQ[farm, ,2] = temp_z_mx_GQ[, farm];
+    }
+    for(farm in 1:nFarms) {
+      N_init_GQ[farm] = rep_matrix(0, nStages+2, nDays_GQ);
+    }
+    for(farm in 1:nFarms) {
+      for(day in 1:nDays_GQ) {
+        trans_mx_init_GQ[farm, day] = zero_matrix_stages_stages;
+        fishPresent_GQ[day, farm] = nFish_mx_GQ[day, farm] > 0;
+        if(nFish_mx_GQ[day, farm] == 0) {
+          nFishNoZero_mx_GQ[day, farm] = 1;
+        }
+      }
+    }
+    fishScale_GQ = fishPresent_GQ ./ nFishNoZero_mx_GQ;
+  }
 }
 
 parameters {
@@ -89,7 +187,7 @@ parameters {
   real<lower=0,upper=1> treatEfficacy; // mortality induced by treatment
   matrix[2, nStages-1] mnDaysStage_beta_z; // [Int, temp][Ch-Pr, Pr-Ad, Ad-Gr]
   vector[nStages] logit_detect_p; // p(detect) by stage
-  real<lower=0> inv_sqrt_nb_prec;
+  real<lower=0> inv_sqrt_nb_prec; // negative binomial precision (1/sqrt(prec))
 }
 
 transformed parameters {
@@ -103,14 +201,14 @@ transformed parameters {
   matrix[2, nStages-1] mnDaysStage_beta; // [Int, temp][Ch-Pr, Pr-Ad]
   vector[nStages] detect_p;
   // intermediate quantities
-  matrix[nHours, nFarms] ensIP;
-  matrix[nHours, nFarms] pr_attach;
-  matrix[nHours, nFarms] N_attach;
+  matrix[nHours, nFarms] ensIP; // ensemble IP
+  matrix[nHours, nFarms] pr_attach; // attachment probability
+  matrix[nHours, nFarms] N_attach; // number of copepodids that attach
   array[nFarms] matrix[nDays, nStages] stage_Surv; // survival rates
   array[nFarms] matrix[nDays, nStages-1] pMolt; // transition probabilities
   array[nFarms, nDays] matrix[nStages+2, nStages+2] trans_mx; // transition matrix
   array[nFarms] matrix[nStages+2, nDays] mu; // latent daily mean lice per fish
-  array[nStages] row_vector[nSamples] y_bar;
+  array[nStages] row_vector[nSamples] y_bar; // expected observed (mu*prDet)
   real<lower=0> nb_prec = 1 / inv_sqrt_nb_prec^2; // neg_binom precision
 
   // re-scale and de-center parameters
@@ -136,8 +234,8 @@ transformed parameters {
   for(i in 1:(nStages-1)) {
     for(stage in 1:(nStages-1)) {
       mnDaysStage_beta[i,stage] = fma(mnDaysStage_beta_z[i,stage],
-                                   prior_mnDaysStage_F[i,stage,2],
-                                   prior_mnDaysStage_F[i,stage,1]/2);
+                                      prior_mnDaysStage_F[i,stage,2],
+                                      prior_mnDaysStage_F[i,stage,1]/2);
     }
   }
   for(stage in 1:(nStages-1)) {
@@ -145,9 +243,9 @@ transformed parameters {
                                     prior_logit_detect_p[stage,2],
                                     prior_logit_detect_p[stage,1]));
   }
-  detect_p[nStages] = 1;
+  detect_p[nStages] = 1; // all adults are detected
 
-  // calculate ensIP, pr_attach, N_attach, stage_logSurv
+  // calculate ensIP, pr_attach, N_attach, stage_Surv
   for(farm in 1:nFarms) {
     ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg[farm];
     pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
@@ -162,24 +260,7 @@ transformed parameters {
     }
   }
   N_attach = 0.5 * ensIP .* pr_attach;
-
-  trans_mx = trans_mx_init;
-  for(farm in 1:nFarms) {
-    for(day in 1:nDays) {
-      // Chalimus 1-2
-      trans_mx[farm, day, 1, 1] = (1-pMolt[farm, day, 1]) * stage_Surv[farm, day, 1];
-      trans_mx[farm, day, 2, 1] = pMolt[farm, day, 1] * stage_Surv[farm, day, 1];
-      trans_mx[farm, day, 2, 2] = (1-pMolt[farm, day, 1]) * stage_Surv[farm, day, 1];
-      trans_mx[farm, day, 3, 2] = pMolt[farm, day, 1] * stage_Surv[farm, day, 1];
-      // Pre-adult 1-2
-      trans_mx[farm, day, 3, 3] = (1-pMolt[farm, day, 2]) * stage_Surv[farm, day, 2];
-      trans_mx[farm, day, 4, 3] = pMolt[farm, day, 2] * stage_Surv[farm, day, 2];
-      trans_mx[farm, day, 4, 4] = (1-pMolt[farm, day, 2]) * stage_Surv[farm, day, 2];
-      trans_mx[farm, day, 5, 4] = pMolt[farm, day, 2] * stage_Surv[farm, day, 2];
-      // Adult
-      trans_mx[farm, day, 5, 5] = stage_Surv[farm, day, 3];
-    }
-  }
+  trans_mx = make_trans_mx(trans_mx_init, nFarms, nDays, stage_Surv, pMolt);
 
   mu = N_init;
   // Population projection: Newly attached Ch1 + existing population transitions
@@ -190,24 +271,7 @@ transformed parameters {
       mu[farm, 1, day+1] += sum(N_attach[day_hour[day+1], farm]) * fishScale[day+1,farm];
     }
   }
-  for(farm in 1:nFarms) {
-    array[2] int farmInd = sample_ii[farm, ];
-    // Chalimus: (mu[Ch1] + mu[Ch2]) * nFishSampled * pDet[Ch]
-    y_bar[1, farmInd[1]:farmInd[2]] =
-      ones_row_vector(2) * mu[farm, 1:2, sample_i[farmInd[1]:farmInd[2], 2]] .*
-      t_nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
-      detect_p[1] + y_bar_minimum;
-    // Pre-adult: (mu[PA1] + mu[PA2]) * nFishSampled * pDet[PA]
-    y_bar[2, farmInd[1]:farmInd[2]] =
-      ones_row_vector(2) * mu[farm, 3:4, sample_i[farmInd[1]:farmInd[2], 2]] .*
-      t_nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
-      detect_p[2] + y_bar_minimum;
-    // Adult: mu[Ad] * nFishSampled * pDet[Ad]
-    y_bar[3, farmInd[1]:farmInd[2]] =
-      mu[farm, 5, sample_i[farmInd[1]:farmInd[2], 2]] .*
-      t_nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
-      detect_p[3] + y_bar_minimum;
-  }
+  y_bar = calc_y_bar(mu, nFarms, nStages, nSamples, sample_i, sample_ii, nFishSampled_mx, detect_p, y_bar_minimum);
   // priors
   {
     lprior += normal_lpdf(IP_bg_m3 | prior_IP_bg_m3[1], prior_IP_bg_m3[2]) -
@@ -225,7 +289,6 @@ transformed parameters {
       lprior += std_normal_lpdf(mnDaysStage_beta_z[i,]);
     }
     lprior += std_normal_lpdf(logit_detect_p);
-    // lprior += chi_square_lpdf(nb_prec | prior_nb_prec);
     lprior += normal_lpdf(inv_sqrt_nb_prec | prior_inv_sqrt_nb_prec[1], prior_inv_sqrt_nb_prec[2]) -
       normal_lccdf(0 | prior_inv_sqrt_nb_prec[1], prior_inv_sqrt_nb_prec[2]);
     lprior += student_t_lpdf(surv_int_farm_sd | prior_surv_int_farm_sd[1], prior_surv_int_farm_sd[2], prior_surv_int_farm_sd[3]) -
@@ -245,10 +308,51 @@ model {
 
 generated quantities {
   array[nStages, nSamples] int y_pred;
+  matrix[nHours_GQ, nFarms] ensIP_GQ;
+  matrix[nHours_GQ, nFarms] pr_attach_GQ;
+  matrix[nHours_GQ, nFarms] N_attach_GQ;
+  array[nFarms] matrix[nDays_GQ, nStages] stage_Surv_GQ; // survival rates
+  array[nFarms] matrix[nDays_GQ, nStages-1] pMolt_GQ; // transition probabilities
+  array[nFarms, nDays_GQ] matrix[nStages+2, nStages+2] trans_mx_GQ; // transition matrix
+  array[nFarms] matrix[nStages+2, nDays_GQ] mu_GQ; // latent daily mean lice per fish
+  array[nStages] row_vector[nSamples_GQ] y_bar_GQ; // expected observed mean lice per fish
+
+  // predicted y for each observation in training data
   if(GQ_ypred==1) {
     for(stage in 1:nStages) {
         y_pred[stage] = neg_binomial_2_rng(y_bar[stage], nb_prec);
     }
+  }
+  // predictions for NEW observations
+  if(GQ_new==1) {
+    // calculate ensIP_GQ, pr_attach_GQ, N_attach_GQ, stage_Surv_GQ
+    for(farm in 1:nFarms) {
+      ensIP_GQ[,farm] = IP_mx_GQ[farm] * ensWts_p + IP_bg[farm];
+      pr_attach_GQ[,farm] = inv_logit(attach_env_mx_GQ[farm] * attach_beta);
+      stage_Surv_GQ[farm] = inv_logit(surv_env_mx_GQ[farm] * surv_beta_farm[farm]);
+      for(stage in 1:(nStages-1)) {
+        pMolt_GQ[farm, , stage] = 1 / (temp_X_GQ[farm] * mnDaysStage_beta[, stage]);
+      }
+      for(stage in 1:nStages) {
+        stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .*
+                                       fishPresent_GQ[, farm] .*
+                                       (1 - (treatDays_GQ[, farm] * treatEfficacy));
+      }
+    }
+    N_attach_GQ = 0.5 * ensIP_GQ .* pr_attach_GQ;
+    trans_mx_GQ = make_trans_mx(trans_mx_init_GQ, nFarms, nDays_GQ, stage_Surv_GQ, pMolt_GQ);
+    // Population projection: Newly attached Ch1 + existing population transitions
+    mu_GQ = N_init_GQ;
+    for(farm in 1:nFarms) {
+      // day 1 = final training day + 1
+      mu_GQ[farm, , 1] = trans_mx[farm, nDays] * mu[farm, , nDays];
+      mu_GQ[farm, 1, 1] += sum(N_attach_GQ[day_hour_GQ[1], farm]) * fishScale_GQ[1,farm];
+      for(day in 1:(nDays_GQ-1)) {
+        mu_GQ[farm, , day+1] = trans_mx_GQ[farm, day] * mu_GQ[farm, , day];
+        mu_GQ[farm, 1, day+1] += sum(N_attach_GQ[day_hour_GQ[day+1], farm]) * fishScale_GQ[day+1,farm];
+      }
+    }
+    y_bar_GQ = calc_y_bar(mu_GQ, nFarms, nStages, nSamples_GQ, sample_i_GQ, sample_ii_GQ, nFishSampled_mx_GQ, detect_p, y_bar_minimum);
   }
 }
 

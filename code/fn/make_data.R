@@ -6,68 +6,68 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
   params <- readRDS(glue("{dat_dir}params.rds"))
   dates <- 1:info$nDays
   hours <- 1:info$nHours
+  if(GQ_new) {
+    dates_GQ <- 1:info$nDays_GQ
+    hours_GQ <- 1:info$nHours_GQ
+  }
 
   stan_dat <- list(
-    GQ_ypred = as.numeric(GQ_ypred),
-    GQ_new = as.numeric(GQ_new),
-    nDays = info$nDays,
-    nHours = info$nHours,
-    nFarms = info$nFarms,
-    nSims = info$nSims,
-    nStages = info$nStages,
-    nPens = info$nPens,
-    nAttachCov = length(params$attach_beta),
-    nSurvCov = nrow(params$surv_beta),
-    IP_volume = info$IP_penVolume,
-    y_bar_minimum = 1e-5,
-    day_hour = readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
+    GQ_ypred=as.numeric(GQ_ypred),
+    GQ_new=as.numeric(GQ_new),
+    nDays=info$nDays,
+    nHours=info$nHours,
+    nFarms=info$nFarms,
+    nSims=info$nSims,
+    nStages=info$nStages,
+    nPens=info$nPens,
+    nAttachCov=length(params$attach_beta),
+    nSurvCov=nrow(params$surv_beta),
+    IP_volume=info$IP_penVolume,
+    y_bar_minimum=1e-5,
+    day_hour=readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
     # farm counts, treatments, sampling info
-    y = readRDS(glue("{dat_dir}y.rds"))[,,dates,],
-    sample_i = readRDS(glue("{dat_dir}sampledDays.rds")),
-    nFishSampled_mx = readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,],
-    nFish_mx = readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
-    treatDays = readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
+    y=readRDS(glue("{dat_dir}y.rds"))[,,dates,],
+    nFish_mx=t(readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,]),
+    treatDays=readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
+    sample_i=readRDS(glue("{dat_dir}sampledDays.rds")),
+    nFishSampled_mx=readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,],
     # IP from biotracker
-    IP_mx = readRDS(glue("{dat_dir}IP_mx.rds"))[,hours,],
+    IP_mx=readRDS(glue("{dat_dir}IP_mx.rds"))[,hours,],
     # farm environment
-    attach_env_mx = readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours,],
-    surv_env_mx = readRDS(glue("{dat_dir}sal_mx.rds"))[,dates,],
-    temp_mx = readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
-    temp_z_mx = readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
+    attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours,],
+    surv_env_mx=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates,],
+    temp_mx=readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
+    temp_z_mx=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
     # priors
-    sample_prior_only = as.numeric(priors_only),
+    sample_prior_only=as.numeric(priors_only),
     # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
-    # prior_attach_beta = cbind(c(1, 0.25, 0.25, 0, 0),
-    #                           c(0.5, 0.5, 0.5, 0.5, 0.5)),
-    prior_attach_beta = cbind(c(1, rep(0.25, length(params$attach_beta)-2), 0),
-                              c(rep(0.25, length(params$attach_beta)-1), 0.25)),
+    prior_attach_beta=cbind(c(1, rep(0.25, length(params$attach_beta)-2), 0),
+                            c(rep(0.25, length(params$attach_beta)-1), 0.25)),
     # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
-    prior_surv_beta = array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
-                              rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
-                            dim=c(nrow(params$surv_beta), info$nStages, 2),
-                            dimnames=list(c("int", "temp"),
-                                          c("Ch", "Pr", "Ad"),
-                                          c("mu", "sd"))),
+    prior_surv_beta=array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
+                            rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
+                          dim=c(nrow(params$surv_beta), info$nStages, 2),
+                          dimnames=list(c("int", "temp"),
+                                        c("Ch", "Pr", "Ad"),
+                                        c("mu", "sd"))),
     # surv beta: sd for farm-level intercepts: student_t(nu, mu, sd)
-    prior_surv_int_farm_sd = c(3, 0, 0.75),
+    prior_surv_int_farm_sd=c(3, 0, 0.75),
     # mnDaysStage: [c(Int, Temp), c(Ch-Pr, Pr-Ad), c(mu, sd)]; normal
-    prior_mnDaysStage_F = array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
-                                  params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
-                                dim=c(2, info$nStages-1, 2),
-                                dimnames=list(c("int", "temp"),
-                                              c("Pr", "Ad"),
-                                              c("mu", "sd"))),
+    prior_mnDaysStage_F=array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
+                                params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
+                              dim=c(2, info$nStages-1, 2),
+                              dimnames=list(c("int", "temp"),
+                                            c("Pr", "Ad"),
+                                            c("mu", "sd"))),
     # logit_detect_p: [c(Ch, Pr), c(mu, sd)]
-    prior_logit_detect_p = cbind(c(-1, 1),
-                                 c(0.5, 0.5)),
+    prior_logit_detect_p=cbind(c(-1, 1),
+                               c(0.5, 0.5)),
     # IP_bg_m3: c(mu, sigma); normal, T(0, )
-    prior_IP_bg_m3 = c(0.05, 0.05),
+    prior_IP_bg_m3=c(0.05, 0.05),
     # inv_sqrt_nb_prec: df; normal(mu, sd); nb_prec = 1/inv_sqrt_nb_prec^2
-    prior_inv_sqrt_nb_prec = c(0, 1),
+    prior_inv_sqrt_nb_prec=c(0, 1),
     # treatEfficacy: beta(alpha, beta)
-    prior_treatEfficacy = c(2, 2),
-    # IP_halfStat_m3: c(nu, mu, sigma); student_t, T(0, )
-    prior_IP_halfSat_m3 = c(3, 20, 10)
+    prior_treatEfficacy=c(2, 2)
   )
   # reformat sample info for Stan
   stan_dat$nSamples <- nrow(stan_dat$sample_i)
@@ -90,6 +90,48 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
     stan_dat$y_F <- stan_dat$y[,1,,]
     stan_dat$y_F[1,,] <- round((stan_dat$y_F[1,,] + stan_dat$y[1,2,,])/2)
     stan_dat$y_F[2,,] <- round((stan_dat$y_F[2,,] + stan_dat$y[2,2,,])/2)
+  }
+  if(GQ_new) {
+    stan_dat <- c(
+      stan_dat,
+      list(nDays_GQ=info$nDays_GQ,
+           nHours_GQ=info$nHours_GQ,
+           day_hour_GQ=readRDS(glue("{dat_dir}day_hour_GQ.rds"))[dates_GQ,],
+           IP_mx_GQ=readRDS(glue("{dat_dir}IP_mx_GQ.rds"))[,hours_GQ,],
+           attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx_GQ.rds"))[,hours_GQ,],
+           surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx_GQ.rds"))[,dates_GQ,],
+           temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx_GQ.rds"))[dates_GQ,],
+           nFish_mx_GQ=t(readRDS(glue("{dat_dir}nFish_mx_GQ.rds"))[dates_GQ,]),
+           treatDays_GQ=readRDS(glue("{dat_dir}treatDays_mx_GQ.rds"))[dates_GQ,],
+           sample_i_GQ=readRDS(glue("{dat_dir}sampledDays_GQ.rds")),
+           nFishSampled_mx_GQ=readRDS(glue("{dat_dir}nFishSampled_mx_GQ.rds"))[dates_GQ,]
+           ))
+    stan_dat$nSamples_GQ <- nrow(stan_dat$sample_i_GQ)
+    stan_dat$sample_ii_GQ <- stan_dat$sample_i_GQ |>
+      as_tibble() |>
+      mutate(index=row_number()) |>
+      group_by(sepaSite) |>
+      summarise(start=min(index),
+                end=max(index)) |>
+      select(-sepaSite) |>
+      as.matrix()
+  } else {
+    stan_dat <- c(
+      stan_dat,
+      list(nDays_GQ=1,
+           nHours_GQ=1,
+           nSamples_GQ=1,
+           day_hour_GQ=matrix(0, nrow=1, ncol=24),
+           IP_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nSims)),
+           attach_env_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nAttachCov)),
+           surv_env_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nSurvCov)),
+           temp_z_mx_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
+           nFish_mx_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
+           treatDays_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
+           sample_i_GQ=matrix(0, nrow=1, ncol=2),
+           sample_ii_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=2),
+           nFishSampled_mx_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=1)
+      ))
   }
 
   return(list(dat=stan_dat, params=params))
