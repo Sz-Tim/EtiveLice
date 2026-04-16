@@ -277,13 +277,13 @@ calc_sensitivity_outcomes <- function(c_daily, sim) {
     c_daily |>
       summarise(across(contains("flux"), list(mn=mean, md=median))),
     c_daily |>
-      filter(between(date, ymd("2023-03-01"), ymd("2023-05-31"))) |>
+      filter(month(date) %in% 3:5) |>
       summarise(across(contains("flux"), list(MAM_mn=mean, MAM_md=median))),
     c_daily |>
-      filter(between(date, ymd("2023-06-01"), ymd("2023-08-31"))) |>
+      filter(month(date) %in% 6:8) |>
       summarise(across(contains("flux"), list(JJA_mn=mean, JJA_md=median))),
     c_daily |>
-      filter(between(date, ymd("2023-09-01"), ymd("2023-11-30"))) |>
+      filter(month(date) %in% 9:11) |>
       summarise(across(contains("flux"), list(SON_mn=mean, SON_md=median)))
   )
   if(is_grouped_df(c_daily)) {
