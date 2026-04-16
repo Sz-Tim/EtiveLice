@@ -139,3 +139,43 @@ scatter_post_mean_plot <- function(df) {
     coord_fixed(xlim=lims, ylim=lims) +
     labs(x="Posterior mean & 50% CI", y="True value")
 }
+
+
+
+
+pivot_spp <- function(df, spp_names=c("Lernaeocera_branchialis",
+                                      "Lepeophtheirus_salmonis",
+                                      "Caligus_elongatus"),
+                      spp_levels=c("Nauplii",
+                                   "Lepeophtheirus salmonis",
+                                   "Caligus elongatus",
+                                   "Lernaeocera branchialis")) {
+  df |>
+    filter(Stage=="Copepodids") |>
+    select(-Count) |>
+    pivot_longer(any_of(spp_names), names_to="Species", values_to="Count") |>
+    drop_na(Count) |>
+    mutate(Species_clean=str_replace(Species, "_", " "),
+           Species_clean=factor(Species_clean,
+                                levels=spp_levels))
+}
+
+
+
+add_gam_preds <- function(df, mod_fit, suffix, se=T, exclude='t2(Depth,Station_simple,Month)') {
+  preds <- predict(mod_fit, newdata=df, se.fit=se, exclude=exclude)
+  if(se) {
+    pred_df <- tibble(predMn=c(preds$fit),
+                      predSE=c(preds$se.fit)) |>
+      mutate(predLo1=predMn - 1*predSE,
+             predHi1=predMn + 1*predSE,
+             predLo2=predMn - 2*predSE,
+             predHi2=predMn + 2*predSE) |>
+      rename_with(~paste0(.x, suffix, recycle0=T), everything())
+  } else {
+    pred_df <- tibble(predMn=c(preds)) |>
+      rename_with(~paste0(.x, suffix, recycle0=T), everything())
+  }
+  bind_cols(df, pred_df)
+}
+
