@@ -27,10 +27,10 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
     day_hour=readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
     # farm counts, treatments, sampling info
     y=readRDS(glue("{dat_dir}y.rds"))[,,dates,],
-    nFish_mx=t(readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,]),
+    nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
     treatDays=readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
     sample_i=readRDS(glue("{dat_dir}sampledDays.rds")),
-    nFishSampled_mx=readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,],
+    nFishSampled_mx=t(readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,]),
     # IP from biotracker
     IP_mx=readRDS(glue("{dat_dir}IP_mx.rds"))[,hours,],
     # farm environment
@@ -101,10 +101,10 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
            attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx_GQ.rds"))[,hours_GQ,],
            surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx_GQ.rds"))[,dates_GQ,],
            temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx_GQ.rds"))[dates_GQ,],
-           nFish_mx_GQ=t(readRDS(glue("{dat_dir}nFish_mx_GQ.rds"))[dates_GQ,]),
+           nFish_mx_GQ=readRDS(glue("{dat_dir}nFish_mx_GQ.rds"))[dates_GQ,],
            treatDays_GQ=readRDS(glue("{dat_dir}treatDays_mx_GQ.rds"))[dates_GQ,],
            sample_i_GQ=readRDS(glue("{dat_dir}sampledDays_GQ.rds")),
-           nFishSampled_mx_GQ=readRDS(glue("{dat_dir}nFishSampled_mx_GQ.rds"))[dates_GQ,]
+           nFishSampled_mx_GQ=t(readRDS(glue("{dat_dir}nFishSampled_mx_GQ.rds"))[dates_GQ,])
            ))
     stan_dat$nSamples_GQ <- nrow(stan_dat$sample_i_GQ)
     stan_dat$sample_ii_GQ <- stan_dat$sample_i_GQ |>
@@ -121,7 +121,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
       list(nDays_GQ=1,
            nHours_GQ=1,
            nSamples_GQ=1,
-           day_hour_GQ=matrix(0, nrow=1, ncol=24),
+           day_hour_GQ=matrix(1, nrow=1, ncol=24),
            IP_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nSims)),
            attach_env_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nAttachCov)),
            surv_env_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nSurvCov)),
