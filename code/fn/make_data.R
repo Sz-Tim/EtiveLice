@@ -1,19 +1,31 @@
-make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, priors_only=FALSE, prior_ls=NULL) {
+
+
+
+make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, priors_only=FALSE, prior_ls=NULL) {
   library(tidyverse)
   library(glue)
 
   info <- readRDS(glue("{dat_dir}info.rds"))
   params <- readRDS(glue("{dat_dir}params.rds"))
-  dates <- 1:info$nDays
-  hours <- 1:info$nHours
-  if(GQ_new) {
-    dates_GQ <- 1:info$nDays_GQ
-    hours_GQ <- 1:info$nHours_GQ
+  if(is.null(GQ_start)) {
+    dates <- 1:info$nDays
+    hours <- 1:info$nHours
+    dates_GQ <- 1
+    hours_GQ <- 1
+  } else {
+    info$nDays <- as.numeric(ymd(GQ_start) - info$dateRange[1])
+    info$nDays_GQ <- as.numeric(info$dateRange[2] - ymd(GQ_start))
+    info$nHours <- info$nDays*24
+    info$nHours_GQ <- info$nDays_GQ*24
+    dates <- 1:info$nDays
+    hours <- 1:info$nHours
+    dates_GQ <- info$nDays + (1:info$nDays_GQ)
+    hours_GQ <- info$nHours + (1:info$nHours_GQ)
   }
 
   stan_dat <- list(
     GQ_ypred=as.numeric(GQ_ypred),
-    GQ_new=as.numeric(GQ_new),
+    GQ_new=as.numeric(!is.null(GQ_start)),
     nDays=info$nDays,
     nHours=info$nHours,
     nFarms=info$nFarms,
@@ -29,7 +41,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
     y=readRDS(glue("{dat_dir}y.rds"))[,,dates,],
     nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
     treatDays=readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
-    sample_i=readRDS(glue("{dat_dir}sampledDays.rds")),
+    sample_i=readRDS(glue("{dat_dir}sampledDays.rds")) |> as_tibble() |> filter(day %in% dates) |> as.matrix(),
     nFishSampled_mx=t(readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,]),
     # IP from biotracker
     IP_mx=readRDS(glue("{dat_dir}IP_mx.rds"))[,hours,],
@@ -91,31 +103,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
     stan_dat$y_F[1,,] <- round((stan_dat$y_F[1,,] + stan_dat$y[1,2,,])/2)
     stan_dat$y_F[2,,] <- round((stan_dat$y_F[2,,] + stan_dat$y[2,2,,])/2)
   }
-  if(GQ_new) {
-    stan_dat <- c(
-      stan_dat,
-      list(nDays_GQ=info$nDays_GQ,
-           nHours_GQ=info$nHours_GQ,
-           day_hour_GQ=readRDS(glue("{dat_dir}day_hour_GQ.rds"))[dates_GQ,],
-           IP_mx_GQ=readRDS(glue("{dat_dir}IP_mx_GQ.rds"))[,hours_GQ,],
-           attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx_GQ.rds"))[,hours_GQ,],
-           surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx_GQ.rds"))[,dates_GQ,],
-           temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx_GQ.rds"))[dates_GQ,],
-           nFish_mx_GQ=readRDS(glue("{dat_dir}nFish_mx_GQ.rds"))[dates_GQ,],
-           treatDays_GQ=readRDS(glue("{dat_dir}treatDays_mx_GQ.rds"))[dates_GQ,],
-           sample_i_GQ=readRDS(glue("{dat_dir}sampledDays_GQ.rds")),
-           nFishSampled_mx_GQ=t(readRDS(glue("{dat_dir}nFishSampled_mx_GQ.rds"))[dates_GQ,])
-           ))
-    stan_dat$nSamples_GQ <- nrow(stan_dat$sample_i_GQ)
-    stan_dat$sample_ii_GQ <- stan_dat$sample_i_GQ |>
-      as_tibble() |>
-      mutate(index=row_number()) |>
-      group_by(sepaSite) |>
-      summarise(start=min(index),
-                end=max(index)) |>
-      select(-sepaSite) |>
-      as.matrix()
-  } else {
+  if(is.null(GQ_start)) {
     stan_dat <- c(
       stan_dat,
       list(nDays_GQ=1,
@@ -132,6 +120,34 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_new=FALSE, p
            sample_ii_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=2),
            nFishSampled_mx_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=1)
       ))
+  } else {
+    stan_dat <- c(
+      stan_dat,
+      list(nDays_GQ=info$nDays_GQ,
+           nHours_GQ=info$nHours_GQ,
+           day_hour_GQ=readRDS(glue("{dat_dir}day_hour.rds"))[dates_GQ,],
+           IP_mx_GQ=readRDS(glue("{dat_dir}IP_mx.rds"))[,hours_GQ,],
+           attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours_GQ,],
+           surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates_GQ,],
+           temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates_GQ,],
+           nFish_mx_GQ=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates_GQ,],
+           treatDays_GQ=readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates_GQ,],
+           sample_i_GQ=readRDS(glue("{dat_dir}sampledDays.rds")) |>
+             as_tibble() |>
+             filter(day %in% dates_GQ) |>
+             mutate(day=day - info$nDays) |>
+             as.matrix(),
+           nFishSampled_mx_GQ=t(readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates_GQ,])
+      ))
+    stan_dat$nSamples_GQ <- nrow(stan_dat$sample_i_GQ)
+    stan_dat$sample_ii_GQ <- stan_dat$sample_i_GQ |>
+      as_tibble() |>
+      mutate(index=row_number()) |>
+      group_by(sepaSite) |>
+      summarise(start=min(index),
+                end=max(index)) |>
+      select(-sepaSite) |>
+      as.matrix()
   }
 
   return(list(dat=stan_dat, params=params))
