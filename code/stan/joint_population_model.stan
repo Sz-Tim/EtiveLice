@@ -116,7 +116,7 @@ data {
 }
 
 transformed data {
-  array[nStages, nSamples] int y2_F; // sparse: observations only
+  array[nStages, nSamples] int y_F_sparse; // sparse: observations only
   array[nFarms] matrix[nDays, 2] temp_X; // reshape and add intercept 1's
   matrix[nStages+2, nStages+2] zero_matrix_stages_stages = rep_matrix(0, nStages+2, nStages+2);
   array[nFarms, nDays] matrix[nStages+2, nStages+2] trans_mx_init; // initial 0's
@@ -151,7 +151,7 @@ transformed data {
   fishScale = fishPresent ./ nFishNoZero_mx;
   for(sample in 1:nSamples) {
     for(stage in 1:nStages) {
-      y2_F[stage, sample] = y_F[stage, sample_i[sample, 2], sample_i[sample, 1]];
+      y_F_sparse[stage, sample] = y_F[stage, sample_i[sample, 2], sample_i[sample, 1]];
     }
   }
 
@@ -300,7 +300,7 @@ transformed parameters {
 model {
   if(sample_prior_only==0) {
     for(stage in 1:nStages) {
-      target += neg_binomial_2_lpmf(y2_F[stage] | y_bar[stage], nb_prec);
+      target += neg_binomial_2_lpmf(y_F_sparse[stage] | y_bar[stage], nb_prec);
     }
   }
   target += lprior;
