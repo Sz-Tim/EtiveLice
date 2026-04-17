@@ -143,6 +143,102 @@ scatter_post_mean_plot <- function(df) {
 
 
 
+take_mu_draws <- function(out_full_df, f_mu_true=NULL, dat, ndraws=100, GQ=T) {
+  draws <- sample.int(max(out_full_df$.draw), ndraws)
+  if(GQ) {
+    mu_ii <- (1:dat$nDays_GQ)+dat$nDays
+  } else {
+    mu_ii <- 1:dat$nDays
+  }
+  mu_true_df <- expand_grid(farm=as.character(1:dat$nFarms),
+                            day=1:ifelse(GQ, dat$nDays_GQ, dat$nDays),
+                            stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
+    mutate(mu=c(readRDS(f_mu_true)[,1,mu_ii,])) |>
+    mutate(type="True")
+  mu_draws_df <- out_full_df |>
+    filter(.draw %in% draws & grepl(ifelse(GQ, "mu_GQ", "mu(?!_GQ)"), name, perl=T)) |>
+    separate_wider_delim(name, delim=",", names=c("farm", "stage5", "day")) |>
+    mutate(farm=str_sub(farm, ifelse(GQ, 7, 4), -1),
+           day=as.numeric(str_sub(day, 1, -2)),
+           stage=case_when(stage5 %in% 1:2 ~ "Ch",
+                           stage5 %in% 3:4 ~ "PA",
+                           stage5 == 5 ~ "Ad"),
+           stage=factor(stage, levels=c("Ch", "PA", "Ad"))) |>
+    group_by(.chain, .iteration, .draw, farm, stage, day) |>
+    summarise(value=sum(value)) |>
+    ungroup() |>
+    mutate(type="Fitted",
+           value=pmax(value, 0)) |>
+    rename(mu=value) |>
+    bind_rows(mu_true_df) |>
+    mutate(day=ymd("2023-01-01") + ifelse(GQ, dat$nDays, 0) + day - 1,
+           farm=paste("Farm", farm))
+}
+
+
+
+calc_mu_metrics <- function(mu_draws_df, lice_thresh) {
+  mu_true <- mu_draws_df |>
+    filter(is.na(.draw)) |>
+    select(farm, stage, day, mu) |>
+    rename(mu_true=mu)
+  mu_draw_metrics <- mu_draws_df |>
+    filter(!is.na(.draw)) |>
+    filter(stage=="Ad") |>
+    left_join(mu_true, by=join_by(farm, stage, day)) |>
+    group_by(.draw) |>
+    summarise(TP=sum(mu_true > lice_thresh & mu > lice_thresh),
+              TN=sum(mu_true < lice_thresh & mu < lice_thresh),
+              FP=sum(mu_true < lice_thresh & mu > lice_thresh),
+              FN=sum(mu_true > lice_thresh & mu < lice_thresh),
+              N=n()) |>
+    mutate(accuracy=(TP+TN)/(TP+TN+FP+FN),
+           PPV=TP/(TP+FP),
+           NPV=TN/(TN+FN),
+           TPR=TP/(TP+FN),
+           TNR=TN/(TN+FP),
+           S=(TP+FN)/N,
+           P=(TP+FP)/N,
+           F1=(2*PPV*TPR)/(PPV+TPR),
+           MCC=(TP/N - S*P)/sqrt(P*S*(1-S)*(1-P)),
+           TSS=(TP*TN - FP*FN)/((TP+FN)*(TN+FP)),
+           accBal=(TPR+TNR)/2) |>
+    ungroup() |>
+    select(-S, -P, -N)
+
+  mu_draw_metrics_wk <- mu_draws_df |>
+    filter(!is.na(.draw)) |>
+    filter(stage=="Ad") |>
+    left_join(mu_true, by=join_by(farm, stage, day)) |>
+    mutate(wk=floor_date(day, "week")) |>
+    group_by(.draw, farm, stage, wk) |>
+    summarise(mu=max(mu), mu_true=max(mu_true)) |>
+    group_by(.draw) |>
+    summarise(TP=sum(mu_true > lice_thresh & mu > lice_thresh),
+              TN=sum(mu_true < lice_thresh & mu < lice_thresh),
+              FP=sum(mu_true < lice_thresh & mu > lice_thresh),
+              FN=sum(mu_true > lice_thresh & mu < lice_thresh),
+              N=n()) |>
+    mutate(accuracy=(TP+TN)/(TP+TN+FP+FN),
+           PPV=TP/(TP+FP),
+           NPV=TN/(TN+FN),
+           TPR=TP/(TP+FN),
+           TNR=TN/(TN+FP),
+           S=(TP+FN)/N,
+           P=(TP+FP)/N,
+           F1=(2*PPV*TPR)/(PPV+TPR),
+           MCC=(TP/N - S*P)/sqrt(P*S*(1-S)*(1-P)),
+           TSS=(TP*TN - FP*FN)/((TP+FN)*(TN+FP)),
+           accBal=(TPR+TNR)/2) |>
+    ungroup() |>
+    select(-S, -P, -N)
+  return(list(daily=mu_draw_metrics,
+              weekly=mu_draw_metrics_wk))
+}
+
+
+
+
 pivot_spp <- function(df, spp_names=c("Lernaeocera_branchialis",
                                       "Lepeophtheirus_salmonis",
                                       "Caligus_elongatus"),

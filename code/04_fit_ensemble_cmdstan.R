@@ -18,8 +18,8 @@ fread <- data.table::fread
 dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
-prior_only <- T
-keep_licePreds <- T
+prior_only <- F
+keep_licePreds <- F
 refit <- F
 n_parallel <- 4
 
@@ -76,7 +76,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
     dat_full_df <- fread(glue("{sim_dir}stan_params{ifelse(prior_only, '_PRIORS', '')}.csv")) |>
       as_tibble()
   } else {
-    stan_dat <- make_stan_data(sim_dir, priors_only=prior_only)
+    stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2024-07-01")
 
     # IEM: full model pop -----------------------------------------------------
 
@@ -92,6 +92,9 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
       keep <- c(keep_pars, "mu")
     } else {
       keep <- keep_pars
+    }
+    if(stan_dat$dat$GQ_new) {
+      keep <- c(keep, "mu_GQ")
     }
     out_full_df <- fit_full$draws(
       variables=keep,
@@ -125,163 +128,77 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
               stan_dat$params$treat_efficacy)
     )
     write_csv(dat_full_df, glue("{sim_dir}stan_params{ifelse(prior_only, '_PRIORS', '')}.csv"))
-
   }
 
   info <- readRDS(glue("{sim_dir}info.rds"))
-
-  ensWts_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                   ~.x |> filter(grepl("ensWts", name)) |>
-                     inner_join(param_key, by=join_by(name)))
-  p_ensWts <- post_summary_plot(ensWts_ls, scales="free_y", ncol=10) +
+  p_ensWts <- list(out_full_df, out_full_sum, dat_full_df) |>
+    map(~.x |> filter(grepl("ensWts", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(scales="free_y", ncol=if_else(info$nSims > 10, 10, 5)) +
     xlim(0, 1)
-
-  attach_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                   ~.x |> filter(grepl("attach_beta", name)) |>
-                     inner_join(param_key, by=join_by(name)))
-  p_attach <- post_summary_plot(attach_ls, scales="free") +
+  p_attach <- list(out_full_df, out_full_sum, dat_full_df) |>
+    map(~.x |> filter(grepl("attach_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(scales="free") +
     geom_vline(xintercept=0, linetype=3)
-
-  surv_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                 ~.x |> filter(grepl("surv_beta", name)) |>
-                   inner_join(param_key, by=join_by(name)))
-  p_surv <- post_summary_plot(surv_ls, ncol=3, scales="free") +
+  p_surv <- list(out_full_df, out_full_sum, dat_full_df) |>
+    map(~.x |> filter(grepl("surv_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(ncol=3, scales="free") +
     geom_vline(xintercept=0, linetype=3)
-
-  surv_sd_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                 ~.x |> filter(grepl("surv_int_farm_sd", name)) |>
-                   inner_join(param_key, by=join_by(name)))
-  p_surv_sd <- post_summary_plot(surv_sd_ls, ncol=3, scales="free") +
+  p_surv_sd <- list(out_full_df, out_full_sum, dat_full_df) |>
+    map(~.x |> filter(grepl("surv_int_farm_sd", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(ncol=3, scales="free") +
     geom_vline(xintercept=0, linetype=3)
-
-  # pMoltInt_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-  #                    ~.x |> filter(grepl("mnDaysStage_beta\\[1", name)) |>
-  #                      inner_join(param_key, by=join_by(name)))
-  # p_pMoltInt <- post_summary_plot(pMoltInt_ls, ncol=2, scales="free_y") +
-  #   geom_vline(xintercept=0, linetype=3)
-  #
-  # pMoltTemp_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-  #                     ~.x |> filter(grepl("mnDaysStage_beta\\[2", name)) |>
-  #                       inner_join(param_key, by=join_by(name)))
-  # p_pMoltTemp <- post_summary_plot(pMoltTemp_ls, ncol=2, scales="free_y") +
-  #   geom_vline(xintercept=0, linetype=3)
-
-  pMoltTemp_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                      ~.x |> filter(grepl("mnDaysStage_beta", name)) |>
-                        inner_join(param_key, by=join_by(name)))
-  p_pMoltTemp <- post_summary_plot(pMoltTemp_ls, ncol=4, scales="free_y") +
+  p_pMoltTemp <- list(out_full_df, out_full_sum, dat_full_df) |>
+    map(~.x |> filter(grepl("mnDaysStage_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(ncol=4, scales="free_y") +
     geom_vline(xintercept=0, linetype=3)
-
-  detectp_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                    ~.x |> filter(grepl("detect_p", name)) |>
-                      inner_join(param_key, by=join_by(name)))
-  p_detectp <- post_summary_plot(detectp_ls, scales="free_y") +
+  p_detectp <- list(out_full_df, out_full_sum, dat_full_df) |>
+    map(~.x |> filter(grepl("detect_p", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(scales="free_y") +
     xlim(0, 1)
-
-  else_ls <- map(list(out_full_df, out_full_sum, dat_full_df),
-                 ~.x |> filter(grepl("IP_bg|nb_prec|IP_halfSat|treat", name)) |>
-                   inner_join(param_key, by=join_by(name)))
-  p_else <- post_summary_plot(else_ls, ncol=5, scales="free")
+  p_else <- list(out_full_df, out_full_sum, dat_full_df) |>
+    map(~.x |> filter(grepl("IP_bg|nb_prec|IP_halfSat|treat", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(ncol=5, scales="free")
 
   p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_pMoltTemp, p_detectp, p_else,
             nrow=7, align="hv", axis="trbl", rel_heights=c(2, 1, 2, 1, 1, 1, 1))
   ggsave(glue("{sim_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=12)
 
-  if(keep_licePreds) {
-    draws <- sample.int(max(out_full_df$.draw), 100)
-    mu_draws_df <- out_full_df |>
-      filter(.draw %in% draws & grepl("mu", name)) |>
-      separate_wider_delim(name, delim=",", names=c("farm", "stage5", "day")) |>
-      mutate(farm=str_sub(farm, 4, -1),
-             day=as.numeric(str_sub(day, 1, -2)),
-             stage=case_when(stage5 %in% 1:2 ~ "Ch",
-                             stage5 %in% 3:4 ~ "PA",
-                             stage5 == 5 ~ "Ad"),
-             stage=factor(stage, levels=c("Ch", "PA", "Ad"))) |>
-      group_by(.chain, .iteration, .draw, farm, stage, day) |>
-      summarise(value=sum(value)) |>
-      ungroup() |>
-      mutate(type="Fitted",
-             value=pmax(value, 0)) |>
-      rename(mu=value) |>
-      bind_rows(expand_grid(farm=as.character(1:info$nFarms),
-                            day=1:info$nDays,
-                            stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
-                  mutate(mu=c(readRDS(glue("{sim_dir}/mu.rds"))[,1,,])) |>
-                  mutate(type="True")) |>
-      mutate(day=ymd("2023-01-01") + day - 1,
-             farm=paste("Farm", farm))
+  if(any(grepl("GQ", keep))) {
+    mu_draws_df <- take_mu_draws(out_full_df, glue("{sim_dir}/mu.rds"),
+                                 stan_dat$dat, ndraws=min(1e2, iter), GQ=TRUE)
+
+    mu_metrics <- calc_mu_metrics(mu_draws_df, lice_thresh=0.5)
+    write_csv(mu_metrics$daily, glue("{sim_dir}/mu_GQ_metrics_daily{ifelse(prior_only, '_PRIORS', '')}.csv"))
+    write_csv(mu_metrics$weekly, glue("{sim_dir}/mu_GQ_metrics_weekly{ifelse(prior_only, '_PRIORS', '')}.csv"))
     p <- mu_draws_df |>
       filter(stage=="Ad") |>
       ggplot(aes(day, mu, group=as.character(.draw), colour=type, alpha=type)) +
       geom_line() +
       scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
       scale_alpha_manual("", values=c("True"=1, "Fitted"=0.1)) +
-      labs(x="Date", y="Mean lice per fish (latent) [50% CI]") +
+      labs(x="Date", y="Mean lice per fish (latent)") +
+      {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
+      scale_x_date(date_labels="%b") +
+      facet_grid(farm~., scales="free_y")
+    ggsave(glue("{sim_dir}/fig_mu_draws_GQ{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
+  }
+  if(keep_licePreds) {
+    mu_draws_df <- take_mu_draws(out_full_df, glue("{sim_dir}/mu.rds"),
+                                 stan_dat$dat, ndraws=min(1e2, iter), GQ=F)
+    mu_metrics <- calc_mu_metrics(mu_draws_df, lice_thresh=0.5)
+    write_csv(mu_metrics$daily, glue("{sim_dir}/mu_fitted_metrics_daily{ifelse(prior_only, '_PRIORS', '')}.csv"))
+    write_csv(mu_metrics$daily, glue("{sim_dir}/mu_fitted_metrics_weekly{ifelse(prior_only, '_PRIORS', '')}.csv"))
+    p <- mu_draws_df |>
+      filter(stage=="Ad") |>
+      ggplot(aes(day, mu, group=as.character(.draw), colour=type, alpha=type)) +
+      geom_line() +
+      scale_colour_manual("", values=c("True"="blue", "Fitted"="black")) +
+      scale_alpha_manual("", values=c("True"=1, "Fitted"=0.1)) +
+      labs(x="Date", y="Mean lice per fish (latent)") +
       {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
       scale_x_date(date_labels="%b") +
       facet_grid(farm~., scales="free_y")
     ggsave(glue("{sim_dir}/fig_mu_draws{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
-
-    lice_thresh <- 0.5
-    mu_true <- mu_draws_df |>
-      filter(is.na(.draw)) |>
-      select(farm, stage, day, mu) |>
-      rename(mu_true=mu)
-    mu_draw_metrics <- mu_draws_df |>
-      filter(!is.na(.draw)) |>
-      filter(stage=="Ad") |>
-      left_join(mu_true, by=join_by(farm, stage, day)) |>
-      group_by(.draw) |>
-      summarise(TP=sum(mu_true > lice_thresh & mu > lice_thresh),
-                TN=sum(mu_true < lice_thresh & mu < lice_thresh),
-                FP=sum(mu_true < lice_thresh & mu > lice_thresh),
-                FN=sum(mu_true > lice_thresh & mu < lice_thresh),
-                N=n()) |>
-      mutate(accuracy=(TP+TN)/(TP+TN+FP+FN),
-             PPV=TP/(TP+FP),
-             NPV=TN/(TN+FN),
-             TPR=TP/(TP+FN),
-             TNR=TN/(TN+FP),
-             S=(TP+FN)/N,
-             P=(TP+FP)/N,
-             F1=(2*PPV*TPR)/(PPV+TPR),
-             MCC=(TP/N - S*P)/sqrt(P*S*(1-S)*(1-P)),
-             TSS=(TP*TN - FP*FN)/((TP+FN)*(TN+FP)),
-             accBal=(TPR+TNR)/2) |>
-      ungroup() |>
-      select(-S, -P, -N)
-
-    mu_draw_metrics_wk <- mu_draws_df |>
-      filter(!is.na(.draw)) |>
-      filter(stage=="Ad") |>
-      left_join(mu_true, by=join_by(farm, stage, day)) |>
-      mutate(wk=floor_date(day, "week")) |>
-      group_by(.draw, farm, stage, wk) |>
-      summarise(mu=max(mu), mu_true=max(mu_true)) |>
-      group_by(.draw) |>
-      summarise(TP=sum(mu_true > lice_thresh & mu > lice_thresh),
-                TN=sum(mu_true < lice_thresh & mu < lice_thresh),
-                FP=sum(mu_true < lice_thresh & mu > lice_thresh),
-                FN=sum(mu_true > lice_thresh & mu < lice_thresh),
-                N=n()) |>
-      mutate(accuracy=(TP+TN)/(TP+TN+FP+FN),
-             PPV=TP/(TP+FP),
-             NPV=TN/(TN+FN),
-             TPR=TP/(TP+FN),
-             TNR=TN/(TN+FP),
-             S=(TP+FN)/N,
-             P=(TP+FP)/N,
-             F1=(2*PPV*TPR)/(PPV+TPR),
-             MCC=(TP/N - S*P)/sqrt(P*S*(1-S)*(1-P)),
-             TSS=(TP*TN - FP*FN)/((TP+FN)*(TN+FP)),
-             accBal=(TPR+TNR)/2) |>
-      ungroup() |>
-      select(-S, -P, -N)
-
-    write_csv(mu_draw_metrics, glue("{sim_dir}/mu_fitted_metrics_daily{ifelse(prior_only, '_PRIORS', '')}.csv"))
-    write_csv(mu_draw_metrics_wk, glue("{sim_dir}/mu_fitted_metrics_weekly{ifelse(prior_only, '_PRIORS', '')}.csv"))
-
 
     if("y_pred" %in% keep_pars) {
       sampledDays <- readRDS(glue("{sim_dir}/sampledDays.rds")) |>
