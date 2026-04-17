@@ -41,21 +41,23 @@ functions {
     array[nStages] row_vector[nSamples] y_bar;
     for(farm in 1:nFarms) {
       array[2] int farmInd = sample_ii[farm, ];
-      // Chalimus: (mu[Ch1] + mu[Ch2]) * nFishSampled * pDet[Ch]
-      y_bar[1, farmInd[1]:farmInd[2]] =
-        ones_row_vector(2) * mu[farm, 1:2, sample_i[farmInd[1]:farmInd[2], 2]] .*
-        nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
-        detect_p[1] + y_bar_minimum;
-      // Pre-adult: (mu[PA1] + mu[PA2]) * nFishSampled * pDet[PA]
-      y_bar[2, farmInd[1]:farmInd[2]] =
-        ones_row_vector(2) * mu[farm, 3:4, sample_i[farmInd[1]:farmInd[2], 2]] .*
-        nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
-        detect_p[2] + y_bar_minimum;
-      // Adult: mu[Ad] * nFishSampled * pDet[Ad]
-      y_bar[3, farmInd[1]:farmInd[2]] =
-        mu[farm, 5, sample_i[farmInd[1]:farmInd[2], 2]] .*
-        nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
-        detect_p[3] + y_bar_minimum;
+      if(farmInd[1] > 0 && farmInd[2] > 0) {
+        // Chalimus: (mu[Ch1] + mu[Ch2]) * nFishSampled * pDet[Ch]
+        y_bar[1, farmInd[1]:farmInd[2]] =
+          ones_row_vector(2) * mu[farm, 1:2, sample_i[farmInd[1]:farmInd[2], 2]] .*
+          nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
+          detect_p[1] + y_bar_minimum;
+        // Pre-adult: (mu[PA1] + mu[PA2]) * nFishSampled * pDet[PA]
+        y_bar[2, farmInd[1]:farmInd[2]] =
+          ones_row_vector(2) * mu[farm, 3:4, sample_i[farmInd[1]:farmInd[2], 2]] .*
+          nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
+          detect_p[2] + y_bar_minimum;
+        // Adult: mu[Ad] * nFishSampled * pDet[Ad]
+        y_bar[3, farmInd[1]:farmInd[2]] =
+          mu[farm, 5, sample_i[farmInd[1]:farmInd[2], 2]] .*
+          nFishSampled_mx[farm, sample_i[farmInd[1]:farmInd[2], 2]] *
+          detect_p[3] + y_bar_minimum;
+      }
     }
     return(y_bar);
   }

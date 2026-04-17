@@ -83,14 +83,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
   )
   # reformat sample info for Stan
   stan_dat$nSamples <- nrow(stan_dat$sample_i)
-  stan_dat$sample_ii <- stan_dat$sample_i |>
-    as_tibble() |>
-    mutate(index=row_number()) |>
-    group_by(sepaSite) |>
-    summarise(start=min(index),
-              end=max(index)) |>
-    select(-sepaSite) |>
-    as.matrix()
+  stan_dat$sample_ii <- make_sample_ii(stan_dat$sample_i, info$nFarms)
   # update any priors specified in prior_ls argument
   if(!is.null(prior_ls)) {
     for(i in 1:length(prior_ls)) {
@@ -125,7 +118,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
       stan_dat,
       list(nDays_GQ=info$nDays_GQ,
            nHours_GQ=info$nHours_GQ,
-           day_hour_GQ=readRDS(glue("{dat_dir}day_hour.rds"))[dates_GQ,],
+           day_hour_GQ=readRDS(glue("{dat_dir}day_hour.rds"))[dates_GQ,] - info$nHours,
            IP_mx_GQ=readRDS(glue("{dat_dir}IP_mx.rds"))[,hours_GQ,],
            attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours_GQ,],
            surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates_GQ,],
@@ -140,19 +133,28 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            nFishSampled_mx_GQ=t(readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates_GQ,])
       ))
     stan_dat$nSamples_GQ <- nrow(stan_dat$sample_i_GQ)
-    stan_dat$sample_ii_GQ <- stan_dat$sample_i_GQ |>
-      as_tibble() |>
-      mutate(index=row_number()) |>
-      group_by(sepaSite) |>
-      summarise(start=min(index),
-                end=max(index)) |>
-      select(-sepaSite) |>
-      as.matrix()
+    stan_dat$sample_ii_GQ <- make_sample_ii(stan_dat$sample_i_GQ, info$nFarms)
   }
 
   return(list(dat=stan_dat, params=params))
 }
 
+
+
+
+make_sample_ii <- function(sample_i, nFarms) {
+  sample_i |>
+    as_tibble() |>
+    mutate(index=row_number()) |>
+    group_by(sepaSite) |>
+    summarise(start=min(index),
+              end=max(index)) |>
+    full_join(tibble(sepaSite=1:nFarms), by=join_by(sepaSite)) |>
+    replace_na(list(start=0, end=0)) |>
+    arrange(sepaSite) |>
+    select(-sepaSite) |>
+    as.matrix()
+}
 
 
 
