@@ -179,6 +179,9 @@ transformed data {
 }
 
 parameters {
+  // NB: Prior mean and sd are applied using fma(param_z, prior_sd, prior_mean)
+  // with param_z ~ Norm(0, 1), solely for more efficient execution in Stan.
+  // This is equivalent to param ~ N(prior_mean, prior_sd)
   real<lower=0> IP_bg_m3; // background infection pressure per m3
   vector[nSims] ensWts_p_uc;  // unconstrained mixture proportions
   vector[nAttachCov-1] attach_beta_z; // p(attach) [Int, RW_logit, sal_z, temp_z, uv_z]
@@ -233,11 +236,11 @@ transformed parameters {
       surv_beta_farm[farm,1,] = surv_beta[1,] + surv_int_farm_z[farm,] .* surv_int_farm_sd;
       surv_beta_farm[farm,2,] = surv_beta[2,];
   }
-  for(i in 1:(nStages-1)) {
+  for(i in 1:2) {
     for(stage in 1:(nStages-1)) {
       mnDaysStage_beta[i,stage] = fma(mnDaysStage_beta_z[i,stage],
                                       prior_mnDaysStage_F[i,stage,2],
-                                      prior_mnDaysStage_F[i,stage,1]/2);
+                                      prior_mnDaysStage_F[i,stage,1]);
     }
   }
   for(stage in 1:(nStages-1)) {
