@@ -172,18 +172,17 @@ plan(sequential)
 # process output ----------------------------------------------------------
 
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
-farms_linnhe <- read_csv(glue("{dirs$proj}/data/farm_sites_2023.csv"))
-farms_GSA <- read_csv(glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"))
+farms_GSA <- read_csv(glue("{dirs$proj}/data/farm_sites_GSA_2024-2025.csv"))
 farms_etive <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
 
 # Influx
 mesh_fp <- st_read(glue("{dirs$mesh}/WeStCOMS2_meshFootprint.gpkg"))
 # sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
-sim_dirs <- dirrf(dirs$out, "pstepsImmature_20231231") |> dirname() |> dirname()
+sim_dirs <- dirrf(dirs$out, "pstepsImmature_20251231") |> dirname() |> dirname()
 c_0_5_summary <- c_5_15_summary <- c_15_30_summary <- c_0_30_summary <- vector("list", length(sim_dirs))
 c_0_5_farm <- c_5_15_farm <- c_15_30_farm <- c_0_30_farm <- vector("list", length(sim_dirs))
 
-cores <- 40
+cores <- 10
 for(i in 1:length(sim_dirs)) {
   f_0_5 <- dirrf(sim_dirs[i], "connectivity_0.0-5.0.*csv")
   f_5_15 <- dirrf(sim_dirs[i], "connectivity_5.0-15.0.*csv")
@@ -224,8 +223,8 @@ for(i in 1:length(sim_dirs)) {
   }
   if(length(f_0_5) > 0 | length(f_5_15) > 0 | length(f_15_30) > 0) {
     c_0_30_i <- bind_rows(c_0_5_i, c_5_15_i, c_15_30_i) |>
-      group_by(source, destination, sim, date) |>
-      summarise(value=sum(value))
+      summarise(value=sum(value),
+                .by=c(source, destination, sim, date))
     c_0_30_i_daily <- calc_daily_fluxes(c_0_30_i, site_areas)
     c_0_30_summary[[i]] <- c_0_30_i_daily |> calc_sensitivity_outcomes(sim)
     c_0_30_farm[[i]] <- c_0_30_i_daily |>
@@ -745,7 +744,7 @@ importance_df |>
   theme(panel.grid.major.y=element_line(colour="grey90"))
 
 importance_df |>
-  mutate(param=factor(param_pretty, levels=importance_avg$param_pretty)) |>
+  # mutate(param=factor(param_pretty, levels=importance_avg$param_pretty)) |>
   ggplot(aes(`%IncMSE`, param, fill=season)) +
   geom_boxplot() +
   facet_grid(depth~type) +
@@ -810,6 +809,7 @@ importance_15_30_df |>
   theme(panel.grid.major.y=element_line(colour="grey90"))
 
 
+# DALEX -------------------------------------------------------------------
 
 
 library(DALEX)
@@ -820,44 +820,87 @@ explainers <- map(1:length(rf_0_30_ls$rf),
                            y=rf_0_30_ls$exp$y_valid[[.x]]))
 LDs <- map(explainers[grep("influx_m2", outcome_names)],
             ~conditional_dependence(.x))
-map_dfr(seq_along(LDs),
+p <- map_dfr(seq_along(LDs),
         ~LDs[[.x]] |>
           mutate(id=.x,
                  outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
   mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
                           grepl("JJA", outcome) ~ "JJA",
                           grepl("SON", outcome) ~ "SON",
-                          .default="all")) |>
+                          .default="all"),
+         metric=if_else(grepl("md", outcome), "median", "mean")) |>
   mutate(x=case_when(`_vname_` %in% logCols ~ exp(`_x_`),
                      `_vname_` %in% rtCols ~ (`_x_`)^2,
                      .default=`_x_`)) |>
-  ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
-  geom_line(alpha=0.5) +
+  filter(! (
+    (`_vname_` %in% c("eggTemp_fn", "swimColdNauplius", "mortSal_fn",
+                      "passiveSinkRateSal", "variableDh", "variableDhV") &
+       ! x %in% c(0, 1))
+  )) |>
+  ggplot(aes(x, `_yhat_`, group=id, colour=season, linetype=metric)) +
+  # ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
+  geom_line() +
   scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
   facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+ggsave("figs/sens/dalex/LDs.png", p, width=18, height=8)
+
+PDs <- map(explainers[grep("influx_m2", outcome_names)],
+           ~partial_dependence(.x))
+p <- map_dfr(seq_along(PDs),
+        ~PDs[[.x]] |>
+          mutate(id=.x,
+                 outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
+  mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                          grepl("JJA", outcome) ~ "JJA",
+                          grepl("SON", outcome) ~ "SON",
+                          .default="all"),
+         metric=if_else(grepl("md", outcome), "median", "mean")) |>
+  mutate(x=case_when(`_vname_` %in% logCols ~ exp(`_x_`),
+                     `_vname_` %in% rtCols ~ (`_x_`)^2,
+                     .default=`_x_`)) |>
+  filter(! (
+    (`_vname_` %in% c("eggTemp_fn", "swimColdNauplius", "mortSal_fn",
+                      "passiveSinkRateSal", "variableDh", "variableDhV") &
+       ! x %in% c(0, 1))
+  )) |>
+  ggplot(aes(x, `_yhat_`, group=id, colour=season, linetype=metric)) +
+  # ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
+  geom_line() +
+  scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
+  facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+ggsave("figs/sens/dalex/PDs.png", p, width=18, height=8)
+
 
 ALEs <- map(explainers[grep("influx_m2", outcome_names)],
             ~accumulated_dependence(.x))
-map_dfr(seq_along(ALEs),
+p <- map_dfr(seq_along(ALEs),
         ~ALEs[[.x]] |>
           mutate(id=.x,
                  outcome=outcome_names[grep("influx_m2", outcome_names)][.x])) |>
   mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
                           grepl("JJA", outcome) ~ "JJA",
                           grepl("SON", outcome) ~ "SON",
-                          .default="all")) |>
+                          .default="all"),
+         metric=if_else(grepl("md", outcome), "median", "mean")) |>
   mutate(x=case_when(`_vname_` %in% logCols ~ exp(`_x_`),
                      `_vname_` %in% rtCols ~ (`_x_`)^2,
                      .default=`_x_`)) |>
-  ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
+  filter(! (
+    (`_vname_` %in% c("eggTemp_fn", "swimColdNauplius", "mortSal_fn",
+                            "passiveSinkRateSal", "variableDh", "variableDhV") &
+       ! x %in% c(0, 1))
+    )) |>
+  ggplot(aes(x, `_yhat_`, group=id, colour=season, linetype=metric)) +
+  # ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
   geom_hline(yintercept=0, linetype=3) +
-  geom_line(alpha=0.5) +
+  geom_line() +
   scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
   facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+ggsave("figs/sens/dalex/ALEs.png", p, width=18, height=8)
 
 FIs <- map(explainers[grep("influx_m2", outcome_names)],
            ~feature_importance(.x))
-map_dfr(seq_along(FIs),
+p <- map_dfr(seq_along(FIs),
         ~FIs[[.x]] |>
           as_tibble() |>
           group_by(permutation) |>
@@ -871,8 +914,9 @@ map_dfr(seq_along(FIs),
                           grepl("JJA", outcome) ~ "JJA",
                           grepl("SON", outcome) ~ "SON",
                           .default="all"),
-         metric=if_else(grepl("_mn", outcome), "mean", "median")) |>
-  filter(! variable %in% c("_baseline_", "_full_model_", "variableDh", "variableDhV")) |>
+         metric=if_else(grepl("md", outcome), "median", "mean")) |>
+  filter(! variable %in% c("_baseline_", "_full_model_")) |>
+  # filter(! variable %in% c("variableDh", "variableDhV")) |>
   group_by(variable) |>
   mutate(grand_mean=mean(mean_dropout_loss)) |>
   ungroup() |>
@@ -885,18 +929,19 @@ map_dfr(seq_along(FIs),
   scale_colour_manual(values=c("grey", viridis::turbo(3, begin=0.3, end=0.9))) +
   facet_grid(.~metric) +
   theme(panel.grid.major.y=element_line(colour="grey90", linewidth=0.15))
+ggsave("figs/sens/dalex/FIs.png", p, width=8, height=8)
 
 # maps --------------------------------------------------------------------
 
 farms_GSA <- read_csv(glue("{dirs$proj}/data/farm_sites_GSA_2023-2024.csv"))
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
-mesh_fp <- st_read(glue("{dirs$mesh}/WeStCOMS2_meshFootprint.gpkg"))
-mesh_sf <- st_read(glue("{dirs$mesh}/WeStCOMS2_mesh.gpkg"))
+mesh_fp <- st_read(glue("{dirs$mesh}/WeStCOMS3_mesh_footprint.gpkg"))
+mesh_sf <- st_read(glue("{dirs$mesh}/WeStCOMS3_mesh.gpkg"))
 farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
 linnhe_fp <- mesh_fp |> st_crop(unlist(farm_bbox))
 linnhe_sf <- mesh_sf |> st_crop(unlist(farm_bbox))
-sim_dirs <- dirrf(dirs$out, "siteConditions_20231231") |>
-  str_remove("/siteConditions_20231231_8760.csv")
+# sim_dirs <- dirrf(dirs$out, "siteConditions_20251231") |>
+#   str_remove("/siteConditions_20251231_8760.csv")
 
 ip_ls <- vector("list", length(sim_dirs))
 
@@ -1058,7 +1103,7 @@ for(i in seq_along(ip_dates)) {
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/meanIP_N_{date_i_c}.png"), p, width=5, height=5.5)
+  ggsave(glue("figs/sens/maps/meanIP_N_{date_i_c}.png"), p, width=5, height=5.5)
   p <- ip_sum_df |>
     filter(date==date_i) |>
     ggplot() +
@@ -1076,7 +1121,7 @@ for(i in seq_along(ip_dates)) {
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/meanIP_C_{date_i_c}.png"), p, width=5, height=5.5)
+  ggsave(glue("figs/sens/maps/meanIP_C_{date_i_c}.png"), p, width=5, height=5.5)
 
   p <- ip_sum_df |>
     filter(date==date_i) |>
@@ -1095,7 +1140,7 @@ for(i in seq_along(ip_dates)) {
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/contmeanIP_N_{date_i_c}.png"), p, width=5, height=5.5)
+  ggsave(glue("figs/sens/maps/contmeanIP_N_{date_i_c}.png"), p, width=5, height=5.5)
   p <- ip_sum_df |>
     filter(date==date_i) |>
     ggplot() +
@@ -1113,7 +1158,7 @@ for(i in seq_along(ip_dates)) {
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/contmeanIP_C_{date_i_c}.png"), p, width=5, height=5.5)
+  ggsave(glue("figs/sens/maps/contmeanIP_C_{date_i_c}.png"), p, width=5, height=5.5)
 
 
   p <- ip_sum_df |>
@@ -1129,7 +1174,7 @@ for(i in seq_along(ip_dates)) {
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/sdIP_N_{date_i_c}.png"), p,
+  ggsave(glue("figs/sens/maps/sdIP_N_{date_i_c}.png"), p,
          width=5, height=5.5)
   p <- ip_sum_df |>
     filter(date==date_i) |>
@@ -1144,7 +1189,7 @@ for(i in seq_along(ip_dates)) {
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/sdIP_C_{date_i_c}.png"), p, width=5, height=5.5)
+  ggsave(glue("figs/sens/maps/sdIP_C_{date_i_c}.png"), p, width=5, height=5.5)
 
   p <- ip_sum_df |>
     filter(date==date_i) |>
@@ -1162,7 +1207,7 @@ for(i in seq_along(ip_dates)) {
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/logsdIP_N_{date_i_c}.png"), p, width=5, height=5.5)
+  ggsave(glue("figs/sens/maps/logsdIP_N_{date_i_c}.png"), p, width=5, height=5.5)
   p <- ip_sum_df |>
     filter(date==date_i) |>
     ggplot() +
@@ -1179,16 +1224,16 @@ for(i in seq_along(ip_dates)) {
           legend.title.position="top",
           legend.key.width=unit(1.5, "cm"),
           legend.key.height=unit(0.2, "cm"))
-  ggsave(glue("figs/logsdIP_C_{date_i_c}.png"), p, width=5, height=5.5)
+  ggsave(glue("figs/sens/maps/logsdIP_C_{date_i_c}.png"), p, width=5, height=5.5)
 }
 
 
 library(av)
 sets <- c(outer(c("contmeanIP_", "meanIP_", "logsdIP_", "sdIP_"),
-              c("N_", "C_"),
+              c("N_2025", "C_2025"),
               paste0))
 for(i in sets) {
-  dirf("figs/temp/", glue("^{i}.*png")) |>
+  dirf("figs/sens/maps/", glue("^{i}.*png")) |>
     av_encode_video(glue("figs/anim_{i}.mp4"),
                     framerate=2, vfilter="scale=-2:'min(720,ih)'")
 }
