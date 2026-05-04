@@ -137,22 +137,25 @@ if(save_figs) {
 # Fig: 12h samples --------------------------------------------------------
 
 dat_12h_df |>
-  mutate(hour_dec=hour + minute(Start)/60) |>
-  ggplot(aes(Count/m3, Depth)) +
-  geom_point() +
-  geom_path(aes(group=hour_dec, colour=hour_dec)) +
-  scale_colour_viridis_c() +
-  scale_y_reverse() +
-  facet_wrap(~Stage)
-dat_12h_df |>
-  mutate(hour_dec=hour + minute(Start)/60) |>
   pivot_spp() |>
-  ggplot(aes(Count/m3, Depth)) +
-  geom_point() +
-  geom_path(aes(group=hour_dec, colour=hour_dec)) +
-  scale_colour_viridis_c() +
-  scale_y_reverse() +
-  facet_wrap(~Species_clean)
+  bind_rows(dat_12h_df |> filter(Stage=="Nauplii") |> mutate(Species_clean="Nauplii")) |>
+  mutate(Species_clean=factor(Species_clean, levels=spp_levels)) |>
+  mutate(hour_dec=hour + minute(Start)/60) |>
+  ggplot(aes(hour_dec, Depth, fill=Count/m3)) +
+  # geom_tile(height=2, width=0.6, colour=NA, position=position_nudge(x=0.3)) +
+  geom_raster(position=position_nudge(x=0.3)) +
+  scale_fill_viridis_c(expression("Lice "%.%" m"^-3), option="plasma") +
+  scale_y_reverse("Depth (m)", limits=c(21, 0), breaks=c(1, 12, 20), oob=scales::oob_keep) +
+  scale_x_continuous("Hour", minor_breaks=7:18, breaks=7:18) +
+  facet_wrap(~Species_clean, nrow=1) +
+  theme(legend.position="bottom",
+        legend.title.position="top",
+        legend.key.height=unit(0.2, "cm"),
+        legend.key.width=unit(1, "cm"),
+        panel.grid.minor.x=element_line(colour="grey95", linewidth=0.1))
+if(save_figs) {
+  ggsave(paste0(proj_dir, "/figs/field_ms/lice_12h.png"), width=10.5, height=4)
+}
 
 
 
