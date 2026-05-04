@@ -20,10 +20,10 @@ set.seed(1003)
 
 # define parameters -------------------------------------------------------
 
-cores_per_sim <- 30
+cores_per_sim <- 12
 parallel_sims <- 2
 start_date <- "2023-01-01"
-end_date <- "2024-12-31"
+end_date <- "2025-12-31"
 nDays <- length(seq(ymd(start_date), ymd(end_date), by=1))
 
 os <- get_os()
@@ -36,20 +36,20 @@ dirs <- switch(
              jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
              jar="/home/sa04ts/biotracker/biotracker_v2-2-2.jar",
              dat="/home/sa04ts/EtiveLice/data",
-             out=glue("{getwd()}/out/biotracker")),
+             out=glue("{getwd()}/out/jpm")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
                hf0="E:/hydro/etive28/Archive",
                hf1="E:/hydro/WeStCOMS2/Archive",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
-               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-1.jar",
-               dat="E:/EtiveLice/dat",
-               out="E:/EtiveLice/out/biotracker")
+               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-2.jar",
+               dat="E:/EtiveLice/data",
+               out="E:/EtiveLice/out/jpm")
 )
 
-n_sim <- 20
+n_sim <- 10
 post_dir <- glue("{dirs$proj}/data/lit/fit")
-egg_post <- list(constant=read_csv(glue("{post_dir}/egg_temp_constant_post.csv"), show_col_type=F),
+egg_post <- list(constant=read_csv(glue("{post_dir}/egg_temp_constant_post.csv"), show_col_types=F),
                  logistic=read_csv(glue("{post_dir}/egg_temp_logistic_post.csv"), show_col_types=F),
                  linear=read_csv(glue("{post_dir}/egg_temp_linear_post.csv"), show_col_types=F)) |>
   map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
@@ -68,7 +68,6 @@ sim.i <- sample_parameter_distributions(n_sim, dirs$out, "lhs", egg_post, mort_p
          variableDhV="false")
 write_csv(sim.i, glue("{dirs$out}/sim_i.csv"))
 sim_seq <- 1:nrow(sim.i)
-sim_seq <- sim_seq[-c(3:6,8)]
 
 
 # set properties ----------------------------------------------------------
@@ -83,7 +82,7 @@ walk(sim_seq,
        parallelThreadsHD=6,
        start_ymd=as.numeric(str_remove_all(start_date, "-")),
        numberOfDays=nDays,
-       nparts=10,
+       nparts=5,
        releaseInterval=1,
        checkOpenBoundaries="true",
        # meshes and environment
@@ -98,9 +97,9 @@ walk(sim_seq,
        hfDirPrefix1="netcdf_",
        hfFilePrefix1="westcoms2",
        # sites
-       sitefile=glue("{dirs$dat}/pen_sites_linnhe_2023-2024.csv"),
-       sitefileEnd=glue("{dirs$dat}/pen_sites_linnhe_2023-2024.csv"),
-       siteDensityPath=glue("{dirs$dat}/lice_daily_2023-01-01_2024-12-31_05lpf_maxB.csv"),
+       sitefile=glue("{dirs$dat}/pen_sites_widerLinnhe_2023-2025.csv"),
+       sitefileEnd=glue("{dirs$dat}/pen_sites_widerLinnhe_2023-2025.csv"),
+       siteDensityPath=glue("{dirs$dat}/lice_daily_widerLinnhe_2023-01-01_2025-12-31.csv"),
        # dynamics
        variableDh=sim.i$variableDh[.x],
        variableDhV=sim.i$variableDhV[.x],
@@ -140,12 +139,12 @@ walk(sim_seq,
        recordConnectivity="true",
        connectivityInterval=1,
        connectDepth1_min=0,
-       connectDepth1_max=20,
+       connectDepth1_max=30,
        recordPsteps= "false",
        recordVertDistr="false",
-       recordSiteEnv="true",
+       recordSiteEnv=if_else(.x==1, "true", "false"),
        siteEnvInterval=1,
-       siteEnvMaxDepth=20,
+       siteEnvMaxDepth=30,
        recordElemActivity="false"))
 
 
@@ -171,21 +170,19 @@ plan(sequential)
 # process output ----------------------------------------------------------
 
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
-pens_linnhe <- read_csv("data/pen_sites_linnhe_2023-2024.csv")
-pens_etive <- read_csv("data/pen_sites_etive_2023-2024.csv")
-etive_farms <- read_csv("data/pen_sites_etive_2023-2024.csv") |>
-  mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1])
-linnhe_farms <- read_csv("data/pen_sites_linnhe_2023-2024.csv") |>
+pens_linnhe <- read_csv("data/pen_sites_widerLinnhe_2023-2025.csv")
+linnhe_farms <- read_csv("data/pen_sites_widerLinnhe_2023-2025.csv") |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1])
 
-farm_dat <- read_csv("data/lice_biomass_2017-01-01_2024-12-31.csv") |>
+farm_dat <- read_csv("data/lice_biomass_widerLinnhe_2022-01-01_2026-12-31.csv") |>
   filter(between(date, ymd(start_date), ymd(end_date))) |>
+  filter(sepaSite %in% linnhe_farms$sepaSite) |>
   select(sepaSite, date, weeklyAverageAf, actualBiomassOnSiteTonnes, maximumBiomassAllowedTonnes)
 write_csv(farm_dat, "data/sim/inputs/farm_dat.csv")
 
 # Site conditions
 library(furrr); library(future)
-plan(multisession, workers=30)
+plan(multisession, workers=20)
 site_env_df <- future_map_dfr(
   dirf(glue("{dirs$out}/sim_01"), "siteEnv_2"),
   ~data.table::fread(.x)[, elapsedHours:=str_sub(str_split_fixed(basename(.x), "_", 3)[,3], 1, -5)]
@@ -222,9 +219,9 @@ write_csv(site_vols, "data/sim/inputs/farm_influx_vols.csv")
 
 # hourly IP for each day per pen
 library(furrr); library(future)
-plan(multisession, workers=30)
+plan(multisession, workers=20)
 c_df <- future_map_dfr(
-  dirrf(dirs$out, "connectivity.*csv"),
+  dirrf(dirs$out, "connectivity.*csv"),#[sample.int(75559, 100)],
   ~load_connectivity(.x,
                      source_names=pens_linnhe$pen,
                      dest_names=pens_linnhe$pen,
@@ -239,7 +236,7 @@ c_df <- future_map_dfr(
   mutate(influx_m2=influx/area,
          influx_m3=influx/vol) |>
   select(-area, -vol, -elapsedHours) |>
-  complete(pen, sim, time,
+  complete(pen=pens_linnhe$pen, sim, time=seq(ymd_h(paste(start_date, "00")), ymd_h(paste(end_date, "23")), 3600),
            fill=list(influx=0, influx_m2=0, influx_m3=0, N_influx=0)) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1])
 plan(sequential)
@@ -252,135 +249,135 @@ data.table::fwrite(c_df, "data/sim/inputs/influx_hourly.csv")
 
 # plots: to remove --------------------------------------------------------
 
-site_env_df |>
-  select(sepaSite, time, pen, uv, salinity, temperature, light) |>
-  pivot_longer(4:7) |>
-  group_by(name) |>
-  mutate(valRel=(value-min(value))/(max(value)-min(value)),
-         value=c(scale(value))) |>
-  ungroup() |>
-  ggplot(aes(time, pen, fill=valRel)) +
-  geom_raster() +
-  facet_grid(name~., axes="all_x", axis.labels="margins") +
-  scale_fill_viridis_c(option="turbo") +
-  scale_x_datetime(date_breaks="14 days", date_labels="%b-%d", date_minor_breaks="1 day") +
-  theme(axis.text.y=element_text(size=6))
-
-site_env_df |>
-  select(sepaSite, time, pen, uv, salinity, temperature, light) |>
-  ggplot(aes(time, pen, fill=salinity)) +
-  geom_raster() +
-  scale_fill_viridis_c(option="turbo") +
-  scale_x_datetime(date_breaks="14 days", date_labels="%b-%d", date_minor_breaks="1 day") +
-  theme(axis.text.y=element_text(size=6))
-
-site_env_df |>
-  select(sepaSite, time, pen, uv, salinity, temperature, light) |>
-  pivot_longer(4:7) |>
-  group_by(name, sepaSite, time) |>
-  summarise(value=mean(value)) |>
-  group_by(name) |>
-  mutate(valRel=(value-min(value))/(max(value)-min(value)),
-         value=c(scale(value))) |>
-  ungroup() |>
-  ggplot(aes(time, sepaSite, fill=valRel)) +
-  geom_raster() +
-  facet_grid(name~., axes="all_x", axis.labels="margins") +
-  scale_fill_viridis_c(option="turbo") +
-  scale_x_datetime(date_breaks="14 days", date_labels="%b-%d", date_minor_breaks="1 day")
-
-site_env_df |>
-  select(sepaSite, time, pen, uv, salinity, temperature, light) |>
-  pivot_longer(4:7) |>
-  group_by(name, sepaSite, time) |>
-  summarise(value=sd(value)) |>
-  group_by(name) |>
-  mutate(valRel=(value-min(value))/(max(value)-min(value)),
-         value=c(scale(value))) |>
-  ungroup() |>
-  ggplot(aes(time, sepaSite, fill=valRel)) +
-  geom_raster() +
-  facet_grid(name~., axes="all_x", axis.labels="margins") +
-  scale_fill_viridis_c(option="turbo") +
-  scale_x_datetime(date_breaks="14 days", date_labels="%b-%d", date_minor_breaks="1 day")
-
-site_env_df |>
-  select(sepaSite, time, pen, uv, salinity, temperature, light) |>
-  pivot_longer(4:7) |>
-  group_by(name) |>
-  ungroup() |>
-  ggplot(aes(time, value, group=pen, colour=sepaSite)) +
-  geom_line() +
-  scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
-  facet_grid(name~., axes="all_x", axis.labels="margins", scales="free_y") +
-  scale_x_datetime(date_breaks="14 days", date_labels="%b-%d", date_minor_breaks="1 day")
-
-
-c_df |>
-  filter(sepaSite=="FFMC84") |>
-  inner_join(site_env_df, by=join_by(sepaSite, time, pen)) |>
-  ggplot(aes(time)) +
-  geom_rug(aes(colour=uv), length=unit(1, "npc")) +
-  geom_point(aes(y=influx_m3), shape=1) +
-  geom_line(aes(y=influx_m3, group=paste(pen, sim)), linewidth=1) +
-  scale_colour_viridis_c(option="turbo") +
-  facet_grid(pen~.)
-
-c_df |>
-  group_by(sepaSite, time, sim) |>
-  summarise(lice=mean(influx_m3)) |>
-  ungroup() |>
-  inner_join(site_env_df |>
-               group_by(sepaSite, time) |>
-               summarise(across(where(is.numeric), mean)) |>
-               ungroup(),
-             by=join_by(sepaSite, time)) |>
-  ggplot(aes(time)) +
-  geom_rug(aes(colour=uv), length=unit(1, "npc")) +
-  geom_point(aes(y=lice), shape=1) +
-  geom_line(aes(y=lice), linewidth=1) +
-  scale_colour_viridis_c(option="turbo") +
-  facet_wrap(~sepaSite, scales="free_y")
-
-
-c_df |>
-  group_by(sepaSite, time, sim) |>
-  summarise(lice=mean(influx_m3)) |>
-  ungroup() |>
-  inner_join(site_env_df |>
-               group_by(sepaSite, time) |>
-               summarise(across(where(is.numeric), mean)) |>
-               ungroup(),
-             by=join_by(sepaSite==sepaSite, time==time)) |>
-  ggplot(aes(salinity, lice)) +
-  geom_point(shape=1, alpha=0.5) +
-  facet_wrap(~sepaSite, scales="free_y")
-
-
-ggplot(c_df, aes(time, influx_m3, group=pen)) +
-  geom_line() + facet_wrap(~sepaSite, ncol=2) +
-  scale_x_datetime(date_breaks="1 day", date_labels="%m-%d", date_minor_breaks="1 hour") +
-  theme(panel.grid.major.x=element_line(colour="grey70"),
-        panel.grid.minor.x=element_line(colour="grey90"))
-
-
-c_df |>
-  filter(sepaSite=="FFMC84") |>
-  inner_join(site_env_df, by=join_by(sepaSite, time, pen)) |>
-  ggplot(aes(uv, lice)) +
-  geom_point(shape=1, alpha=0.2) +
-  facet_wrap(~pen)
-
-
-c_df |>
-  group_by(sepaSite, time, sim) |>
-  summarise(lice=mean(influx_m3)) |>
-  ungroup() |>
-  inner_join(site_env_df |>
-               group_by(sepaSite, time) |>
-               summarise(across(where(is.numeric), mean)) |>
-               ungroup(),
-             by=join_by(sepaSite, time)) |>
-  ggplot(aes(uv, lice)) +
-  geom_point(shape=1, alpha=0.2) +
-  facet_wrap(~sepaSite)
+# site_env_df |>
+#   select(sepaSite, time, pen, uv, salinity, temperature, light) |>
+#   pivot_longer(4:7) |>
+#   group_by(name) |>
+#   mutate(valRel=(value-min(value))/(max(value)-min(value)),
+#          value=c(scale(value))) |>
+#   ungroup() |>
+#   ggplot(aes(time, pen, fill=valRel)) +
+#   geom_raster() +
+#   facet_grid(name~., axes="all_x", axis.labels="margins") +
+#   scale_fill_viridis_c(option="turbo") +
+#   scale_x_datetime(date_breaks="1 month", date_labels="%b-%d") +
+#   theme(axis.text.y=element_text(size=6))
+#
+# site_env_df |>
+#   select(sepaSite, time, pen, uv, salinity, temperature, light) |>
+#   ggplot(aes(time, pen, fill=salinity)) +
+#   geom_raster() +
+#   scale_fill_viridis_c(option="turbo") +
+#   scale_x_datetime(date_breaks="1 month", date_labels="%b-%d") +
+#   theme(axis.text.y=element_text(size=6))
+#
+# site_env_df |>
+#   select(sepaSite, time, pen, uv, salinity, temperature, light) |>
+#   pivot_longer(4:7) |>
+#   group_by(name, sepaSite, time) |>
+#   summarise(value=mean(value)) |>
+#   group_by(name) |>
+#   mutate(valRel=(value-min(value))/(max(value)-min(value)),
+#          value=c(scale(value))) |>
+#   ungroup() |>
+#   ggplot(aes(time, sepaSite, fill=valRel)) +
+#   geom_raster() +
+#   facet_grid(name~., axes="all_x", axis.labels="margins") +
+#   scale_fill_viridis_c(option="turbo") +
+#   scale_x_datetime(date_breaks="14 days", date_labels="%b-%d", date_minor_breaks="1 day")
+#
+# site_env_df |>
+#   select(sepaSite, time, pen, uv, salinity, temperature, light) |>
+#   pivot_longer(4:7) |>
+#   group_by(name, sepaSite, time) |>
+#   summarise(value=sd(value)) |>
+#   group_by(name) |>
+#   mutate(valRel=(value-min(value))/(max(value)-min(value)),
+#          value=c(scale(value))) |>
+#   ungroup() |>
+#   ggplot(aes(time, sepaSite, fill=valRel)) +
+#   geom_raster() +
+#   facet_grid(name~., axes="all_x", axis.labels="margins") +
+#   scale_fill_viridis_c(option="turbo") +
+#   scale_x_datetime(date_breaks="14 days", date_labels="%b-%d", date_minor_breaks="1 day")
+#
+# site_env_df |>
+#   select(sepaSite, time, pen, uv, salinity, temperature, light) |>
+#   pivot_longer(4:7) |>
+#   group_by(name) |>
+#   ungroup() |>
+#   ggplot(aes(time, value, group=pen, colour=sepaSite)) +
+#   geom_line() +
+#   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
+#   facet_grid(name~., axes="all_x", axis.labels="margins", scales="free_y") +
+#   scale_x_datetime(date_breaks="14 days", date_labels="%b-%d", date_minor_breaks="1 day")
+#
+#
+# c_df |>
+#   filter(sepaSite=="FFMC84") |>
+#   inner_join(site_env_df, by=join_by(sepaSite, time, pen)) |>
+#   ggplot(aes(time)) +
+#   geom_rug(aes(colour=uv), length=unit(1, "npc")) +
+#   geom_point(aes(y=influx_m3), shape=1) +
+#   geom_line(aes(y=influx_m3, group=paste(pen, sim)), linewidth=1) +
+#   scale_colour_viridis_c(option="turbo") +
+#   facet_grid(pen~.)
+#
+# c_df |>
+#   group_by(sepaSite, time, sim) |>
+#   summarise(lice=mean(influx_m3)) |>
+#   ungroup() |>
+#   inner_join(site_env_df |>
+#                group_by(sepaSite, time) |>
+#                summarise(across(where(is.numeric), mean)) |>
+#                ungroup(),
+#              by=join_by(sepaSite, time)) |>
+#   ggplot(aes(time)) +
+#   geom_rug(aes(colour=uv), length=unit(1, "npc")) +
+#   geom_point(aes(y=lice), shape=1) +
+#   geom_line(aes(y=lice), linewidth=1) +
+#   scale_colour_viridis_c(option="turbo") +
+#   facet_wrap(~sepaSite, scales="free_y")
+#
+#
+# c_df |>
+#   group_by(sepaSite, time, sim) |>
+#   summarise(lice=mean(influx_m3)) |>
+#   ungroup() |>
+#   inner_join(site_env_df |>
+#                group_by(sepaSite, time) |>
+#                summarise(across(where(is.numeric), mean)) |>
+#                ungroup(),
+#              by=join_by(sepaSite==sepaSite, time==time)) |>
+#   ggplot(aes(salinity, lice)) +
+#   geom_point(shape=1, alpha=0.5) +
+#   facet_wrap(~sepaSite, scales="free_y")
+#
+#
+# ggplot(c_df, aes(time, influx_m3, group=pen)) +
+#   geom_line() + facet_wrap(~sepaSite, ncol=2) +
+#   scale_x_datetime(date_breaks="1 day", date_labels="%m-%d", date_minor_breaks="1 hour") +
+#   theme(panel.grid.major.x=element_line(colour="grey70"),
+#         panel.grid.minor.x=element_line(colour="grey90"))
+#
+#
+# c_df |>
+#   filter(sepaSite=="FFMC84") |>
+#   inner_join(site_env_df, by=join_by(sepaSite, time, pen)) |>
+#   ggplot(aes(uv, lice)) +
+#   geom_point(shape=1, alpha=0.2) +
+#   facet_wrap(~pen)
+#
+#
+# c_df |>
+#   group_by(sepaSite, time, sim) |>
+#   summarise(lice=mean(influx_m3)) |>
+#   ungroup() |>
+#   inner_join(site_env_df |>
+#                group_by(sepaSite, time) |>
+#                summarise(across(where(is.numeric), mean)) |>
+#                ungroup(),
+#              by=join_by(sepaSite, time)) |>
+#   ggplot(aes(uv, lice)) +
+#   geom_point(shape=1, alpha=0.2) +
+#   facet_wrap(~sepaSite)
