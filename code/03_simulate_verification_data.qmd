@@ -23,7 +23,7 @@ editor_options:
 
 This document generates data for verification of the joint population model (JPM). The JPM is a multilevel Bayesian model that combines copepodid infestation pressure (IP) from a set of particle tracking simulation variants, calculates ensemble IP as a weighted average across the simulation variants, estimates attachment rates, and models the on-fish progression of daily lice cohorts through time. Observed counts of each stage of lice each week are used as the response variable, with all model parameters estimated jointly. The JPM will be verified using data that is simulated using identical processes with known, realistic parameters to assess the ability of the JPM to accurately and precisely recover parameters.
 
-This script can be modified to use final `biotracker` simulations, best available farm data and the final parameter sets. For the moment, it uses daily averages from `etive28` at each farm with a sample of `biotracker` simulations, running from 2023-01-01 to 2024-12-31.
+This script can be modified to use final `biotracker` simulations, best available farm data and the final parameter sets. For the moment, it uses daily averages from `etive28` at each farm with a sample of `biotracker` simulations, running from 2023-01-01 to 2025-12-31.
 
 Releases and infestation pressure are currently being performed by pen rather than by farm. The final version may still use farm-level aggregation. However, the IP catchment area is more in line with reality by using a smaller radius (\~30m) around each pen as identified via satellite imagery compared to a larger radius (\~100m) around a reported point location. Since layouts tend to be 2 x n, a circular buffer fails to capture the correct area. For IP, `biotracker` internally sums the density of lice for all particles entering within the radius of each potential destination for each 120 s substep.
 
@@ -86,7 +86,7 @@ dir.create(out_dir, recursive=T)
 
 ```{r}
 #| label: "pen_df"
-pen_df <- read_csv(glue("{proj_dir}/data/pen_sites_linnhe_2023-2024.csv"), 
+pen_df <- read_csv(glue("{inputs_dir}/pen_sites_linnhe_2023-2025.csv"), 
                    show_col_types=F) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
   filter(sepaSite %in% farm_order) |>
@@ -98,7 +98,7 @@ glimpse(pen_df)
 
 ```{r}
 #| label: "farm_i"
-farm_i <- read_csv(glue("{inputs_dir}/farm_sites_2023-2024.csv"), show_col_types=F) |>
+farm_i <- read_csv(glue("{inputs_dir}/farm_sites_2023-2025.csv"), show_col_types=F) |>
   inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
                filter(sim=="01") |>
                mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
@@ -142,6 +142,8 @@ ggplot() +
   theme(axis.title=element_blank(),
         axis.text=element_blank())
 ```
+
+Note that Mowi has integrated SAR1 into APT1. That doesn't seem to be reflected on the governmental aquaculture website.
 
 `farm_dat`: Daily interpolation of mean adult female lice per fish, reported fish biomass, estimated number of fish assuming 240 fish per tonne, estimated total adult female lice assuming 240 fish per tonne, area within 100m radius, receiving area ratio, logit-transformed receiving area ratio, and whether lice were sampled on a given day. Receiving area ratio is calculated following @kragesteen2023 as $R(W_i) = \sqrt{\frac{W_i}{DV_r}}$ (recommended Method 3), with biomass $W$ = `actualBiomassOnSiteTonnes * 1000` ($kg$), stocking density $D = 20 kg \cdot m^{-3}$, and receiving area $V_r$ = `vol` ($m^3$). I assume here a depth of 20m for the receiving area. Thus, $R(W_i)$ = `RW` is the proportion of copepodids that successfully attach.
 
@@ -237,7 +239,7 @@ gc()
 
 ## Environmental data
 
-From `etive28`, I've calculated daily averages across the top 20m at each farm location to summarise the environmental conditions.
+From `etive28`, I've calculated daily averages across the top 30m at each farm location to summarise the environmental conditions.
 
 ```{r}
 #| label: "farm_env"
@@ -294,7 +296,7 @@ farm_env_daily |>
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
   facet_grid(variable~sepaSite, scales="free_y") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
-  labs(y="Daily mean, 0-20m (Etive28, WeStCOMS2)") +
+  labs(y="Daily mean, 0-30m (Etive28, WeStCOMS2)") +
   theme(panel.grid.major.y=element_line(colour="grey85", linewidth=0.2),
         panel.grid.minor.y=element_blank(),
         axis.title.x=element_blank())
@@ -312,7 +314,7 @@ if(save_figs) {
     scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
     facet_grid(variable~sepaSite, scales="free_y") +
     scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
-    labs(y="Daily mean, 0-20m (Etive28, WeStCOMS2)") +
+    labs(y="Daily mean, 0-30m (Etive28, WeStCOMS2)") +
     theme(panel.grid.major.y=element_line(colour="grey85", linewidth=0.2),
           panel.grid.minor.y=element_blank(),
           axis.title.x=element_blank())
@@ -329,14 +331,14 @@ gc()
 
 ## Infestation pressure
 
-Copepodid infestation pressure was taken from 6 `biotracker` simulations which randomly sampled from a plausible parameter space. The number of copepodids in the top 20m within a 30m radius of each pen was totaled each day. The number of simulations will increase as testing progresses. The parameters that varied were:
+Copepodid infestation pressure was taken from 10 `biotracker` simulations which randomly sampled from a plausible parameter space. The number of copepodids in the top 30m within a 30m radius of each pen was totaled each day. The number of simulations will increase as testing progresses. The parameters that varied were:
 
 ```{r}
 #| message: false
 #| echo: false
 #| eval: false
 
-read_csv(glue("E:/EtiveLice/out/biotracker/sim_i.csv")) |>
+read_csv(glue("E:/EtiveLice/out/jpm/sim_i.csv")) |>
   select(-i, -outDir, -ends_with("_b")) |>
   mutate(across(where(is.numeric), ~signif(.x, 3))) |>
   glimpse()
@@ -345,7 +347,6 @@ read_csv(glue("E:/EtiveLice/out/biotracker/sim_i.csv")) |>
 ```{r}
 #| label: "influx_df"
 influx_df <- read_csv(glue("{inputs_dir}/influx_hourly.csv"), show_col_types=F) |>
-  filter(sim < 11) |>
   filter(sepaSite %in% farm_order) |>
   full_join(tibble(time=seq_range(range(farm_env$time), by=3600),
                    sepaSite=farm_order[1], pen=paste0(farm_order[1], "_01"), sim="01"),
@@ -374,7 +375,7 @@ ggplot(influx_df, aes(time, influx_m3, colour=sepaSite, group=pen)) +
   geom_line(linewidth=0.1) +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
   scale_x_date(date_breaks="6 months", date_labels="%b", date_minor_breaks="2 month") +
-  scale_y_continuous("Mean daily copepodids / m3 in top 20m") +
+  scale_y_continuous("Mean daily copepodids / m3 in top 30m") +
   facet_grid(sim~sepaSite) +
   theme(axis.title.x=element_blank())
 ```

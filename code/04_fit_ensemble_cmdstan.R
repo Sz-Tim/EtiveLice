@@ -20,8 +20,8 @@ theme_set(theme_classic())
 
 prior_only <- F
 keep_licePreds <- F
-refit <- F
-n_parallel <- 4
+refit <- T
+n_parallel <- 1
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
@@ -59,7 +59,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
-sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/")
+sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/")[-1]
 
 plan(multicore, workers=n_parallel)
 
