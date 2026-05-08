@@ -46,6 +46,8 @@ theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 save_figs <- F
 
+MOWI_farms <- filter(read_csv("data/se_permit_conditions.csv"), grepl("Mowi", operator))$sepaSiteId |> unique()
+farm_order <- sort(MOWI_farms)
 # farm_order <-  c("GORS1", "ARDG1", "FFMC84", "FFMC32", "CALL1", "APT1", "SAR1",
 #                  "KING1", "SHUI1", "FFMC60", "FFMC41", "FFMC27", "FFMC56")
 
@@ -88,7 +90,7 @@ dir.create(out_dir, recursive=T)
 pen_df <- read_csv(glue("{inputs_dir}/pen_sites_widerLinnhe_2023-2025.csv"), 
                    show_col_types=F) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
-  # filter(sepaSite %in% farm_order) |>
+  filter(sepaSite %in% farm_order) |>
   group_by(sepaSite) |>
   mutate(nPens=n()) |>
   ungroup()
@@ -99,6 +101,7 @@ glimpse(pen_df)
 #| label: "farm_i"
 farm_i <- read_csv(glue("{inputs_dir}/farm_sites_widerLinnhe_2023-2025.csv"),
                    show_col_types=F) |>
+  filter(sepaSite %in% farm_order) |>
   inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
                filter(sim=="01") |>
                mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
@@ -118,7 +121,6 @@ farm_i <- read_csv(glue("{inputs_dir}/farm_sites_widerLinnhe_2023-2025.csv"),
 #   mutate(firstDay=sample(1:5, n(), replace=T)) |>
 #   left_join(pen_df |> group_by(sepaSite) |> summarise(nPens=first(nPens)))
 farm_i
-farm_order <- unique(farm_i$sepaSite)
 ```
 
 ```{r}
@@ -1164,3 +1166,4 @@ if(save_figs) {
 Note that these are simulated with arbitrary and randomized model parameters and would not be expected to fully conform with observed values.
 
 # References
+
