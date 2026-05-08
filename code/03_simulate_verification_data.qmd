@@ -46,7 +46,8 @@ theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 save_figs <- F
 
-MOWI_farms <- filter(read_csv("data/se_permit_conditions.csv"), grepl("Mowi", operator))$sepaSiteId |> unique()
+MOWI_farms <- filter(read_csv(glue("{proj_dir}/data/se_permit_conditions.csv")), 
+                     grepl("Mowi", operator))$sepaSiteId |> unique()
 farm_order <- sort(MOWI_farms)
 # farm_order <-  c("GORS1", "ARDG1", "FFMC84", "FFMC32", "CALL1", "APT1", "SAR1",
 #                  "KING1", "SHUI1", "FFMC60", "FFMC41", "FFMC27", "FFMC56")
@@ -1166,4 +1167,3 @@ if(save_figs) {
 Note that these are simulated with arbitrary and randomized model parameters and would not be expected to fully conform with observed values.
 
 # References
-
