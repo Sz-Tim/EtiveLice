@@ -1,7 +1,7 @@
 # Project: E(tive)Lice
 # Tim Szewczyk
 # tim.szewczyk@sams.ac.uk
-# Fit integrated ensemble
+# Fit integrated population model
 
 # TODO: Simplify data inputs based on final structure; calculate from real data
 # TODO: Confirm all priors -- hard code in make_stan_data()?
@@ -81,7 +81,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
     # IEM: full model pop -----------------------------------------------------
 
     iter <- 1000
-    mod_full <- cmdstan_model("code/stan/joint_population_model.stan")
+    mod_full <- cmdstan_model("code/stan/integrated_population_model.stan")
     fit_full <- mod_full$sample(
       data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
       iter_warmup=iter, iter_sampling=iter,
