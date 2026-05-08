@@ -46,9 +46,8 @@ theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 save_figs <- F
 
-# farm_order <- c("FFMC27", "SAR1", "APT1", "FFMC32", "FFMC84") # etive only
-farm_order <-  c("GORS1", "ARDG1", "FFMC84", "FFMC32", "CALL1", "APT1", "SAR1",
-                 "KING1", "SHUI1", "FFMC60", "FFMC41", "FFMC27", "FFMC56")
+# farm_order <-  c("GORS1", "ARDG1", "FFMC84", "FFMC32", "CALL1", "APT1", "SAR1",
+#                  "KING1", "SHUI1", "FFMC60", "FFMC41", "FFMC27", "FFMC56")
 
 # mesh footprints
 mesh_dir <- ifelse(get_os()=="windows",
@@ -82,14 +81,14 @@ dir.create(out_dir, recursive=T)
 
 ## Farm data
 
-`farm_i`: Farm metadata. Location and volume = $\sum{Area_i \times \min(depth_i, 20)}$ for elements $i$ clipped to the 30m radius around each farm. The 20m depth limit and 30m radius corresponds with the connectivity calculations as parameterized in biotracker (*2_run_biotracker.R*).
+`farm_i`: Farm metadata. Location and volume = $\sum{Area_i \times \min(depth_i, 30)}$ for elements $i$ clipped to the 30m radius around each farm. The 20m depth limit and 30m radius corresponds with the connectivity calculations as parameterized in biotracker (*2_run_biotracker.R*).
 
 ```{r}
 #| label: "pen_df"
-pen_df <- read_csv(glue("{inputs_dir}/pen_sites_linnhe_2023-2025.csv"), 
+pen_df <- read_csv(glue("{inputs_dir}/pen_sites_widerLinnhe_2023-2025.csv"), 
                    show_col_types=F) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
-  filter(sepaSite %in% farm_order) |>
+  # filter(sepaSite %in% farm_order) |>
   group_by(sepaSite) |>
   mutate(nPens=n()) |>
   ungroup()
@@ -98,7 +97,8 @@ glimpse(pen_df)
 
 ```{r}
 #| label: "farm_i"
-farm_i <- read_csv(glue("{inputs_dir}/farm_sites_2023-2025.csv"), show_col_types=F) |>
+farm_i <- read_csv(glue("{inputs_dir}/farm_sites_widerLinnhe_2023-2025.csv"),
+                   show_col_types=F) |>
   inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
                filter(sim=="01") |>
                mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
@@ -109,7 +109,7 @@ farm_i <- read_csv(glue("{inputs_dir}/farm_sites_2023-2025.csv"), show_col_types
   mutate(firstDay=sample(1:5, n(), replace=T)) |>
   left_join(pen_df |> group_by(sepaSite) |> summarise(nPens=first(nPens)), 
             by="sepaSite") |>
-  mutate(sepaSite=factor(sepaSite, levels=farm_order)) |>
+  # mutate(sepaSite=factor(sepaSite, levels=farm_order)) |>
   arrange(sepaSite)
 # farm_i <- read_csv(glue("{inputs_dir}/farm_i.csv"), show_col_types=F) |>
 #   filter(sepaSite %in% farm_order) |>
@@ -118,27 +118,26 @@ farm_i <- read_csv(glue("{inputs_dir}/farm_sites_2023-2025.csv"), show_col_types
 #   mutate(firstDay=sample(1:5, n(), replace=T)) |>
 #   left_join(pen_df |> group_by(sepaSite) |> summarise(nPens=first(nPens)))
 farm_i
+farm_order <- unique(farm_i$sepaSite)
 ```
 
 ```{r}
 #| label: "farm_map"
-#| fig-width: 3
-#| fig-height: 6
+#| fig-width: 4
+#| fig-height: 4
 #| fig-cap: "Sites in and near Loch Etive."
 #| fig-dpi: 400
 #| echo: false
 
 farm_sf <- st_as_sf(farm_i, coords=c("easting", "northing"), crs=27700) |> 
-  st_buffer(dist=100)
+  st_buffer(dist=500)
 ggplot() +
   geom_sf(data=wce_fp, fill="grey90", colour="grey50") +
   geom_sf(data=etive_fp, fill="dodgerblue", colour="grey50", alpha=0.25) + 
   geom_sf(data=farm_sf, colour=NA, fill="red") +
-  geom_sf_text(data=farm_sf, aes(label=sepaSite), hjust=0, nudge_x=100, size=2.5) +
-  # scale_x_continuous(limits=c(184000, 211000), oob=scales::oob_keep) + 
-  # scale_y_continuous(limits=c(732000, 745000), oob=scales::oob_keep) +
-  scale_x_continuous(limits=c(180000, 217000), oob=scales::oob_keep) + 
-  scale_y_continuous(limits=c(730000, 778000), oob=scales::oob_keep) +
+  geom_sf_text(data=farm_sf, aes(label=sepaSite), hjust=0, nudge_x=250, size=2.5) +
+  scale_x_continuous(limits=c(128000, 219000), oob=scales::oob_keep) + 
+  scale_y_continuous(limits=c(690000, 780000), oob=scales::oob_keep) +
   theme(axis.title=element_blank(),
         axis.text=element_blank())
 ```
