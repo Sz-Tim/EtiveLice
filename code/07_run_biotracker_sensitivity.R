@@ -173,11 +173,9 @@ plan(sequential)
 
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
 farms_GSA <- read_csv(glue("{dirs$proj}/data/farm_sites_GSA_2024-2025.csv"))
-farms_etive <- c("FFMC84", "FFMC32", "APT1", "SAR1", "FFMC27")
 
 # Influx
 mesh_fp <- st_read(glue("{dirs$mesh}/WeStCOMS2_meshFootprint.gpkg"))
-# sim_dirs <- dirf(dirs$out, "^sim_[0-9][0-9][0-9][0-9]$")
 sim_dirs <- dirrf(dirs$out, "pstepsImmature_20251231") |> dirname() |> dirname()
 c_0_5_summary <- c_5_15_summary <- c_15_30_summary <- c_0_30_summary <- vector("list", length(sim_dirs))
 c_0_5_farm <- c_5_15_farm <- c_15_30_farm <- c_0_30_farm <- vector("list", length(sim_dirs))
@@ -337,7 +335,7 @@ c_15_30_sum_df |>
   facet_wrap(~name, scales="free_x", ncol=7)
 c_0_30_sum_df |>
   pivot_longer(any_of(param_names)) |>
-  ggplot(aes(value, influx_m2_MAM_md^0.25)) +
+  ggplot(aes(value, log1p(influx_m2_MAM_md))) +
   geom_point(shape=1, alpha=0.5) +
   # geom_smooth(method="loess", se=F) +
   facet_wrap(~name, scales="free_x", ncol=7)
@@ -578,6 +576,8 @@ ggsave("admin/project_meetings/figs_temp/sensitivity_0_30m_scatter.png", p,
 
 library(randomForest)
 
+# . Overall ---------------------------------------------------------------
+
 rf_0_5_ls <- run_sensitivity_ML(outcome_names, param_names,
                                 c_0_5_sum_df |>
                                   mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
@@ -712,10 +712,6 @@ importance_df |>
         legend.position="inside",
         legend.position.inside=c(0.1, 0.85))
 
-
-
-
-
 importance_df |>
   filter(flux=="influx") |>
   filter(type=="IP_m2") |>
@@ -751,8 +747,6 @@ importance_df |>
   theme(panel.grid.major.y=element_line(colour="grey90"))
 
 
-
-
 importance_0_5_df |>
   ggplot(aes(`%IncMSE`, param)) +
   geom_point(alpha=0.5) +
@@ -807,13 +801,24 @@ importance_15_30_df |>
   geom_point(alpha=0.5) +
   facet_grid(flux~type) +
   theme(panel.grid.major.y=element_line(colour="grey90"))
+
+
+# . By farm ---------------------------------------------------------------
+
+rf_0_30_farm_ls <- c_0_30_sum_farm_df |>
+  mutate(D_h=if_else(variableDh, max(D_h)+5, D_h),
+         D_hVert=if_else(variableDhV, max(D_hVert)+5, D_hVert)) |>
+  group_split(sepaSite) |>
+  map(~run_sensitivity_ML(outcome_names, param_names, .x, sim.i))
 
 
 # DALEX -------------------------------------------------------------------
 
-
 library(DALEX)
 library(ingredients)
+
+# . Overall ---------------------------------------------------------------
+
 explainers <- map(1:length(rf_0_30_ls$rf),
                   ~explain(rf_0_30_ls$rf[[.x]],
                            data=rf_0_30_ls$exp$x_valid[[.x]],
@@ -838,7 +843,6 @@ p <- map_dfr(seq_along(LDs),
        ! x %in% c(0, 1))
   )) |>
   ggplot(aes(x, `_yhat_`, group=id, colour=season, linetype=metric)) +
-  # ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
   geom_line() +
   scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
   facet_wrap(~`_vname_`, scales="free_x", ncol=7)
@@ -864,7 +868,6 @@ p <- map_dfr(seq_along(PDs),
        ! x %in% c(0, 1))
   )) |>
   ggplot(aes(x, `_yhat_`, group=id, colour=season, linetype=metric)) +
-  # ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
   geom_line() +
   scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
   facet_wrap(~`_vname_`, scales="free_x", ncol=7)
@@ -891,7 +894,6 @@ p <- map_dfr(seq_along(ALEs),
        ! x %in% c(0, 1))
     )) |>
   ggplot(aes(x, `_yhat_`, group=id, colour=season, linetype=metric)) +
-  # ggplot(aes(`_x_`, `_yhat_`, group=id, colour=season)) +
   geom_hline(yintercept=0, linetype=3) +
   geom_line() +
   scale_colour_manual(values=c("black", viridis::turbo(3, begin=0.3, end=0.9))) +
@@ -923,13 +925,211 @@ p <- map_dfr(seq_along(FIs),
   arrange(grand_mean) |>
   mutate(variable=factor(variable, levels=unique(variable))) |>
   ggplot(aes(mean_dropout_loss, variable, colour=season)) +
-  # geom_bar(stat="identity", position="dodge", colour="grey30") +
   geom_path(aes(group=season)) +
   geom_point() +
   scale_colour_manual(values=c("grey", viridis::turbo(3, begin=0.3, end=0.9))) +
   facet_grid(.~metric) +
   theme(panel.grid.major.y=element_line(colour="grey90", linewidth=0.15))
 ggsave("figs/sens/dalex/FIs.png", p, width=8, height=8)
+
+
+# . By farm ---------------------------------------------------------------
+
+explainers_farm <- LDs_farm <- PDs_farm <- ALEs_farm <- FIs_farm <- vector("list", nrow(farms_GSA)) |>
+  set_names(farms_GSA$sepaSite)
+
+for(i in seq_along(explainers_farm)) {
+  explainers_farm[[i]] <- map(1:length(rf_0_30_farm_ls[[i]]$rf),
+                              ~explain(rf_0_30_farm_ls[[i]]$rf[[.x]],
+                                       data=rf_0_30_farm_ls[[i]]$exp$x_valid[[.x]],
+                                       y=rf_0_30_farm_ls[[i]]$exp$y_valid[[.x]]))
+  LDs_farm[[i]] <- imap_dfr(
+    explainers_farm[[i]][grep("influx_m2", outcome_names)],
+    ~conditional_dependence(.x) |>
+      filter(! (
+        (`_vname_` %in% c("eggTemp_fn", "swimColdNauplius", "mortSal_fn",
+                          "passiveSinkRateSal", "variableDh", "variableDhV") &
+           ! `_x_` %in% c(0, 1))
+      )) |>
+      mutate(id=.y,
+             outcome=outcome_names[grep("influx_m2", outcome_names)][.y]) |>
+      mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                              grepl("JJA", outcome) ~ "JJA",
+                              grepl("SON", outcome) ~ "SON",
+                              .default="all"),
+             metric=if_else(grepl("md", outcome), "median", "mean")) |>
+      mutate(x=case_when(`_vname_` %in% logCols ~ exp(`_x_`),
+                         `_vname_` %in% rtCols ~ (`_x_`)^2,
+                         .default=`_x_`))
+  ) |>
+    mutate(sepaSite=farms_GSA$sepaSite[i])
+  PDs_farm[[i]] <- imap_dfr(
+    explainers_farm[[i]][grep("influx_m2", outcome_names)],
+    ~partial_dependence(.x) |>
+      filter(! (
+        (`_vname_` %in% c("eggTemp_fn", "swimColdNauplius", "mortSal_fn",
+                          "passiveSinkRateSal", "variableDh", "variableDhV") &
+           ! `_x_` %in% c(0, 1))
+      )) |>
+      mutate(id=.y,
+             outcome=outcome_names[grep("influx_m2", outcome_names)][.y]) |>
+      mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                              grepl("JJA", outcome) ~ "JJA",
+                              grepl("SON", outcome) ~ "SON",
+                              .default="all"),
+             metric=if_else(grepl("md", outcome), "median", "mean")) |>
+      mutate(x=case_when(`_vname_` %in% logCols ~ exp(`_x_`),
+                         `_vname_` %in% rtCols ~ (`_x_`)^2,
+                         .default=`_x_`))
+  ) |>
+    mutate(sepaSite=farms_GSA$sepaSite[i])
+  ALEs_farm[[i]] <- imap_dfr(
+    explainers_farm[[i]][grep("influx_m2", outcome_names)],
+    ~accumulated_dependence(.x) |>
+      filter(! (
+        (`_vname_` %in% c("eggTemp_fn", "swimColdNauplius", "mortSal_fn",
+                          "passiveSinkRateSal", "variableDh", "variableDhV") &
+           ! `_x_` %in% c(0, 1))
+      )) |>
+      mutate(id=.y,
+             outcome=outcome_names[grep("influx_m2", outcome_names)][.y]) |>
+      mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                              grepl("JJA", outcome) ~ "JJA",
+                              grepl("SON", outcome) ~ "SON",
+                              .default="all"),
+             metric=if_else(grepl("md", outcome), "median", "mean")) |>
+      mutate(x=case_when(`_vname_` %in% logCols ~ exp(`_x_`),
+                         `_vname_` %in% rtCols ~ (`_x_`)^2,
+                         .default=`_x_`))
+  ) |>
+    mutate(sepaSite=farms_GSA$sepaSite[i])
+  FIs_farm[[i]] <- imap_dfr(
+    explainers_farm[[i]][grep("influx_m2", outcome_names)],
+    ~feature_importance(.x)  |>
+      as_tibble() |>
+      group_by(permutation) |>
+      mutate(rel_loss=(dropout_loss - min(dropout_loss))/(max(dropout_loss) - min(dropout_loss))) |>
+      ungroup() |>
+      summarise(mean_dropout_loss=mean(rel_loss),
+                .by=variable) |>
+      filter(! variable %in% c("_baseline_", "_full_model_")) |>
+      mutate(id=.y,
+             outcome=outcome_names[grep("influx_m2", outcome_names)][.y]) |>
+      mutate(season=case_when(grepl("MAM", outcome) ~ "MAM",
+                              grepl("JJA", outcome) ~ "JJA",
+                              grepl("SON", outcome) ~ "SON",
+                              .default="all"),
+             metric=if_else(grepl("md", outcome), "median", "mean"))
+  ) |>
+    mutate(sepaSite=farms_GSA$sepaSite[i])
+}
+
+LDs_farm_df <- bind_rows(LDs_farm)
+PDs_farm_df <- bind_rows(PDs_farm)
+ALEs_farm_df <- bind_rows(ALEs_farm)
+FIs_farm_df <- bind_rows(FIs_farm) |>
+  filter(! variable %in% c("variableDh", "variableDhV")) |>
+  group_by(variable) |>
+  mutate(grand_mean=mean(mean_dropout_loss)) |>
+  ungroup() |>
+  arrange(grand_mean) |>
+  mutate(variable=factor(variable, levels=unique(variable)))
+
+mesh_fp <- dir(dirs$mesh, "WeStCOMS2_meshFootprint.gpkg", full.names=T) |>
+  st_read() |>
+  st_crop(c(xmin=128000, xmax=219000, ymin=690000, ymax=780000))
+
+seasons <- c("MAM", "JJA", "SON", "all")
+for(i in seq_along(seasons)) {
+  p <- LDs_farm_df |>
+    filter(metric=="median") |>
+    filter(season==seasons[i]) |>
+    ggplot(aes(x, `_yhat_`, group=paste(id, sepaSite), colour=sepaSite)) +
+    geom_line(linewidth=0.15) +
+    labs(x="Parameter value", y="Median influx per m2") +
+    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
+    facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+  ggsave(glue("figs/sens/dalex/LDs_farm_{seasons[i]}.png"), p, width=18, height=8)
+
+  p <- PDs_farm_df |>
+    filter(metric=="median") |>
+    filter(season==seasons[i]) |>
+    ggplot(aes(x, `_yhat_`, group=paste(id, sepaSite), colour=sepaSite)) +
+    geom_line(linewidth=0.15) +
+    labs(x="Parameter value", y="Median influx per m2") +
+    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
+    facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+  ggsave(glue("figs/sens/dalex/PDs_farm_{seasons[i]}.png"), p, width=18, height=8)
+
+  p <- ALEs_farm_df |>
+    filter(metric=="median") |>
+    filter(season==seasons[i]) |>
+    ggplot(aes(x, `_yhat_`, group=paste(id, sepaSite), colour=sepaSite)) +
+    geom_hline(yintercept=0, linetype=3) +
+    geom_line(linewidth=0.15) +
+    labs(x="Parameter value", y="Median influx per m2") +
+    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
+    facet_wrap(~`_vname_`, scales="free_x", ncol=7)
+  ggsave(glue("figs/sens/dalex/ALEs_farm_{seasons[i]}.png"), p, width=18, height=8)
+
+  p <- FIs_farm_df |>
+    filter(metric=="median") |>
+    filter(season==seasons[i]) |>
+    arrange(sepaSite, variable) |>
+    ggplot(aes(mean_dropout_loss, variable, colour=sepaSite)) +
+    geom_path(aes(group=sepaSite), linewidth=0.15) +
+    labs(x="Parameter value", y="Median influx per m2") +
+    scico::scale_colour_scico_d(palette="devon", end=0.8, direction=-1) +
+    facet_grid(.~metric) +
+    ggtitle(paste("Variable importance:", seasons[i])) +
+    theme(panel.grid.major.y=element_line(colour="grey90", linewidth=0.15))
+  ggsave(glue("figs/sens/dalex/FIs_farm_{seasons[i]}.png"), p, width=8, height=8)
+
+  p <- FIs_farm_df |>
+    filter(metric=="median") |>
+    filter(season==seasons[i]) |>
+    mutate(variable=as.character(variable)) |>
+    inner_join(farms_GSA) |>
+    ggplot() +
+    geom_sf(data=mesh_fp, fill="grey10", colour=NA) +
+    geom_point(aes(easting, northing, colour=mean_dropout_loss), shape=1, size=2, stroke=1) +
+    scale_colour_viridis_c(option="plasma", guide="none") +
+    # scale_colour_viridis_c(option="turbo", end=0.95, guide="none") +
+    scale_x_continuous(expand=c(0,0), oob=scales::oob_keep) +
+    scale_y_continuous(expand=c(0,0), oob=scales::oob_keep) +
+    facet_wrap(~variable, ncol=7) +
+    ggtitle(paste("Variable importance:", seasons[i])) +
+    theme(panel.background=element_rect(colour=NA, fill="grey40"),
+          axis.text=element_blank(),
+          axis.title=element_blank())
+  ggsave(glue("figs/sens/dalex/FIs_map_{seasons[i]}.png"), p, width=18, height=8)
+
+  p <- FIs_farm_df |>
+    filter(metric=="median") |>
+    filter(season==seasons[i]) |>
+    mutate(variable=as.character(variable)) |>
+    group_by(sepaSite) |>
+    mutate(mean_dropout_loss=mean_dropout_loss/max(mean_dropout_loss)) |>
+    inner_join(farms_GSA) |>
+    ggplot() +
+    geom_sf(data=mesh_fp, fill="grey10", colour=NA) +
+    geom_point(aes(easting, northing, colour=mean_dropout_loss), shape=1, size=2, stroke=1) +
+    scale_colour_viridis_c(option="plasma", guide="none") +
+    # scale_colour_viridis_c(option="turbo", end=0.95, guide="none") +
+    scale_x_continuous(expand=c(0,0), oob=scales::oob_keep) +
+    scale_y_continuous(expand=c(0,0), oob=scales::oob_keep) +
+    facet_wrap(~variable, ncol=7) +
+    ggtitle(paste("Variable importance:", seasons[i])) +
+    theme(panel.background=element_rect(colour=NA, fill="grey40"),
+          axis.text=element_blank(),
+          axis.title=element_blank())
+  ggsave(glue("figs/sens/dalex/FIs_mapSiteRel_{seasons[i]}.png"), p, width=18, height=8)
+}
+
+
+
+
+
 
 # maps --------------------------------------------------------------------
 
