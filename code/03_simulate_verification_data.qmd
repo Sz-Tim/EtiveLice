@@ -187,7 +187,7 @@ farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
          sampled=sampled & (nFish_est > 0)) |>
   ungroup() |>
   select(-firstDay, -nPens) |>
-  mutate(nFishSampled=if_else(sampled, sample(20:25, 1), 0))
+  mutate(nFishSampled=if_else(sampled, sample(10:25, n(), replace=T), 0))
 glimpse(farm_dat)
 ```
 
