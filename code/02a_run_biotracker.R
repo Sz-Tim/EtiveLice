@@ -211,7 +211,7 @@ site_vols <- sim.i |>
   mutate(area=as.numeric(st_area(.))) |>
   st_drop_geometry() |>
   group_by(i, pen) |>
-  summarise(vol=sum(area*pmin(depth, 20)),
+  summarise(vol=sum(area*pmin(depth, 30)),
             area=sum(area)) |>
   ungroup() |>
   rename(sim=i)
