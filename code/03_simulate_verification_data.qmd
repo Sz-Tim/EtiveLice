@@ -48,7 +48,6 @@ save_figs <- F
 
 MOWI_farms <- filter(read_csv(glue("{proj_dir}/data/se_permit_conditions.csv")), 
                      grepl("Mowi", operator))$sepaSiteId |> unique()
-farm_order <- sort(MOWI_farms)
 # farm_order <-  c("GORS1", "ARDG1", "FFMC84", "FFMC32", "CALL1", "APT1", "SAR1",
 #                  "KING1", "SHUI1", "FFMC60", "FFMC41", "FFMC27", "FFMC56")
 
@@ -91,11 +90,12 @@ dir.create(out_dir, recursive=T)
 pen_df <- read_csv(glue("{inputs_dir}/pen_sites_widerLinnhe_2023-2025.csv"), 
                    show_col_types=F) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
-  filter(sepaSite %in% farm_order) |>
+  filter(sepaSite %in% MOWI_farms) |>
   group_by(sepaSite) |>
   mutate(nPens=n()) |>
   ungroup()
 glimpse(pen_df)
+farm_order <- sort(unique(pen_df$sepaSite))
 ```
 
 ```{r}
