@@ -20,8 +20,8 @@ theme_set(theme_classic())
 
 prior_only <- F
 keep_licePreds <- F
-refit <- T
-n_parallel <- 1
+refit <- F
+n_parallel <- 3
 
 n_chains <- 3
 stages <- c("Ch", "PA", "Ad")
@@ -59,11 +59,11 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
-sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/")[-1]
+sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/")
 
 plan(multicore, workers=n_parallel)
 
-foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
+foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = TRUE)) %dofuture% {
 
   keep_pars <- c("IP_bg_m3",
                  "ensWts_p", "attach_beta",
@@ -76,7 +76,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass") %dofuture% {
     dat_full_df <- fread(glue("{sim_dir}stan_params{ifelse(prior_only, '_PRIORS', '')}.csv")) |>
       as_tibble()
   } else {
-    stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2024-07-01")
+    stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2025-01-01")
 
     # IEM: full model pop -----------------------------------------------------
 
