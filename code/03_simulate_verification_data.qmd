@@ -528,7 +528,7 @@ params <- list(
   ensWts_p=rlnorm(info$nSims, sdlog=0.75) |> make_compositional(),
   # Pr(copepodid attachment): RW_logit, salinity, temp, uv, uv^2
   attach_beta=glue("{inputs_dir}/posterior_prAttach.csv") |>
-    read_csv() |> sample_n(1) |> unlist(),
+    read_csv() |> sample_n(1) |> select(1,2,5,3,4) |> unlist(),
   # On-fish survival: chalimus, pre-adult, adult, gravid
   #   logit(p) = f(salinity); intercept, slope by stage
   surv_beta=glue("{inputs_dir}/posterior_prSurv.csv") |>
