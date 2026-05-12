@@ -116,11 +116,11 @@ sim_df |>
 # Performance metrics on $\mu$
 
 ```{r}
-sim_finished <- dir(sim_dir, glue("mu_fitted_metrics_weekly{ifelse(priors, '_PRIORS', '')}.csv"), recursive=T) |> 
+sim_finished <- dir(sim_dir, glue("mu_GQ_metrics_weekly{ifelse(priors, '_PRIORS', '')}.csv"), recursive=T) |> 
   str_sub(1, 6) |> unique()
 metric_wk_df <- map_dfr(
   sim_finished,
-  ~read_csv(glue("{sim_dir}/{.x}/mu_fitted_metrics_weekly{ifelse(priors, '_PRIORS', '')}.csv"), show_col_types=F) |>
+  ~read_csv(glue("{sim_dir}/{.x}/mu_GQ_metrics_weekly{ifelse(priors, '_PRIORS', '')}.csv"), show_col_types=F) |>
     mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) 
 
 metric_wk_df |>
