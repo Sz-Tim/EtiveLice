@@ -132,19 +132,19 @@ metric_wk_df |>
   ggdist::stat_halfeye(fill=NA, colour="grey30", normalize="xy", aes(group=name)) +
   xlim(0, 1) +
   labs(x="Posterior distribution",
-       y="Metric (fitted)",
+       y="Metric (out-of-sample: 2025)",
        title="Binary prediction of weekly AF > 0.5")
-ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/performance_metrics_dataSim_fitted.png"), 
+ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/performance_metrics_dataSim_GQ.png"), 
        width=10, height=6)
 ```
 
 ```{r}
-sim_finished <- dir(sim_dir, glue("mu_fitted_metrics_weekly.csv"), recursive=T) |> 
+sim_finished <- dir(sim_dir, glue("mu_GQ_metrics_weekly.csv"), recursive=T) |> 
   str_sub(1, 6) |> unique()
 metric_wk_vPrior <- inner_join(
   map_dfr(
     sim_finished,
-    ~read_csv(glue("{sim_dir}/{.x}/mu_fitted_metrics_weekly.csv"), show_col_types=F) |>
+    ~read_csv(glue("{sim_dir}/{.x}/mu_GQ_metrics_weekly.csv"), show_col_types=F) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
     group_by(sim) |>
     summarise(across(-1, mean)) |>
@@ -152,7 +152,7 @@ metric_wk_vPrior <- inner_join(
     pivot_longer(-sim, names_to="metric", values_to="post"),
   map_dfr(
     sim_finished,
-    ~read_csv(glue("{sim_dir}/{.x}/mu_fitted_metrics_weekly_PRIORS.csv"), show_col_types=F) |>
+    ~read_csv(glue("{sim_dir}/{.x}/mu_GQ_metrics_weekly_PRIORS.csv"), show_col_types=F) |>
       mutate(sim=paste0("dat_", str_sub(.x, -2, -1)))) |>
     group_by(sim) |>
     summarise(across(-1, mean)) |>
@@ -554,7 +554,7 @@ farm_env_avg <- readRDS(glue("{proj_dir}/data/sim/sim_01/farm_env_avg.rds"))
 
 attach_mx <- readRDS(glue("{proj_dir}/data/sim/sim_01/attach_env_mx.rds"))
 draw_sample <- sample.int(1500, 50)
-plan(multicore, workers=25)
+plan(multicore, workers=2)
 pAttach_post_draws <- sim_finished |>
   future_map_dfr(
       ~bind_rows(
@@ -632,7 +632,7 @@ pAttach_post2 <- pAttach_post_draws |>
 #   facet_grid(salinity~RW, scales="free_y")
 
 p <- pAttach_post |>
-  filter(sim %in% sample(unique(pAttach_post$sim), 8)) |>
+  # filter(sim %in% sample(unique(pAttach_post$sim), 8)) |>
   mutate(salinity=paste(round(salinity, 1), "psu"),
          RW=paste("RW:", RW)) |>
   ggplot(aes(UV_raw, pAttach, alpha=fit, linewidth=fit,
@@ -649,7 +649,7 @@ ggsave(glue("{proj_dir}/admin/project_meetings/figs_temp/NEW_dataExamp_postAttac
 p
 
 p <- pAttach_post2 |>
-  filter(sim %in% sample(unique(pAttach_post2$sim), 8)) |>
+  # filter(sim %in% sample(unique(pAttach_post2$sim), 8)) |>
   mutate(UV_raw=paste(round(UV_raw, 1), "cm/s"),
          RW=paste("RW:", RW)) |>
   ggplot(aes(salinity, pAttach, alpha=fit, linewidth=fit,
@@ -818,7 +818,7 @@ plan(sequential)
 ```
 
 ```{r}
-selected_sims <- sample(unique(pSurv_post$sim), 10)
+selected_sims <- sample(unique(pSurv_post$sim), 3)
 p <- pSurv_post |>
   filter(sim %in% selected_sims) |>
   filter(fit=="Model") |>
