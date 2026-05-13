@@ -69,6 +69,8 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
                  "ensWts_p", "attach_beta",
                  "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
                  "detect_p", "nb_prec", "treatEfficacy")
+  iter <- 1000
+  stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2025-01-01")
 
   if(!refit & file.exists(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.rds"))) {
     out_full_df <- readRDS(glue("{sim_dir}posterior{ifelse(prior_only, '_PRIORS', '')}.rds"))
@@ -76,11 +78,8 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
     dat_full_df <- fread(glue("{sim_dir}stan_params{ifelse(prior_only, '_PRIORS', '')}.csv")) |>
       as_tibble()
   } else {
-    stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2025-01-01")
-
     # IEM: full model pop -----------------------------------------------------
 
-    iter <- 1000
     mod_full <- cmdstan_model("code/stan/integrated_population_model.stan")
     fit_full <- mod_full$sample(
       data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
@@ -165,8 +164,8 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
 
   if(any(grepl("GQ", keep))) {
     mu_draws_df <- take_mu_draws(out_full_df, glue("{sim_dir}/mu.rds"),
-                                 stan_dat$dat, ndraws=min(1e2, iter), GQ=TRUE)
-
+                                 stan_dat$dat, ndraws=min(1e2, iter), GQ=TRUE) |>
+      drop_na(mu) # some prior draws give NAs because of negbinom constraints
     mu_metrics <- calc_mu_metrics(mu_draws_df, lice_thresh=0.5)
     write_csv(mu_metrics$daily, glue("{sim_dir}/mu_GQ_metrics_daily{ifelse(prior_only, '_PRIORS', '')}.csv"))
     write_csv(mu_metrics$weekly, glue("{sim_dir}/mu_GQ_metrics_weekly{ifelse(prior_only, '_PRIORS', '')}.csv"))
@@ -184,7 +183,8 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
   }
   if(keep_licePreds) {
     mu_draws_df <- take_mu_draws(out_full_df, glue("{sim_dir}/mu.rds"),
-                                 stan_dat$dat, ndraws=min(1e2, iter), GQ=F)
+                                 stan_dat$dat, ndraws=min(1e2, iter), GQ=F) |>
+      drop_na(mu) # some prior draws give NAs because of negbinom constraints
     mu_metrics <- calc_mu_metrics(mu_draws_df, lice_thresh=0.5)
     write_csv(mu_metrics$daily, glue("{sim_dir}/mu_fitted_metrics_daily{ifelse(prior_only, '_PRIORS', '')}.csv"))
     write_csv(mu_metrics$daily, glue("{sim_dir}/mu_fitted_metrics_weekly{ifelse(prior_only, '_PRIORS', '')}.csv"))
