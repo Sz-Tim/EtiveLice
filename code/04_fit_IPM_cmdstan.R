@@ -24,19 +24,17 @@ refit <- F
 n_parallel <- 3
 
 n_chains <- 3
-stages <- c("Ch", "PA", "Ad")
-stage_trans <- c("Ch-PA", "PA-Ad")
+stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
+stageGrps <- c("Ch", "PA", "Ad")
+stage_trans <- c("Ch1-Ch2", "Ch2-PA1", "PA1-PA2", "PA2-Ad")
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            paste0("ensWts_p[", 1:10, "]"),
                            "IP_bg", "IP_bg_m3",
-                           paste0("surv_beta[1,", 1:3, "]"),
-                           paste0("surv_beta[2,", 1:3, "]"),
-                           paste0("surv_int_farm_sd[", 1:3, "]"),
-                           paste0("mnDaysStage_beta[1,", 1:2, "]"),
-                           paste0("mnDaysStage_beta[2,", 1:2, "]"),
-                           paste0("thresh_GDD[", 1:2, ",1]"),
-                           paste0("thresh_GDD[", 1:2, ",2]"),
-                           "lifespan",
+                           paste0("surv_beta[1,", 1:5, "]"),
+                           paste0("surv_beta[2,", 1:5, "]"),
+                           paste0("surv_int_farm_sd[", 1:5, "]"),
+                           paste0("mnDaysStage_beta[1,", 1:4, "]"),
+                           paste0("mnDaysStage_beta[2,", 1:4, "]"),
                            paste0("detect_p[", 1:2, "]"),
                            "nb_prec",
                            "IP_scale", "IP_halfSat_m3",
@@ -47,12 +45,9 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                             paste0("surv_Int_", stages),
                             paste0("surv_Sal_", stages),
                             paste0("surv_int_farm_sd_", stages),
-                            paste0("mnDaysStage_Int_", stages[1:2]),
-                            paste0("mnDaysStage_Temp_", stages[1:2]),
-                            paste0("moltF_GDD_", stage_trans),
-                            paste0("moltM_GDD_", stage_trans),
-                            "lifespan_GDD",
-                            paste0("p_detect_", stages[-3]),
+                            paste0("mnDaysStage_Int_", stages[1:4]),
+                            paste0("mnDaysStage_Temp_", stages[1:4]),
+                            paste0("p_detect_", stageGrps[-3]),
                             "neg_binom_prec",
                             "IP_scale", "IP_halfSat_m3",
                             "treatEfficacy"
@@ -109,19 +104,16 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
       name=c(paste0("attach_beta[", 1:5, "]"),
              "IP_bg_m3",
              paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
-             paste0("surv_beta[1,", 1:3, "]"), paste0("surv_beta[2,", 1:3, "]"),
-             paste0("surv_int_farm_sd[", 1:3, "]"),
-             paste0("thresh_GDD[", 1:2, ",1]"), paste0("thresh_GDD[", 1:2, ",2]"),
-             "lifespan",
-             paste0("detect_p[", 1:stan_dat$dat$nStages, "]"), "nb_prec",
+             paste0("surv_beta[1,", 1:stan_dat$dat$nStages, "]"),
+             paste0("surv_beta[2,", 1:stan_dat$dat$nStages, "]"),
+             paste0("surv_int_farm_sd[", 1:stan_dat$dat$nStages, "]"),
+             paste0("detect_p[", 1:stan_dat$dat$nStageGroups, "]"), "nb_prec",
              "treatEfficacy"),
       value=c(stan_dat$params$attach_beta,
               stan_dat$params$IP_bg_m3,
               stan_dat$params$ensWts_p,
-              t(stan_dat$params$surv_beta),
+              c(t(stan_dat$params$surv_beta)),
               stan_dat$params$surv_int_farm_sd,
-              stan_dat$params$thresh_GDD,
-              stan_dat$params$lifespan,
               stan_dat$params$detect_p,
               stan_dat$params$nb_prec,
               stan_dat$params$treat_efficacy)
@@ -140,11 +132,11 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
     geom_vline(xintercept=0, linetype=3)
   p_surv <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("surv_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
-    post_summary_plot(ncol=3, scales="free") +
+    post_summary_plot(ncol=5, scales="free") +
     geom_vline(xintercept=0, linetype=3)
   p_surv_sd <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("surv_int_farm_sd", name)) |> inner_join(param_key, by=join_by(name))) |>
-    post_summary_plot(ncol=3, scales="free") +
+    post_summary_plot(ncol=5, scales="free") +
     geom_vline(xintercept=0, linetype=3)
   p_pMoltTemp <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("mnDaysStage_beta", name)) |> inner_join(param_key, by=join_by(name))) |>

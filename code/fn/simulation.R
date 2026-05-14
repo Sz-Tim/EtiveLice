@@ -165,7 +165,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
     #--- Calculate latent mean lice per fish for each day, farm, stage, and sex
     for(stage in 1:info$nStages) {
       for(sex in 1:2) {
-        y_bar[stage, sex, day, ] <- mu[stage, sex, day, ] * nFishSampled_mx[day,] * params$detect_p[stage]
+        y_bar[stage, sex, day, ] <- mu[stage, sex, day, ] * nFishSampled_mx[day,] * params$detect_p[info$stg_grp_ii[stage]]
       }
     }
     #--- Sample fish and calculate mean
@@ -173,8 +173,8 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
       if(day %in% sampledDays[sampledDays[,1]==farm,2]) {
         for(sex in 1:2) {
           y[, sex, day, farm] <- rnbinom(info$nStages,
-                                       mu=y_bar[, sex, day, farm],
-                                       size=params$nb_prec)
+                                         mu=y_bar[, sex, day, farm],
+                                         size=params$nb_prec)
         }
         #--- Treat if AF > threshold
         if(nFishSampled_mx[day, farm] > 0 &
@@ -187,22 +187,28 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
     }
   }
 
+  # combine Ch1+2, PA1+2
+  y_obs <- array(0, dim=c(info$nStageGroups, 2, info$nDays, info$nFarms))
+  y_obs[1,,,] <- apply(y[1:2,,,], 2:4, sum)
+  y_obs[2,,,] <- apply(y[3:4,,,], 2:4, sum)
+  y_obs[3,,,] <- y[5,,,]
+
   out_df <- farm_env_daily |>
     select(date, sepaSite, pen, sampled, nFishSampled) |>
     arrange(day, sepaSite, pen) |>
     mutate(treat=c(treatDays_mx)) |>
-    mutate(mu_chal=c(apply(mu[1,,,], 2:3, sum)),
-           mu_prea=c(apply(mu[2,,,], 2:3, sum)),
-           mu_af=c(mu[3,1,,]),
-           mu_am=c(mu[3,2,,]),
-           ybar_chal=c(apply(y_bar[1,,,], 2:3, sum)),
-           ybar_prea=c(apply(y_bar[2,,,], 2:3, sum)),
-           ybar_af=c(y_bar[3,1,,]),
-           ybar_am=c(y_bar[3,2,,]),
-           y_chal=c(apply(y[1,,,], 2:3, sum)),
-           y_prea=c(apply(y[2,,,], 2:3, sum)),
-           y_af=c(y[3,1,,]),
-           y_am=c(y[3,2,,])) |>
+    mutate(mu_chal=c(apply(mu[1:2,,,], 3:4, sum)),
+           mu_prea=c(apply(mu[3:4,,,], 3:4, sum)),
+           mu_af=c(mu[5,1,,]),
+           mu_am=c(mu[5,2,,]),
+           ybar_chal=c(apply(y_bar[1:2,,,], 3:4, sum)),
+           ybar_prea=c(apply(y_bar[3:4,,,], 3:4, sum)),
+           ybar_af=c(y_bar[5,1,,]),
+           ybar_am=c(y_bar[5,2,,]),
+           y_chal=c(apply(y_obs[1,,,], 2:3, sum)),
+           y_prea=c(apply(y_obs[2,,,], 2:3, sum)),
+           y_af=c(y_obs[3,1,,]),
+           y_am=c(y_obs[3,2,,])) |>
     mutate(across(starts_with("y"), ~.x/nFishSampled))
 
 
@@ -223,8 +229,9 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   cat(format(now(), "%F %T"), "  Storing lice structures  \n")
   saveRDS(N_attach, glue("{out_dir}/N_attach.rds"))
   saveRDS(mu, glue("{out_dir}/mu.rds"))
-  saveRDS(y_bar, glue("{out_dir}/y_bar.rds"))
-  saveRDS(y, glue("{out_dir}/y.rds"))
+  saveRDS(y_bar, glue("{out_dir}/y_bar_full.rds"))
+  saveRDS(y, glue("{out_dir}/y_full.rds"))
+  saveRDS(y_obs, glue("{out_dir}/y_obs.rds"))
   write_csv(out_df, glue("{out_dir}/out_df.csv"))
 
   return(out_df)

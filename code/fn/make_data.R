@@ -38,7 +38,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     y_bar_minimum=1e-5,
     day_hour=readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
     # farm counts, treatments, sampling info
-    y=readRDS(glue("{dat_dir}y.rds"))[,,dates,],
+    y=readRDS(glue("{dat_dir}y_obs.rds"))[,,dates,],
     nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
     treatDays=readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
     sample_i=readRDS(glue("{dat_dir}sampledDays.rds")) |> as_tibble() |> filter(day %in% dates) |> as.matrix(),
