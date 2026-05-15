@@ -25,7 +25,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
     eggTemp_fn=c("constant", "logistic"),
     lightN=c(0.005, 0.5),
     lightC=c(2e-6, 2e-4),
-    coldPrefN=c("true", "false"),
+    tempPrefN=c("none", "warm", "cold"),
     swimUpN=c(0.05, 5)*1e-3, # mm/s -> m/s
     swimDownN=c(0.05, 2.5)*1e-3, # mm/s -> m/s
     swimUpC=c(0.1, 10)*1e-3, # mm/s -> m/s
@@ -74,7 +74,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
         qunif_minmax(LHS[,8]) |>
         pow(2),
       # Nauplius only swim up if surface is colder
-      swimColdNauplius=bounds$coldPrefN[qinteger(LHS[,9], 1, length(bounds$coldPrefN))],
+      tempPrefNauplius=bounds$tempPrefN[qinteger(LHS[,9], 1, length(bounds$tempPrefN))],
       # Swim speeds: sample on a sqrt scale
       swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
         qunif_minmax(LHS[,10]) |>
@@ -151,7 +151,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
         qunif_minmax(pnorm(light_mx[,2])) |>
         pow(2),
       # Nauplius only swim up if surface is colder
-      swimColdNauplius=bounds$coldPrefN |>
+      tempPrefNauplius=bounds$tempPrefN |>
         sample(n_sim, replace=T),
       # Swim speeds: sample on a sqrt scale
       swimUpSpeedNaupliusMean=sqrt(bounds$swimUpN) |>
