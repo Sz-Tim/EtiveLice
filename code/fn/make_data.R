@@ -37,8 +37,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     IP_volume=info$IP_penVolume,
     y_bar_minimum=1e-5,
     day_hour=readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
-    # farm counts, treatments, sampling info
-    y=readRDS(glue("{dat_dir}y_obs.rds"))[,,dates,],
+    # farm data, treatments, sampling info
     nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
     treatDays=readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
     sample_i=readRDS(glue("{dat_dir}sampledDays.rds")) |> as_tibble() |> filter(day %in% dates) |> as.matrix(),
@@ -92,9 +91,15 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
   }
   if(source=="sim") {
     # add male Ch/PA, re-divide assuming a 50:50 ratio
+    stan_dat$y <- readRDS(glue("{dat_dir}y_obs.rds"))[,,dates,]
     stan_dat$y_F <- stan_dat$y[,1,,]
     stan_dat$y_F[1,,] <- round((stan_dat$y_F[1,,] + stan_dat$y[1,2,,])/2)
     stan_dat$y_F[2,,] <- round((stan_dat$y_F[2,,] + stan_dat$y[2,2,,])/2)
+  } else {
+    stan_dat$y <- readRDS(glue("{dat_dir}y_obs.rds"))[,dates,]
+    stan_dat$y_F <- stan_dat$y
+    stan_dat$y_F[1,,] <- round(stan_dat$y_F[1,,]/2)
+    stan_dat$y_F[2,,] <- round(stan_dat$y_F[2,,]/2)
   }
   if(is.null(GQ_start)) {
     stan_dat <- c(
