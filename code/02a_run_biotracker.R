@@ -4,7 +4,6 @@
 # Run biotracker simulations
 
 
-
 # setup -------------------------------------------------------------------
 
 library(tidyverse); library(glue)
@@ -15,58 +14,70 @@ library(sf)
 dirf("code/fn", ".R") |> walk(source)
 theme_set(theme_bw() + theme(panel.grid=element_blank()))
 
+reset_params <- F
 set.seed(1003)
 
 
 # define parameters -------------------------------------------------------
 
-cores_per_sim <- 12
+cores_per_sim <- 50
 parallel_sims <- 2
-start_date <- "2023-01-01"
+start_date <- "2022-01-01"
 end_date <- "2025-12-31"
 nDays <- length(seq(ymd(start_date), ymd(end_date), by=1))
 
 os <- get_os()
-dirs <- switch(
-  get_os(),
+dirs_opts <- list(
   linux=list(proj=getwd(),
              mesh="/home/sa04ts/hydro/meshes",
              hf0="/home/sa04ts/hydro/etive28/Archive",
              hf1="/home/sa04ts/hydro/WeStCOMS2/Archive",
              jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
-             jar="/home/sa04ts/biotracker/biotracker_v2-2-2.jar",
+             jar="/home/sa04ts/biotracker/biotracker_v2-2-3.jar",
              dat="/home/sa04ts/EtiveLice/data",
-             out=glue("{getwd()}/out/jpm")),
+             out=glue("{getwd()}/out/ipm")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
                hf0="E:/hydro/etive28/Archive",
                hf1="E:/hydro/WeStCOMS2/Archive",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
-               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-2.jar",
+               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-3.jar",
                dat="E:/EtiveLice/data",
-               out="E:/EtiveLice/out/jpm")
+               out="E:/EtiveLice/out/ipm")
 )
+dirs <- dirs_opts[[os]]
 
-n_sim <- 10
-post_dir <- glue("{dirs$proj}/data/lit/fit")
-egg_post <- list(constant=read_csv(glue("{post_dir}/egg_temp_constant_post.csv"), show_col_types=F),
-                 logistic=read_csv(glue("{post_dir}/egg_temp_logistic_post.csv"), show_col_types=F),
-                 linear=read_csv(glue("{post_dir}/egg_temp_linear_post.csv"), show_col_types=F)) |>
-  map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
-        unite("all", everything(), sep=",") %>%
-        .$all)
-mort_post <- list(constant=read_csv(glue("{post_dir}/mort_sal_constant_post.csv"), show_col_types=F),
-                  logistic=read_csv(glue("{post_dir}/mort_sal_logistic_post.csv"), show_col_types=F)) |>
-  map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
-        unite("all", everything(), sep=",") %>%
-        .$all)
-sink_post <- read_csv(glue("{post_dir}/sink_sal_linear_post.csv"), show_col_types=F) |>
-  mutate(across(everything(), ~.x/1e3)) #mm/s to m/s
-sim.i <- sample_parameter_distributions(n_sim, dirs$out, "lhs", egg_post, mort_post, sink_post) |>
-  mutate(connectivityThresh=30,
-         variableDh="false",
-         variableDhV="false")
-write_csv(sim.i, glue("{dirs$out}/sim_i.csv"))
+if(reset_params) {
+  n_sim <- 10
+  post_dir <- glue("{dirs$proj}/data/lit/fit")
+  egg_post <- list(constant=read_csv(glue("{post_dir}/egg_temp_constant_post.csv"), show_col_types=F),
+                   logistic=read_csv(glue("{post_dir}/egg_temp_logistic_post.csv"), show_col_types=F),
+                   linear=read_csv(glue("{post_dir}/egg_temp_linear_post.csv"), show_col_types=F)) |>
+    map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
+          unite("all", everything(), sep=",") %>%
+          .$all)
+  mort_post <- list(constant=read_csv(glue("{post_dir}/mort_sal_constant_post.csv"), show_col_types=F),
+                    logistic=read_csv(glue("{post_dir}/mort_sal_logistic_post.csv"), show_col_types=F)) |>
+    map(~.x |> mutate(across(everything(), ~signif(.x, 3))) |>
+          unite("all", everything(), sep=",") %>%
+          .$all)
+  sink_post <- read_csv(glue("{post_dir}/sink_sal_linear_post.csv"), show_col_types=F) |>
+    mutate(across(everything(), ~.x/1e3)) #mm/s to m/s
+  sim.i <- sample_parameter_distributions(n_sim, dirs$out, "lhs", egg_post, mort_post, sink_post) |>
+    mutate(connectivityThresh=30,
+           variableDh=sample(c("true", "false"), n_sim, replace=T, prob=c(0.25, 0.75)),
+           variableDhV=sample(c("true", "false"), n_sim, replace=T, prob=c(0.25, 0.75)))
+  write_csv(sim.i, glue("{dirs$out}/sim_i.csv"))
+} else {
+  sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
+  # check if sim_i was created on the same operating system; update dirs if needed
+  if(!grepl(dirs$out, sim.i$outDir[1])) {
+    sim.i <- sim.i |>
+      mutate(outDir=str_replace(outDir,
+                                dirs_opts[[-which(names(dirs_opts)==os)]]$out,
+                                dirs_opts[[which(names(dirs_opts)==os)]]$out))
+  }
+}
 sim_seq <- 1:nrow(sim.i)
 
 
@@ -82,7 +93,7 @@ walk(sim_seq,
        parallelThreadsHD=6,
        start_ymd=as.numeric(str_remove_all(start_date, "-")),
        numberOfDays=nDays,
-       nparts=5,
+       nparts=50,
        releaseInterval=1,
        checkOpenBoundaries="true",
        # meshes and environment
@@ -97,9 +108,9 @@ walk(sim_seq,
        hfDirPrefix1="netcdf_",
        hfFilePrefix1="westcoms2",
        # sites
-       sitefile=glue("{dirs$dat}/pen_sites_widerLinnhe_2023-2025.csv"),
-       sitefileEnd=glue("{dirs$dat}/pen_sites_widerLinnhe_2023-2025.csv"),
-       siteDensityPath=glue("{dirs$dat}/lice_daily_widerLinnhe_2023-01-01_2025-12-31.csv"),
+       sitefile=glue("{dirs$dat}/farm_sites_widerLinnhe_2022-2025.csv"),
+       sitefileEnd=glue("{dirs$dat}/pen_sites_widerLinnhe_2022-2025.csv"),
+       siteDensityPath=glue("{dirs$dat}/lice_daily_widerLinnhe_2022-01-01_2025-12-31.csv"),
        # dynamics
        variableDh=sim.i$variableDh[.x],
        variableDhV=sim.i$variableDhV[.x],
@@ -121,7 +132,7 @@ walk(sim_seq,
        salinityThreshNaupliusMax=sim.i$salinityThreshNaupliusMax[.x],
        lightThreshCopepodid=sim.i$lightThreshCopepodid[.x],
        lightThreshNauplius=sim.i$lightThreshNauplius[.x],
-       swimColdNauplius=sim.i$swimColdNauplius[.x],
+       tempPrefNauplius=sim.i$tempPrefNauplius[.x],
        swimUpSpeedCopepodidMean=sim.i$swimUpSpeedCopepodidMean[.x],
        swimUpSpeedCopepodidStd=abs(sim.i$swimUpSpeedCopepodidMean[.x]/5),
        swimDownSpeedCopepodidMean=sim.i$swimDownSpeedCopepodidMean[.x],
@@ -220,8 +231,9 @@ write_csv(site_vols, "data/sim/inputs/farm_influx_vols.csv")
 # hourly IP for each day per pen
 library(furrr); library(future)
 plan(multisession, workers=20)
+f <- dirrf(dirs$out, "connectivity.*csv")
 c_df <- future_map_dfr(
-  dirrf(dirs$out, "connectivity.*csv"),#[sample.int(75559, 100)],
+  grep("sim_0[1-2]", f, value=T), # TODO: Calculate for all sims
   ~load_connectivity(.x,
                      source_names=pens_linnhe$pen,
                      dest_names=pens_linnhe$pen,

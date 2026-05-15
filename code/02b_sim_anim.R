@@ -32,19 +32,20 @@ dirs <- switch(
              mesh="/home/sa04ts/hydro/meshes",
              hf0="/home/sa04ts/hydro/WeStCOMS2/Archive",
              jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
-             jar="/home/sa04ts/biotracker/biotracker_v2-2-2.jar",
+             jar="/home/sa04ts/biotracker/biotracker_v2-2-3.jar",
              dat="/home/sa04ts/EtiveLice/data",
              out=glue("{getwd()}/out/biotracker")),
   windows=list(proj=getwd(),
                mesh="E:/hydro",
                hf0="E:/hydro/WeStCOMS2/Archive",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
-               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-2.jar",
+               jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-3.jar",
                dat="E:/EtiveLice/data",
-               out="E:/EtiveLice/out/jpm_anim")
+               out="E:/EtiveLice/out/ipm_anim")
 )
 
-sim.i <- read_csv("E:/EtiveLice/out/jpm/sim_i.csv")
+sim.i <- read_csv("E:/EtiveLice/out/ipm/sim_i.csv") |>
+  mutate(outDir=str_replace(outDir, "ipm", "ipm_anim"))
 sim_seq <- 1:nrow(sim.i)
 
 
@@ -60,7 +61,7 @@ walk(sim_seq,
        parallelThreadsHD=6,
        start_ymd=as.numeric(str_remove_all(start_date, "-")),
        numberOfDays=nDays,
-       nparts=100,
+       nparts=200,
        releaseInterval=1,
        checkOpenBoundaries="true",
        # meshes and environment
@@ -70,9 +71,9 @@ walk(sim_seq,
        hfDirPrefix0="netcdf_",
        hfFilePrefix0="westcoms2",
        # sites
-       sitefile=glue("{dirs$dat}/pen_sites_widerLinnhe_2025.csv"),
-       sitefileEnd=glue("{dirs$dat}/pen_sites_widerLinnhe_2025.csv"),
-       siteDensityPath=glue("{dirs$dat}/lice_daily_widerLinnhe_2025-03-01_2025-12-31.csv"),
+       sitefile=glue("{dirs$dat}/farm_sites_widerLinnhe_2022-2025.csv"),
+       sitefileEnd=glue("{dirs$dat}/pen_sites_widerLinnhe_2022-2025.csv"),
+       siteDensityPath=glue("{dirs$dat}/lice_daily_widerLinnhe_2025-01-01_2025-12-31.csv"),
        # dynamics
        variableDh=sim.i$variableDh[.x],
        variableDhV=sim.i$variableDhV[.x],
@@ -94,7 +95,7 @@ walk(sim_seq,
        salinityThreshNaupliusMax=sim.i$salinityThreshNaupliusMax[.x],
        lightThreshCopepodid=sim.i$lightThreshCopepodid[.x],
        lightThreshNauplius=sim.i$lightThreshNauplius[.x],
-       swimColdNauplius=sim.i$swimColdNauplius[.x],
+       tempPrefNauplius=sim.i$tempPrefNauplius[.x],
        swimUpSpeedCopepodidMean=sim.i$swimUpSpeedCopepodidMean[.x],
        swimUpSpeedCopepodidStd=abs(sim.i$swimUpSpeedCopepodidMean[.x]/5),
        swimDownSpeedCopepodidMean=sim.i$swimDownSpeedCopepodidMean[.x],
@@ -144,17 +145,7 @@ mesh_fp <- dir(dirs$mesh, "WeStCOMS2_meshFootprint.gpkg", full.names=T) |>
   st_read() |>
   st_crop(c(xmin=100000, xmax=225000, ymin=680000, ymax=810000))
 
-# pSteps_df <- dir(dirs$out, "pstepsMature", recursive=T, full.names=T)[-(1:(24*14))][1:(24*7) + 6*30*24] |>
-#   map_dfr(~load_psteps(.x, liceScale=1) |>
-#             filter(i %in% mesh_sf$i)) |>
-#   pivot_longer(starts_with("t_")) |>
-#   drop_na() |>
-#   mutate(time=ymd(start_date) + hours(str_sub(name, 3, -1)) - hours(1))
-site_df <- read_csv(glue("{dirs$dat}/pen_sites_widerLinnhe_2025.csv")) |>
-  mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
-  summarise(easting=mean(easting),
-            northing=mean(northing),
-            .by=sepaSite)
+site_df <- read_csv(glue("{dirs$dat}/farm_sites_widerLinnhe_2025.csv"))
 sim.i <- read_csv(glue("{dirs$out}/sim_i.csv"))
 
 
