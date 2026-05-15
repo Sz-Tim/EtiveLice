@@ -1,10 +1,21 @@
 # Compiled rstan models
 /code/stan/*.rds
 
+# scratch code
+/code/00_*
+/code/XX_*
+
 # directories
 /Teams/
 /ms/
 /admin/
+/data/sims/sim_*
+/temp/
+/code/dev/
+/data/deprecated/
+/figs/
+/code/stan/dev/
+/data/aquaculture/
 
 # History files
 .Rhistory
