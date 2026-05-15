@@ -87,7 +87,7 @@ dir.create(out_dir, recursive=T)
 
 ```{r}
 #| label: "pen_df"
-pen_df <- read_csv(glue("{inputs_dir}/pen_sites_widerLinnhe_2023-2025.csv"), 
+pen_df <- read_csv(glue("{inputs_dir}/pen_sites_widerLinnhe_2022-2025.csv"), 
                    show_col_types=F) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
   filter(sepaSite %in% MOWI_farms) |>
@@ -100,7 +100,7 @@ farm_order <- sort(unique(pen_df$sepaSite))
 
 ```{r}
 #| label: "farm_i"
-farm_i <- read_csv(glue("{inputs_dir}/farm_sites_widerLinnhe_2023-2025.csv"),
+farm_i <- read_csv(glue("{inputs_dir}/farm_sites_widerLinnhe_2022-2025.csv"),
                    show_col_types=F) |>
   filter(sepaSite %in% farm_order) |>
   inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
