@@ -15,13 +15,14 @@ def main(args):
     os.makedirs(destination_dir, exist_ok=True)
 
     # List of variables to copy
-    variables_to_copy = ['u', 'v', 'ww', 'temp', 'salinity', 'short_wave', 'kh', 'viscofh']
+    variables_to_copy = ['u', 'v', 'ww', 'temp', 'salinity', 'short_wave']
 
     # Iterate over each file in the source directory
     filenames = os.listdir(source_dir)
     filenames.sort(reverse=args.rev)
     for filename in filenames:
-        if filename.endswith('.nc') and not os.path.exists(os.path.join(destination_dir, filename)):
+        if filename.endswith('.nc'):
+          if overwrite or not  os.path.exists(os.path.join(destination_dir, filename)):
             print(f'Starting {filename}')
             # Open the source netCDF file using xarray
             src_path = os.path.join(source_dir, filename)
@@ -41,5 +42,6 @@ if __name__ == '__main__':
     parser.add_argument('--dest_dir', type=str, help='Destination directory', default='./WeStCOMS2/Archive')
     parser.add_argument('--source_dir', type=str, help='Source directory', default='/media/archiver/common/sa01da-work/WeStCOMS2/Archive')
     parser.add_argument('--rev', type=bool, help='Reverse download order?', default=False)
+    parser.add_argument('--overwrite', type=bool, help='Overwrite existing files?', default=False)
     args = parser.parse_args()
     main(args)
