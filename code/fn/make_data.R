@@ -184,6 +184,9 @@ make_IP_mx <- function(influx_df, info, out_dir=NULL) {
 
 
 make_attach_env_mx <- function(farm_env, info, params, out_dir=NULL) {
+  if("pen" %notin% names(farm_env)) {
+    farm_env$pen <- "a"
+  }
   farm_env <- farm_env |> arrange(time, sepaSite, pen)
   attach_env_mx <- array(1, dim=c(info$nFarms, info$nHours, 5))
   attach_env_mx[,,1] <- farm_env$RW_logit
@@ -246,6 +249,9 @@ make_nFish_mx <- function(farm_env, info, out_dir=NULL) {
 }
 
 make_sampledDays <- function(farm_env, out_dir=NULL) {
+  if("pen" %notin% names(farm_env)) {
+    farm_env$pen <- "a"
+  }
   sampledDays <- farm_env |>
     arrange(sepaSite, pen, day) |>
     filter(sampled) |>

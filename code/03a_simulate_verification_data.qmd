@@ -249,7 +249,8 @@ farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F)
          uv=uv*100, 
          uv_sq=uv^2,
          salinity_m30=salinity - 30) |> # recenter so intercept = high salinity
-  mutate(across(c(temperature, u, v, w, uv, salinity), ~c(scale(.x)), .names="{.col}_z"))
+  mutate(across(c(temperature, u, v, w, uv, salinity), ~c(scale(.x)), .names="{.col}_z"),
+         uv_z_sq=uv_z^2)
 glimpse(farm_env)
 # for back-transforming z-scores
 farm_env_avg <- farm_env |>

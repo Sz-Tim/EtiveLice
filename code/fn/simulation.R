@@ -38,8 +38,8 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   # nFishSampled[day, farm]
   nFishSampled_mx <- make_nFishSampled_mx(farm_env_daily, info, nFish_mx, out_dir)
 
-  # treatDays_mx[day, farm] -- initialize as 0s
-  treatDays_mx <- array(0, dim=c(info$nFarms, info$nDays, ncol=info$nTrtTypes))
+  # trtApplied_mx[farm, days, trtTypes] -- initialize as 0s
+  trtApplied_mx <- array(0, dim=c(info$nFarms, info$nDays, ncol=info$nTrtTypes))
 
 
   #---- Data structures
@@ -180,8 +180,9 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
         if(nFishSampled_mx[day, farm] > 0 &
            (y[info$nStages, 1, day, farm]/nFishSampled_mx[day, farm] > params$treat_thresh) &
             day < info$nDays)  {
-          treatDays_mx[day+1, farm] = 1
-          stage_survRate[farm, day,] <- stage_survRate[farm, day,] * (1 - params$treat_efficacy)
+          trtApplied_mx[farm, day+1,] <- rbinom(info$nTrtTypes, 1, 1/info$nTrtTypes)
+          stage_survRate[farm, day,] <- stage_survRate[farm, day,] *
+            exp(sum(trtApplied_mx[farm, day+1,] %*% log(1 - params$treat_efficacy)))
         }
       }
     }
@@ -193,10 +194,18 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   y_obs[2,,,] <- apply(y[3:4,,,], 2:4, sum)
   y_obs[3,,,] <- y[5,,,]
 
+  if("pen" %notin% names(farm_env_daily)) {
+    farm_env_daily$pen <- "a"
+  }
   out_df <- farm_env_daily |>
     select(date, sepaSite, pen, sampled, nFishSampled) |>
     arrange(day, sepaSite, pen) |>
-    mutate(treat=c(treatDays_mx)) |>
+    bind_cols(imap_dfc(1:dim(trtApplied_mx)[3],
+                       ~list(x=c(t(trtApplied_mx[,,.x]))) |>
+                         set_names(paste0("trt_", .y)))) |>
+    rowwise() |>
+    mutate(treat=any(c_across(starts_with("trt_")))) |>
+    ungroup() |>
     mutate(mu_chal=c(apply(mu[1:2,,,], 3:4, sum)),
            mu_prea=c(apply(mu[3:4,,,], 3:4, sum)),
            mu_af=c(mu[5,1,,]),
@@ -215,7 +224,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   cat(format(now(), "%F %T"), "Writing simulation to", out_dir, "\n")
 
   cat(format(now(), "%F %T"), "  Storing calculated variables  \n")
-  saveRDS(treatDays_mx, glue("{out_dir}/treatDays_mx.rds"))
+  saveRDS(trtApplied_mx, glue("{out_dir}/trtApplied_mx.rds"))
   saveRDS(ensIP, glue("{out_dir}/ensIP.rds"))
   saveRDS(pr_attach, glue("{out_dir}/pr_attach.rds"))
   saveRDS(day_hour, glue("{out_dir}/day_hour.rds"))

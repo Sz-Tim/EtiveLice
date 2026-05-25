@@ -4,6 +4,11 @@
 # Helper functions
 
 
+"%notin%" <- function(x, table) {
+  ! x %in% table
+}
+
+
 seq_range <- function(x, ...) {
   x_range <- range(x)
   seq(x_range[1], x_range[2], ...)
