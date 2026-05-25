@@ -200,18 +200,18 @@ farm_dat_gg <- ggplot(farm_dat, aes(x=date)) +
   ylim(0, NA) + 
   facet_wrap(~sepaSite, nrow=1) +
   theme(axis.title.x=element_blank())
-p_ls <- list(farm_dat_gg + geom_line(aes(y=nFish_est, group=pen)),
-             farm_dat_gg + geom_line(aes(y=weeklyAverageAf, group=pen)),
-             farm_dat_gg + geom_line(aes(y=total_AF, group=pen)),
-             farm_dat_gg + geom_line(aes(y=RW, group=pen)))
+p_ls <- list(farm_dat_gg + geom_line(aes(y=nFish_est)),
+             farm_dat_gg + geom_line(aes(y=weeklyAverageAf)),
+             farm_dat_gg + geom_line(aes(y=total_AF)),
+             farm_dat_gg + geom_line(aes(y=RW)))
 cowplot::plot_grid(plotlist=p_ls, ncol=1, align="hv")
 
 if(save_figs) {
   cowplot::plot_grid(farm_dat_gg +
-                       geom_line(aes(y=nFish_est, group=pen)) +
+                       geom_line(aes(y=nFish_est)) +
                        ylab("Number of fish"),
                      farm_dat_gg +
-                       geom_line(aes(y=weeklyAverageAf * (nFish_est > 0), group=pen)) +
+                       geom_line(aes(y=weeklyAverageAf * (nFish_est > 0))) +
                        ylab("Mean lice per fish (AF)"),
                      ncol=1, align="hv")
   ggsave("admin/project_meetings/figs_temp/dataExamp_farm_dat.png", width=10, height=4)
@@ -281,7 +281,7 @@ farm_env_daily |>
                names_to="variable", values_to="value") |>
   mutate(variable=factor(variable,
                          levels=c("salinity", "temperature", "u", "v", "w", "uv"))) |>
-  ggplot(aes(date, value, colour=sepaSite, group=pen)) +
+  ggplot(aes(date, value, colour=sepaSite)) +
   geom_line() +
   scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
   facet_grid(variable~sepaSite, scales="free_y") +
@@ -299,7 +299,7 @@ if(save_figs) {
     mutate(variable=factor(variable,
                            levels=c("salinity", "temperature", "u", "v", "w", "uv"))) |>
     filter(variable %in% c("uv", "salinity", "temperature")) |>
-    ggplot(aes(date, value, colour=sepaSite, group=pen)) +
+    ggplot(aes(date, value, colour=sepaSite)) +
     geom_line() +
     scico::scale_colour_scico_d(palette="devon", end=0.8, direction=1, guide="none") +
     facet_grid(variable~sepaSite, scales="free_y") +
@@ -1088,6 +1088,10 @@ mu_farm <- mu_df |>
   summarise(value=mean(value)) |>
   ungroup()
 y_farm <- y_df |>
+  group_by(date, sepaSite, type, stage) |>
+  summarise(value=mean(value)) |>
+  ungroup()
+ybar_farm <- ybar_df |>
   group_by(date, sepaSite, type, stage) |>
   summarise(value=mean(value)) |>
   ungroup()
