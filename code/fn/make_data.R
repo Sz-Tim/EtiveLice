@@ -32,6 +32,9 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     nSims=info$nSims,
     nStages=info$nStages,
     nPens=info$nPens,
+    nTrtMethods=info$nTrtMethods,
+    nTrtTypes=info$nTrtTypes,
+    trt_meth_ii=info$trt_meth_ii,
     nAttachCov=length(params$attach_beta),
     nSurvCov=nrow(params$surv_beta),
     IP_volume=info$IP_penVolume,
@@ -39,7 +42,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     day_hour=readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
     # farm data, treatments, sampling info
     nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
-    treatDays=readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates,],
+    treatTypes=readRDS(glue("{dat_dir}treatTypes_mx.rds"))[dates,],
     sample_i=readRDS(glue("{dat_dir}sampledDays.rds")) |> as_tibble() |> filter(day %in% dates) |> as.matrix(),
     nFishSampled_mx=t(readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,]),
     # IP from biotracker
@@ -54,6 +57,12 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
     prior_attach_beta=cbind(c(1, rep(0.25, length(params$attach_beta)-2), 0),
                             c(rep(0.25, length(params$attach_beta)-1), 0.25)),
+    # treatment: trtEff[global] ~ N(mu, sigma) (logit scale)
+    prior_logit_trtEff_global=c(0, 1),
+    # treatment: trtEff[method] ~ N(trtEff[global], trtEff_sd_methods)  (logit scale)
+    prior_trtEff_sd_methods=0.5,
+    # treatment: trtEff[type] ~ N(trtEff[method], trtEff_sd_types)  (logit scale)
+    prior_trtEff_sd_types=0.5,
     # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
     prior_surv_beta=array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
                             rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
@@ -113,7 +122,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            surv_env_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nSurvCov)),
            temp_z_mx_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
            nFish_mx_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
-           treatDays_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
+           treatTypes_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
            sample_i_GQ=matrix(0, nrow=1, ncol=2),
            sample_ii_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=2),
            nFishSampled_mx_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=1)
@@ -129,7 +138,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates_GQ,],
            temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates_GQ,],
            nFish_mx_GQ=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates_GQ,],
-           treatDays_GQ=readRDS(glue("{dat_dir}treatDays_mx.rds"))[dates_GQ,],
+           treatTypes_GQ=readRDS(glue("{dat_dir}treatTypes_mx.rds"))[dates_GQ,],
            sample_i_GQ=readRDS(glue("{dat_dir}sampledDays.rds")) |>
              as_tibble() |>
              filter(day %in% dates_GQ) |>
@@ -197,6 +206,17 @@ make_sal_mx <- function(farm_env, info, params, out_dir=NULL) {
     saveRDS(sal_mx, glue("{out_dir}/sal_mx.rds"))
   }
   return(sal_mx)
+}
+
+make_trtApplied_mx <- function(trt_df, info, out_dir=NULL) {
+  trtApp_mx <- array(0, dim=c(info$nFarms, info$nDays, info$nTrtTypes))
+  for(trt in 1:info$nTrtTypes) {
+    trtApp_mx[,,trt] <- trt_df[[paste0("t_", trt)]]
+  }
+  if(!is.null(out_dir)) {
+    saveRDS(trtApp_mx, glue("{out_dir}/trtApp_mx.rds"))
+  }
+  return(trtApp_mx)
 }
 
 make_temp_mx <- function(farm_env, info, out_dir=NULL) {

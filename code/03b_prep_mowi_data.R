@@ -11,11 +11,24 @@ library(tidyverse); library(glue)
 library(sevcheck) # devtools::install_github("Sz-Tim/sevcheck")
 library(biotrackR) # devtools::install_github("Sz-Tim/biotrackR@dev")
 
+dat_dir <- "data/aquaculture"
+dat_stan_dir <- "data/aquaculture/mowi_stan"
+inputs_dir <- "data/biotracker/2022_2025"
 
+sepa_key <- c("APT1"="Etive 4",
+              "ARDG1"="Ardgour",
+              "CAG1"="Camas Glas",
+              "CALL1"="Leven",
+              "FFMC84"="Etive 3",
+              "GORS1"="Gorsten",
+              "INV1"="Invasion Bay",
+              "KING1"="Kingairloch",
+              "MCLN1"="Macleans Nose",
+              "SAR1"="Etive 6")
 
 # farm data ---------------------------------------------------------------
 
-mowi_df_ext <- read_csv("data/aquaculture/mowi_cleaned.csv") |>
+mowi_df_ext <- read_csv(glue("{dat_dir}/mowi_cleaned.csv")) |>
   complete(sepaSite, date, fill=list(nFish=0, biomass=0)) |>
   arrange(date, sepaSite) |>
   rename(nFish_est=nFish) |>
@@ -26,24 +39,27 @@ mowi_df_ext <- read_csv("data/aquaculture/mowi_cleaned.csv") |>
          sampled=nFishSampled > 0)
 farm_i <- read_csv("data/farm_sites_widerLinnhe_2022-2025.csv") |>
   filter(sepaSite %in% names(sepa_key)) |>
-  inner_join(read_csv(glue("data/sim/inputs/farm_influx_vols.csv"), show_col_types=F) |>
-               filter(sim=="01") |>
+  inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
                mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
                group_by(sepaSite) |>
                summarise(vol=sum(vol)) |>
                ungroup(),
              by="sepaSite") |>
   arrange(sepaSite)
-trt_df <- read_csv("data/aquaculture/lice_data_compiled.csv") |>
-  rename(date=weekBeginning) |>
-  inner_join(read_csv("data/aquaculture/mowi_cleaned.csv") |> select(sepaSite, date)) |>
-  filter(!is.na(mitigation)) |>
-  filter(mitigation %in% c("Bath", "Bio Reduction", "In Feed", "Physical")) |>
-  select(sepaSite, date, mitigation) |>
+trt_df <- read_csv(glue("{dat_dir}/mowi_trt_cleaned.csv")) |>
+  select(sepaSite, date, TypeNum) |>
+  mutate(TypeNum=paste0("t_", TypeNum),
+         TypeApplied=1) |>
+  inner_join(read_csv(glue("{dat_dir}/mowi_cleaned.csv")) |> select(sepaSite, date)) |>
+  arrange(TypeNum, sepaSite, date) |>
+  pivot_wider(names_from=TypeNum, values_from=TypeApplied, values_fill=0) |>
   right_join(mowi_df_ext |> select(sepaSite, date),
              by=join_by(sepaSite, date)) |>
-  mutate(trt=as.numeric(!is.na(mitigation))) |>
+  mutate(across(starts_with("t_"), ~replace_na(.x, 0))) |>
   arrange(sepaSite, date)
+trt_meth_ii <- read_csv(glue("{dat_dir}/mowi_trt_cleaned.csv")) |>
+  summarise(.by=c(MethodNum, TypeNum, Method, Type)) |>
+  arrange(TypeNum)
 
 info <- list(nDays=as.numeric(diff(range(mowi_df_ext$date)))+1,
              nHours=(as.numeric(diff(range(mowi_df_ext$date)))+1)*24,
@@ -53,13 +69,16 @@ info <- list(nDays=as.numeric(diff(range(mowi_df_ext$date)))+1,
              nStageGroups=3, # ch, mobile, adult
              stg_grp_ii=c(1, 1, 2, 2, 3), # index for matching stages to stage groups
              nPens=1,
+             nTrtMethods=max(trt_meth_ii$MethodNum),
+             nTrtTypes=max(trt_meth_ii$TypeNum),
+             trt_meth_ii=trt_meth_ii$MethodNum,
              IP_penVolume=farm_i$vol,
              dateRange=range(mowi_df_ext$date))
 day_hour <- matrix(1:info$nHours, ncol=24, byrow=T)
 nFish_mx <- make_nFish_mx(mowi_df_ext, info)
 sampledDays <- make_sampledDays(mowi_df_ext |> mutate(pen=sepaSite))
 nFishSampled_mx <- make_nFishSampled_mx(mowi_df_ext, info, nFish_mx)
-treatDays_mx <- matrix(trt_df$trt, nrow=info$nDays, ncol=info$nFarms)
+treatApplied_mx <- make_trtApplied_mx(trt_df, info)
 mowi_y_obs <- mowi_df_ext |>
   mutate(across(all_of(c("Ch", "PA", "AF")), ~if_else(is.na(.x), 0, .x))) |>
   select(sepaSite, date, Ch, PA, AF) |>
@@ -68,38 +87,87 @@ mowi_y_obs <- mowi_df_ext |>
   arrange(sepaSite, date, stage)
 y_obs <- array(c(mowi_y_obs$N), dim=c(info$nStageGroups, info$nDays, info$nFarms))
 
-saveRDS(info, "data/aquaculture/mowi_stan/info.rds")
-saveRDS(params, "data/aquaculture/mowi_stan/params.rds")
-saveRDS(day_hour, "data/aquaculture/mowi_stan/day_hour.rds")
-saveRDS(nFish_mx, "data/aquaculture/mowi_stan/nFish_mx.rds")
-saveRDS(sampledDays, "data/aquaculture/mowi_stan/sampledDays.rds")
-saveRDS(nFishSampled_mx, "data/aquaculture/mowi_stan/nFishSampled_mx.rds")
-saveRDS(treatDays_mx, "data/aquaculture/mowi_stan/treatDays.rds")
-saveRDS(y_obs, "data/aquaculture/mowi_stan/y_obs.rds")
+saveRDS(info, glue("{dat_stan_dir}/info.rds"))
+saveRDS(day_hour, glue("{dat_stan_dir}/day_hour.rds"))
+saveRDS(nFish_mx, glue("{dat_stan_dir}/nFish_mx.rds"))
+saveRDS(sampledDays, glue("{dat_stan_dir}/sampledDays.rds"))
+saveRDS(nFishSampled_mx, glue("{dat_stan_dir}/nFishSampled_mx.rds"))
+saveRDS(treatTypes_mx, glue("{dat_stan_dir}/treatTypes.rds"))
+saveRDS(y_obs, glue("{dat_stan_dir}/y_obs.rds"))
 
 
 
 # environmental data ------------------------------------------------------
 
-farm_env <- read_csv()
-farm_env_daily <- read_csv()
+farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F) |>
+  filter(sepaSite %in% names(sepa_key)) |>
+  mutate(sepaSite=factor(sepaSite, levels=names(sepa_key)),
+         date=date(time),
+         hour=hour(time)) |>
+  mutate(day=as.numeric(as.factor(date))) |>
+  inner_join(
+    farm_dat |>
+      select(sepaSite, pen, date, nFish_est, RW, RW_logit, sampled, nFishSampled),
+    by=join_by(sepaSite, pen, date)) |>
+  arrange(sepaSite, time) |>
+  # calculate farm-level averages
+  summarise(pen=first(pen),
+            across(all_of(c("RW_logit", "temperature", "salinity", "uv")), mean),
+            .by=c(time, date, day, hour, sepaSite)) |>
+  mutate(u=u*100, # cm/s
+         v=v*100, # cm/s
+         w=w*100, # cm/s
+         uv=uv*100, # cm/s
+         uv_sq=uv^2,
+         salinity_m30=salinity - 30) |> # recenter so intercept = high salinity
+  mutate(across(c(temperature, u, v, w, uv, salinity), ~c(scale(.x)), .names="{.col}_z")) |>
+  mutate(uv_z_sq=uv_z^2)
+# for back-transforming z-scores
+farm_env_avg <- farm_env |>
+  reframe(across(where(is.numeric), ~c(mn=mean(.x), sd=sd(.x)))) |>
+  select(-ends_with("_z")) |>
+  mutate(metric=c("mean", "sd"))
+# daily values
+farm_env_daily <- farm_env |>
+  select(-time, -hour, -elapsedHours) |>
+  summarise(across(where(is.numeric), mean),
+            sampled=first(sampled),
+            .by=c(sepaSite, pen, day, date))
 attach_env_mx <- make_attach_env_mx(farm_env, info, params)
 sal_mx <- make_sal_mx(farm_env_daily, info, params)
 temp_mx <- make_temp_mx(farm_env_daily, info)
 temp_z_mx <- make_temp_z_mx(farm_env_daily, info)
 
-saveRDS(attach_env_mx, "data/aquaculture/mowi_stan/attach_env_mx.rds")
-saveRDS(sal_mx, "data/aquaculture/mowi_stan/sal_mx.rds")
-saveRDS(temp_mx, "data/aquaculture/mowi_stan/temp_mx.rds")
-saveRDS(temp_z_mx, "data/aquaculture/mowi_stan/temp_z_mx.rds")
+saveRDS(farm_env, glue("{dat_stan_dir}/farm_env.rds"))
+saveRDS(farm_env_avg, glue("{dat_stan_dir}/farm_env_avg.rds"))
+saveRDS(farm_env_daily, glue("{dat_stan_dir}/farm_env_daily.rds"))
+saveRDS(attach_env_mx, glue("{dat_stan_dir}/attach_env_mx.rds"))
+saveRDS(sal_mx, glue("{dat_stan_dir}/sal_mx.rds"))
+saveRDS(temp_mx, glue("{dat_stan_dir}/temp_mx.rds"))
+saveRDS(temp_z_mx, glue("{dat_stan_dir}/temp_z_mx.rds"))
 
 
 
 # infestation pressure ----------------------------------------------------
 
-influx_df <- read_csv()
+influx_df <- read_csv(glue("{inputs_dir}/influx_hourly.csv"), show_col_types=F) |>
+  filter(sepaSite %in% names(sepa_key)) |>
+  full_join(tibble(time=seq_range(range(farm_env$time), by=3600),
+                   sepaSite=names(sepa_key)[1], pen=paste0(names(sepa_key)[1], "_01"), sim="01"),
+            by=join_by(sepaSite, sim, pen, time)) |>
+  filter(between(time, min(farm_env$time), max(farm_env$time))) |>
+  complete(time, pen, sim, fill=list(influx=0, influx_m3=0)) |>
+  mutate(date=date(time),
+         day=as.numeric(as.factor(date)),
+         hour=hour(time),
+         sepaSite=str_split_fixed(pen, "_", 2)[,1],
+         sepaSite=factor(sepaSite, levels=names(sepa_key))) |>
+  arrange(sim, sepaSite, pen, time) |>
+  summarise(pen=first(pen),
+            influx=sum(influx),
+            .by=c(time, date, day, hour, sepaSite, sim))
 make_IP_mx(influx_df, info)
-saveRDS(IP_mx, "data/aquaculture/mowi_stan/IP_mx.rds")
+saveRDS(IP_mx, glue("{dat_stan_dir}/IP_mx.rds"))
 
 
 
@@ -125,3 +193,5 @@ params$mnDaysStageCh <- summary(
 params$mnDaysStagePA <- summary(
   lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="PA")))$coefficients[,1:2] *
   rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
+
+saveRDS(params, glue("{dat_stan_dir}/params.rds"))

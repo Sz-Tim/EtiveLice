@@ -46,10 +46,8 @@ theme_set(theme_bw())
 dir(glue("{proj_dir}/code/fn"), ".R", full.names=T) |> walk(source)
 save_figs <- F
 
-MOWI_farms <- filter(read_csv(glue("{proj_dir}/data/se_permit_conditions.csv")), 
-                     grepl("Mowi", operator))$sepaSiteId |> unique()
-# farm_order <-  c("GORS1", "ARDG1", "FFMC84", "FFMC32", "CALL1", "APT1", "SAR1",
-#                  "KING1", "SHUI1", "FFMC60", "FFMC41", "FFMC27", "FFMC56")
+MOWI_farms <- read_csv(glue("{proj_dir}/data/aquaculture/mowi_cleaned.csv")) |>
+  count(sepaSite) |> select(sepaSite) |> unlist() |> unname()
 
 # mesh footprints
 mesh_dir <- ifelse(get_os()=="windows",
@@ -64,7 +62,7 @@ etive_fp <- st_read(glue("{mesh_dir}/etive28_mesh_footprint.gpkg"))
 # generate simulation number
 sim_num <- str_pad(length(dir(glue("{proj_dir}/data/sim"), "sim"))+1, 2, 'left', '0')
 out_dir <- glue("{proj_dir}/data/sim/sim_{sim_num}")
-inputs_dir <- glue("{proj_dir}/data/sim/inputs")
+inputs_dir <- glue("{proj_dir}/data/biotracker/2022_2025")
 ```
 
 ```{r}
@@ -87,7 +85,7 @@ dir.create(out_dir, recursive=T)
 
 ```{r}
 #| label: "pen_df"
-pen_df <- read_csv(glue("{inputs_dir}/pen_sites_widerLinnhe_2022-2025.csv"), 
+pen_df <- read_csv(glue("{proj_dir}/data/pen_sites_widerLinnhe_2022-2025.csv"), 
                    show_col_types=F) |>
   mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
   filter(sepaSite %in% MOWI_farms) |>
@@ -100,11 +98,10 @@ farm_order <- sort(unique(pen_df$sepaSite))
 
 ```{r}
 #| label: "farm_i"
-farm_i <- read_csv(glue("{inputs_dir}/farm_sites_widerLinnhe_2022-2025.csv"),
+farm_i <- read_csv(glue("{proj_dir}/data/farm_sites_widerLinnhe_2022-2025.csv"),
                    show_col_types=F) |>
   filter(sepaSite %in% farm_order) |>
   inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
-               filter(sim=="01") |>
                mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
                group_by(sepaSite) |>
                summarise(vol=sum(vol)) |>
@@ -113,14 +110,7 @@ farm_i <- read_csv(glue("{inputs_dir}/farm_sites_widerLinnhe_2022-2025.csv"),
   mutate(firstDay=sample(1:5, n(), replace=T)) |>
   left_join(pen_df |> group_by(sepaSite) |> summarise(nPens=first(nPens)), 
             by="sepaSite") |>
-  # mutate(sepaSite=factor(sepaSite, levels=farm_order)) |>
   arrange(sepaSite)
-# farm_i <- read_csv(glue("{inputs_dir}/farm_i.csv"), show_col_types=F) |>
-#   filter(sepaSite %in% farm_order) |>
-#   mutate(sepaSite=factor(sepaSite, levels=farm_order)) |>
-#   arrange(sepaSite) |>
-#   mutate(firstDay=sample(1:5, n(), replace=T)) |>
-#   left_join(pen_df |> group_by(sepaSite) |> summarise(nPens=first(nPens)))
 farm_i
 ```
 
@@ -165,14 +155,11 @@ prod_cycles <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
   ungroup() |>
   select(sepaSite, date, productionCycleNumber)
 farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
-  right_join(farm_i |> select(sepaSite, firstDay), 
+  right_join(farm_i |> select(sepaSite, firstDay, nPens), 
              by=join_by(sepaSite)) |>
-  right_join(pen_df |> select(sepaSite, pen, nPens), 
-             by=join_by(sepaSite), 
-             relationship="many-to-many") |>
   left_join(prod_cycles, by=c("sepaSite", "date")) |>
   fill(productionCycleNumber) |>
-  group_by(pen, productionCycleNumber) |>
+  group_by(productionCycleNumber) |>
   mutate(prodDay=row_number()) |>
   ungroup() |>
   mutate(sepaSite=factor(sepaSite, levels=farm_order),
@@ -180,7 +167,7 @@ farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
          nFish_est=fishIn * maximumBiomassAllowedTonnes*240/nPens * 
            ((1-mort_weekly)^(1/7))^prodDay,
          total_AF=weeklyAverageAf * nFish_est,
-         RW=sqrt(fishIn*maximumBiomassAllowedTonnes/nPens*1000/(20*20*pi*30^2)),
+         RW=sqrt(fishIn*maximumBiomassAllowedTonnes/1e3/(nPens*20*20*pi*30^2)),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5)) |>
   group_by(sepaSite) |>
   mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:500)),
@@ -253,8 +240,8 @@ farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F)
   mutate(day=as.numeric(as.factor(date))) |>
   inner_join(
     farm_dat |> 
-      select(sepaSite, pen, date, nFish_est, RW, RW_logit, sampled, nFishSampled), 
-      by=join_by(sepaSite, pen, date)) |>
+      select(sepaSite, date, nFish_est, RW, RW_logit, sampled, nFishSampled), 
+      by=join_by(sepaSite, date)) |>
   arrange(sepaSite, time) |>
   mutate(u=u*100, # cm/s
          v=v*100, # cm/s
@@ -273,7 +260,7 @@ farm_env_avg
 # daily values
 farm_env_daily <- farm_env |>
   select(-time, -hour, -elapsedHours) |>
-  group_by(sepaSite, pen, day, date) |>
+  group_by(sepaSite, day, date) |>
   summarise(across(where(is.numeric), mean),
             sampled=first(sampled)) |>
   ungroup()
@@ -514,6 +501,9 @@ as_draws_df(surv_out) |>
 ```{r}
 #| label: "set_params"
 use_farm_avg <- TRUE # F: use pens
+trt_meth_ii <- read_csv(glue("{proj_dir}/data/aquaculture/mowi_trt_cleaned.csv")) |>
+  summarise(.by=c(MethodNum, TypeNum, Method, Type)) |>
+  arrange(TypeNum)
 info <- list(nDays=n_distinct(influx_df$date),
              nHours=n_distinct(influx_df$time),
              nFarms=n_distinct(influx_df$pen),
@@ -522,8 +512,11 @@ info <- list(nDays=n_distinct(influx_df$date),
              nStageGroups=3, # ch, mobile, adult
              stg_grp_ii=c(1, 1, 2, 2, 3), # index for matching stages to stage groups
              nPens=rep(1, n_distinct(influx_df$pen)),
-             IP_penVolume=(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
-                             filter(sim=="01") |>
+             nTrtMethods=max(trt_meth_ii$MethodNum),
+             nTrtTypes=max(trt_meth_ii$TypeNum),
+             trt_meth_ii=trt_meth_ii$MethodNum,
+             IP_penVolume=(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"),
+                                    show_col_types=F) |>
                              select(pen, vol) |>
                              mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
                              inner_join(farm_i |> select(sepaSite), y=_))$vol,
@@ -532,12 +525,12 @@ params <- list(
   # Ensemble proportional weight for each biotracker simulation
   ensWts_p=rlnorm(info$nSims, sdlog=0.75) |> make_compositional(),
   # Pr(copepodid attachment): RW_logit, salinity, temp, uv, uv^2
-  attach_beta=glue("{inputs_dir}/posterior_prAttach.csv") |>
+  attach_beta=glue("{proj_dir}/data/sim/inputs/posterior_prAttach.csv") |>
     read_csv() |> sample_n(1) |> 
     select(b_RW_logit, b_salinity_z, b_temp_z, b_uv_z, b_Iuv_zE2) |> unlist(),
   # On-fish survival: chalimus, pre-adult, adult, gravid
   #   logit(p) = f(salinity); intercept, slope by stage
-  surv_beta=glue("{inputs_dir}/posterior_prSurv.csv") |>
+  surv_beta=glue("{proj_dir}/data/sim/inputs/posterior_prSurv.csv") |>
     read_csv() |> sample_n(1) |> unlist() |> matrix(nrow=2, byrow=T),
   # On-fish survival: sd among farms (Int.) by stage: cleaner fish, other characteristics
   surv_int_farm_sd=abs(brms::rstudent_t(info$nStages, 3, 0, 0.75)),
@@ -562,7 +555,11 @@ params <- list(
   IP_halfSat_m3=runif(n=1, 1, 50) + rbinom(1, 1, 0.5)*1e6,
   # Treatment threshold for AF
   treat_thresh=sample(c(0.5, 1), 1),
-  treat_efficacy=rbeta(1, 4, 2)
+  treat_efficacy_method=rbeta(info$nTrtMethods, 4, 2),
+  treat_efficacy=rbeta(info$nTrtTypes, 4, 2)
+)
+params$treat_efficacy <- boot::inv.logit(
+  boot::logit(params$treat_efficacy_method[info$trt_meth_ii]) + rnorm(info$nTrtTypes, 0, 1)
 )
 # Randomly set salinity and uv effects to 0 for attachment
 params$attach_beta[2:5] <- params$attach_beta[2:5] * rbinom(3, 1, 0.75)[c(1,2,3,3)]
@@ -687,7 +684,7 @@ p_prSurv <- expand_grid(
   ylim(0, 1) +
   theme(legend.title=element_blank(),
         legend.position="inside",
-        legend.position.inside=c(0.8, 0.15),
+        legend.position.inside=c(0.8, 0.35),
         legend.key.height=unit(0.2, "cm"),
         legend.background=element_blank())
 # development
@@ -788,26 +785,26 @@ The simulation function is wrapped into `simulate_farm_pops()` in `code/fn/simul
 #| label: "use_farm_avg"
 #| message: false
 if(use_farm_avg) {
-  farm_env <- farm_env |>
-    group_by(time, date, day, hour, sepaSite) |>
-    summarise(pen=first(pen),
-              sampled=first(sampled),
-              across(all_of(c("RW_logit", "temperature", "temperature_z", 
-                              "salinity", "salinity_z", "salinity_m30",
-                              "uv", "uv_sq", "uv_z")), mean),
-              across(all_of(c("nFish_est", "nFishSampled")), sum)) |>
-    ungroup() |>
-    mutate(uv_z_sq=uv_z^2)
-  farm_env_daily <- farm_env_daily |>
-    group_by(date, day, sepaSite) |>
-    summarise(pen=first(pen),
-              sampled=first(sampled),
-              across(all_of(c("RW_logit", "temperature", "temperature_z", 
-                              "salinity", "salinity_z", "salinity_m30",
-                              "uv", "uv_sq", "uv_z")), mean),
-              across(all_of(c("nFish_est", "nFishSampled")), sum)) |>
-    ungroup() |>
-    mutate(uv_z_sq=uv_z^2)
+  # farm_env <- farm_env |>
+  #   group_by(time, date, day, hour, sepaSite) |>
+  #   summarise(pen=first(pen),
+  #             sampled=first(sampled),
+  #             across(all_of(c("RW_logit", "temperature", "temperature_z", 
+  #                             "salinity", "salinity_z", "salinity_m30",
+  #                             "uv", "uv_sq", "uv_z")), mean),
+  #             across(all_of(c("nFish_est", "nFishSampled")), sum)) |>
+  #   ungroup() |>
+  #   mutate(uv_z_sq=uv_z^2)
+  # farm_env_daily <- farm_env_daily |>
+  #   group_by(date, day, sepaSite) |>
+  #   summarise(pen=first(pen),
+  #             sampled=first(sampled),
+  #             across(all_of(c("RW_logit", "temperature", "temperature_z", 
+  #                             "salinity", "salinity_z", "salinity_m30",
+  #                             "uv", "uv_sq", "uv_z")), mean),
+  #             across(all_of(c("nFish_est", "nFishSampled")), sum)) |>
+  #   ungroup() |>
+  #   mutate(uv_z_sq=uv_z^2)
   influx_df <- influx_df |> 
     group_by(time, date, day, hour, sepaSite, sim) |>
     summarise(pen=first(pen),
