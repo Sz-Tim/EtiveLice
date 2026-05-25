@@ -129,8 +129,8 @@ ggplot() +
   geom_sf(data=etive_fp, fill="dodgerblue", colour="grey50", alpha=0.25) + 
   geom_sf(data=farm_sf, colour=NA, fill="red") +
   geom_sf_text(data=farm_sf, aes(label=sepaSite), hjust=0, nudge_x=250, size=2.5) +
-  scale_x_continuous(limits=c(128000, 219000), oob=scales::oob_keep) + 
-  scale_y_continuous(limits=c(690000, 780000), oob=scales::oob_keep) +
+  scale_x_continuous(limits=c(144000, 218000), oob=scales::oob_keep) + 
+  scale_y_continuous(limits=c(725000, 780000), oob=scales::oob_keep) +
   theme(axis.title=element_blank(),
         axis.text=element_blank())
 ```
@@ -167,7 +167,7 @@ farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
          nFish_est=fishIn * maximumBiomassAllowedTonnes*240/nPens * 
            ((1-mort_weekly)^(1/7))^prodDay,
          total_AF=weeklyAverageAf * nFish_est,
-         RW=sqrt(fishIn*maximumBiomassAllowedTonnes/1e3/(nPens*20*20*pi*30^2)),
+         RW=sqrt(fishIn*maximumBiomassAllowedTonnes*1e3/(nPens*20*20*pi*30^2)),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5)) |>
   group_by(sepaSite) |>
   mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:500)),
