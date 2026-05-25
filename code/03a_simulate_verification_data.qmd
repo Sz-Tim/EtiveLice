@@ -110,6 +110,7 @@ farm_i <- read_csv(glue("{proj_dir}/data/farm_sites_widerLinnhe_2022-2025.csv"),
   mutate(firstDay=sample(1:5, n(), replace=T)) |>
   left_join(pen_df |> group_by(sepaSite) |> summarise(nPens=first(nPens)), 
             by="sepaSite") |>
+  left_join(read_csv(glue("{proj_dir}/data/aquaculture/mowi_farms_mapped_areas.csv"))) |>
   arrange(sepaSite)
 farm_i
 ```
@@ -137,7 +138,7 @@ ggplot() +
 
 Note that Mowi has integrated SAR1 into APT1. That doesn't seem to be reflected on the governmental aquaculture website.
 
-`farm_dat`: Daily interpolation of mean adult female lice per fish, reported fish biomass, estimated number of fish assuming 240 fish per tonne, estimated total adult female lice assuming 240 fish per tonne, area within 100m radius, receiving area ratio, logit-transformed receiving area ratio, and whether lice were sampled on a given day. Receiving area ratio is calculated following @kragesteen2023 as $R(W_i) = \sqrt{\frac{W_i}{DV_r}}$ (recommended Method 3), with biomass $W$ = `actualBiomassOnSiteTonnes * 1000` ($kg$), stocking density $D = 20 kg \cdot m^{-3}$, and receiving area $V_r$ = `vol` ($m^3$). I assume here a depth of 20m for the receiving area. Thus, $R(W_i)$ = `RW` is the proportion of copepodids that successfully attach.
+`farm_dat`: Daily interpolation of mean adult female lice per fish, reported fish biomass, estimated number of fish assuming 240 fish per tonne, estimated total adult female lice assuming 240 fish per tonne,, receiving area ratio, logit-transformed receiving area ratio, and whether lice were sampled on a given day. Receiving area ratio is calculated following @kragesteen2023 as $R(W_i) = \sqrt{\frac{W_i}{DV_r}}$ (recommended Method 3), with biomass $W$ = `actualBiomassOnSiteTonnes * 1000` ($kg$), stocking density $D = 20 kg \cdot m^{-3}$, and receiving area $V_r$ = `vol` ($m^3$). I assume here a depth of 20m for the receiving area. Thus, $R(W_i)$ = `RW` is the proportion of copepodids that successfully attach.
 
 ```{r}
 #| label: "farm_dat"
@@ -164,10 +165,10 @@ farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
   ungroup() |>
   mutate(sepaSite=factor(sepaSite, levels=farm_order),
          fishIn=actualBiomassOnSiteTonnes > 0,
-         nFish_est=fishIn * maximumBiomassAllowedTonnes*240/nPens * 
+         nFish_est=fishIn * maximumBiomassAllowedTonnes*240 * 
            ((1-mort_weekly)^(1/7))^prodDay,
          total_AF=weeklyAverageAf * nFish_est,
-         RW=sqrt(fishIn*maximumBiomassAllowedTonnes*1e3/(nPens*20*20*pi*30^2)),
+         RW=sqrt(fishIn*maximumBiomassAllowedTonnes*1e3/(20*nPens*20*pi*30^2)),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5)) |>
   group_by(sepaSite) |>
   mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:500)),
