@@ -119,7 +119,7 @@ data {
   array[nFarms] matrix[nDays_GQ, nSurvCov] surv_env_mx_GQ; // covariates for p(Surv) incl. intercept
   matrix[nDays_GQ, nFarms] temp_z_mx_GQ; // z-transformed temperature
   matrix[nDays_GQ, nFarms] nFish_mx_GQ; // number of fish on each farm each day
-  array[nDays_GQ, nFarms] int<lower=0,upper=nTrtTypes> treatTypes_GQ; // indicator for treatment application
+  array[nFarms] matrix<lower=0,upper=1>[nDays_GQ, nTrtTypes] treatApplied_GQ; // indicator for treatment application
   array[nSamples_GQ, 2] int sample_i_GQ; // rows: sample; cols: farm, day; sorted by farm, day
   array[nFarms, 2] int sample_ii_GQ; // start/end indexes for each farm in sample_i
   matrix[nFarms, nDays_GQ] nFishSampled_mx_GQ; // number of fish sampled on each farm each day
@@ -364,14 +364,17 @@ generated quantities {
         pMolt_GQ[farm, , stage] = 1 / (temp_X_GQ[farm] * mnDaysStage_beta[, stage]);
       }
       for(stage in 1:nStages) {
-        stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm];
+        stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm] .* exp(treatApplied_GQ[farm] * log1m_trtEff_type);
       }
-      for(day in 1:nDays_GQ) {
-        if(treatTypes_GQ[day, farm] == 1) {
-          stage_Surv_GQ[farm, day, ] = stage_Surv_GQ[farm, day, ] .* (1 - trtEff_type[treatTypes_GQ[day, farm]]);
-
-        }
-      }
+      // for(stage in 1:nStages) {
+      //   stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm];
+      // }
+      // for(day in 1:nDays_GQ) {
+      //   if(treatTypes_GQ[day, farm] == 1) {
+      //     stage_Surv_GQ[farm, day, ] = stage_Surv_GQ[farm, day, ] .* (1 - trtEff_type[treatTypes_GQ[day, farm]]);
+      //
+      //   }
+      // }
     }
     N_attach_GQ = 0.5 * ensIP_GQ .* pr_attach_GQ;
     trans_mx_GQ = make_trans_mx(trans_mx_init_GQ, nFarms, nDays_GQ, stage_Surv_GQ, pMolt_GQ);
