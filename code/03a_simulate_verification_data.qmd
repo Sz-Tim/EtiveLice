@@ -110,7 +110,6 @@ farm_i <- read_csv(glue("{proj_dir}/data/farm_sites_widerLinnhe_2022-2025.csv"),
   mutate(firstDay=sample(1:5, n(), replace=T)) |>
   left_join(pen_df |> group_by(sepaSite) |> summarise(nPens=first(nPens)), 
             by="sepaSite") |>
-  left_join(read_csv(glue("{proj_dir}/data/aquaculture/mowi_farms_mapped_areas.csv"))) |>
   arrange(sepaSite)
 farm_i
 ```
