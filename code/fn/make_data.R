@@ -42,7 +42,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     day_hour=readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
     # farm data, treatments, sampling info
     nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
-    treatTypes=readRDS(glue("{dat_dir}treatTypes_mx.rds"))[dates,],
+    treatApplied=readRDS(glue("{dat_dir}treatApplied_mx.rds"))[dates,],
     sample_i=readRDS(glue("{dat_dir}sampledDays.rds")) |> as_tibble() |> filter(day %in% dates) |> as.matrix(),
     nFishSampled_mx=t(readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,]),
     # IP from biotracker
@@ -122,7 +122,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            surv_env_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nSurvCov)),
            temp_z_mx_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
            nFish_mx_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
-           treatTypes_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
+           treatApplied_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nTrtTypes)),
            sample_i_GQ=matrix(0, nrow=1, ncol=2),
            sample_ii_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=2),
            nFishSampled_mx_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=1)
@@ -138,7 +138,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates_GQ,],
            temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates_GQ,],
            nFish_mx_GQ=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates_GQ,],
-           treatTypes_GQ=readRDS(glue("{dat_dir}treatTypes_mx.rds"))[dates_GQ,],
+           treatApplied=readRDS(glue("{dat_dir}treatApplied_mx.rds"))[dates,],
            sample_i_GQ=readRDS(glue("{dat_dir}sampledDays.rds")) |>
              as_tibble() |>
              filter(day %in% dates_GQ) |>
@@ -202,6 +202,7 @@ make_attach_env_mx <- function(farm_env, info, params, out_dir=NULL) {
 }
 
 make_sal_mx <- function(farm_env, info, params, out_dir=NULL) {
+  farm_env <- farm_env |> arrange(date, sepaSite)
   sal_mx <- array(1, dim=c(info$nFarms, info$nDays, 2))
   sal_mx[,,2] <- farm_env$salinity_m30
   sal_mx <- sal_mx[,,1:nrow(params$surv_beta), drop=F]
@@ -223,6 +224,7 @@ make_trtApplied_mx <- function(trt_df, info, out_dir=NULL) {
 }
 
 make_temp_mx <- function(farm_env, info, out_dir=NULL) {
+  farm_env <- farm_env |> arrange(date, sepaSite)
   temp_mx <- matrix(farm_env$temperature, nrow=info$nDays, byrow=T)
   if(!is.null(out_dir)) {
     saveRDS(temp_mx, glue("{out_dir}/temp_mx.rds"))
@@ -232,6 +234,7 @@ make_temp_mx <- function(farm_env, info, out_dir=NULL) {
 
 
 make_temp_z_mx <- function(farm_env, info, out_dir=NULL) {
+  farm_env <- farm_env |> arrange(date, sepaSite)
   temp_z_mx <- matrix(farm_env$temperature_z, nrow=info$nDays, byrow=T)
   if(!is.null(out_dir)) {
     saveRDS(temp_z_mx, glue("{out_dir}/temp_z_mx.rds"))
@@ -241,6 +244,7 @@ make_temp_z_mx <- function(farm_env, info, out_dir=NULL) {
 
 
 make_nFish_mx <- function(farm_env, info, out_dir=NULL) {
+  farm_env <- farm_env |> arrange(date, sepaSite)
   nFish_mx <- matrix(farm_env$nFish_est, nrow=info$nDays, byrow=T)
   if(!is.null(out_dir)) {
     saveRDS(nFish_mx, glue("{out_dir}/nFish_mx.rds"))
@@ -266,6 +270,7 @@ make_sampledDays <- function(farm_env, out_dir=NULL) {
 }
 
 make_nFishSampled_mx <- function(farm_env, info, nFish_mx, out_dir=NULL) {
+  farm_env <- farm_env |> arrange(date, sepaSite)
   nFishSampled_mx <- matrix(as.numeric(farm_env$nFishSampled), nrow=info$nDays, byrow=T) *
     (nFish_mx > 0)
   if(!is.null(out_dir)) {

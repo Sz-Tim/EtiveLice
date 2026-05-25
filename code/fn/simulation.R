@@ -140,7 +140,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
     for(cohort in 1:day) {
       if(cohort == day) {
         # initialize cohort
-        cohort_N[cohort, day, , ] <- colSums(N_attach[day_hour[day,],])  / nFish_mx[day,]
+        cohort_N[cohort, day, , ] <- colSums(N_attach[day_hour[day,],]) / nFish_mx[day,]
       } else {
         # update cohorts
         for(farm in 1:info$nFarms) {
@@ -180,9 +180,9 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
         if(nFishSampled_mx[day, farm] > 0 &
            (y[info$nStages, 1, day, farm]/nFishSampled_mx[day, farm] > params$treat_thresh) &
             day < info$nDays)  {
-          trtApplied_mx[farm, day+1,] <- rbinom(info$nTrtTypes, 1, 1/info$nTrtTypes)
+          trtApplied_mx[farm, day,] <- rbinom(info$nTrtTypes, 1, 1/info$nTrtTypes)
           stage_survRate[farm, day,] <- stage_survRate[farm, day,] *
-            exp(sum(trtApplied_mx[farm, day+1,] %*% log(1 - params$treat_efficacy)))
+            exp(sum(trtApplied_mx[farm, day,] %*% log(1 - params$treat_efficacy)))
         }
       }
     }
