@@ -20,7 +20,7 @@ prior_only <- F
 
 n_chains <- 3
 dat_dir <- "data/aquaculture/mowi_stan/"
-out_dir <- "out/IEM_fit/"
+out_dir <- "out/ipm_fit/"
 stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
 stageGrps <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch1-Ch2", "Ch2-PA1", "PA1-PA2", "PA2-Ad")
@@ -65,7 +65,7 @@ keep_pars <- c("IP_bg_m3", "ensWts_p", "attach_beta",
 
 # fit ---------------------------------------------------------------------
 
-iter <- 10
+iter <- 1000
 stan_dat <- make_stan_data(dat_dir, priors_only=prior_only, GQ_start="2025-01-01", source="real")
 
 mod_full <- cmdstan_model("code/stan/integrated_population_model.stan")
@@ -74,8 +74,14 @@ fit_full <- mod_full$sample(
   iter_warmup=iter, iter_sampling=iter,
   chains=n_chains, parallel_chains=n_chains
 )
+
+# Sampler warnings:
+# pMolt[5][423, 2] is 1.01913
+# also for 422, 418, 421; all farm 5 (FFMC84)
+# But does this only happen early on? So far only 10 iter
+
 out_full_df <- fit_full$draws(
-  variables=keep,
+  variables=keep_pars,
   format="df") |>
   pivot_longer(-starts_with("."))
 saveRDS(out_full_df, glue("{out_dir}posterior{ifelse(prior_only, '_PRIORS', '')}.rds"))
@@ -105,6 +111,10 @@ p_surv_sd <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("surv_int_farm_sd", name)) |> inner_join(param_key, by=join_by(name))) |>
   post_summary_plot(ncol=5, scales="free") +
   geom_vline(xintercept=0, linetype=3)
+p_trt <- list(out_full_df, out_full_sum) |>
+  map(~.x |> filter(grepl("trtEff_type", name)) |> inner_join(param_key, by=join_by(name))) |>
+  post_summary_plot(ncol=4, scales="free_y") +
+  xlim(0, 1)
 p_pMoltTemp <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("mnDaysStage_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
   post_summary_plot(ncol=4, scales="free_y") +
@@ -114,12 +124,13 @@ p_detectp <- list(out_full_df, out_full_sum) |>
   post_summary_plot(scales="free_y") +
   xlim(0, 1)
 p_else <- list(out_full_df, out_full_sum) |>
-  map(~.x |> filter(grepl("IP_bg|nb_prec|IP_halfSat|treat", name)) |> inner_join(param_key, by=join_by(name))) |>
+  map(~.x |> filter(grepl("IP_bg|nb_prec", name)) |> inner_join(param_key, by=join_by(name))) |>
   post_summary_plot(ncol=5, scales="free")
 
-p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_pMoltTemp, p_detectp, p_else,
-               nrow=7, align="hv", axis="trbl", rel_heights=c(2, 1, 2, 1, 1, 1, 1))
-ggsave(glue("{out_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=12)
+p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_trt, p_pMoltTemp,
+               plot_grid(p_detectp, p_else, nrow=1, axis="tblr", align="hv"),
+               nrow=7, align="v", axis="rl", rel_heights=c(2, 1, 2, 1, 2, 2, 1))
+ggsave(glue("{out_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=14)
 
 mu_draws_df <- take_mu_draws(out_full_df, NULL,
                              stan_dat$dat, ndraws=min(1e2, iter), GQ=TRUE) |>
