@@ -61,10 +61,10 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
                             c(rep(0.25, length(params$attach_beta)-1), 0.25)),
     # treatment: trtEff[global] ~ N(mu, sigma) (logit scale)
     prior_logit_trtEff_global=c(0, 1),
-    # treatment: trtEff[method] ~ N(trtEff[global], trtEff_sd_methods)  (logit scale)
-    prior_trtEff_sd_methods=0.5,
-    # treatment: trtEff[type] ~ N(trtEff[method], trtEff_sd_types)  (logit scale)
-    prior_trtEff_sd_types=0.5,
+    # treatment: trtEff[method] ~ N(trtEff[global], trtEff_sd_methods)  (logit scale)  student_t(nu, mu, sd)
+    prior_trtEff_sd_methods=c(3, 0, 0.75),
+    # treatment: trtEff[type] ~ N(trtEff[method], trtEff_sd_types)  (logit scale)  student_t(nu, mu, sd)
+    prior_trtEff_sd_types=c(3, 0, 0.75),
     # surv_beta: [c(Int, Temp), c(Ch1/Ch2, PA1/PA2, Ad), c(mu, sigma)]; normal (logit scale)
     prior_surv_beta=array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStageGroups),
                             rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStageGroups)),
