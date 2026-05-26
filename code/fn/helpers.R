@@ -87,8 +87,7 @@ post_summary_plot <- function(df_ls, ncol=6, nrow=1, scales="fixed") {
                    aes(xmin=L025, xmax=L975, y=0), linewidth=0.5) +
     geom_density(aes(value)) +
     ylim(0, NA) +
-    geom_point(data=df_ls[[3]],
-               aes(x=value, y=0), colour="red", shape=1, size=2) +
+    {if(length(df_ls)==3) geom_point(data=df_ls[[3]], aes(x=value, y=0), colour="red", shape=1, size=2)} +
     facet_wrap(~label, ncol=ncol, scales=scales) +
     theme(axis.title=element_blank(),
           axis.text.y=element_blank(),
