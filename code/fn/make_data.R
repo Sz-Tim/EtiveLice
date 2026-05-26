@@ -42,7 +42,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     day_hour=readRDS(glue("{dat_dir}day_hour.rds"))[dates,],
     # farm data, treatments, sampling info
     nFish_mx=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates,],
-    trtApplied=readRDS(glue("{dat_dir}trtApplied_mx.rds"))[dates,],
+    trtApplied=readRDS(glue("{dat_dir}trtApplied_mx.rds"))[,dates,],
     sample_i=readRDS(glue("{dat_dir}sampledDays.rds")) |> as_tibble() |> filter(day %in% dates) |> as.matrix(),
     nFishSampled_mx=t(readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates,]),
     # IP from biotracker
@@ -136,7 +136,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates_GQ,],
            temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates_GQ,],
            nFish_mx_GQ=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates_GQ,],
-           trtApplied=readRDS(glue("{dat_dir}trtApplied_mx.rds"))[dates,],
+           trtApplied=readRDS(glue("{dat_dir}trtApplied_mx.rds"))[,dates,],
            sample_i_GQ=readRDS(glue("{dat_dir}sampledDays.rds")) |>
              as_tibble() |>
              filter(day %in% dates_GQ) |>
