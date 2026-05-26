@@ -216,14 +216,14 @@ transformed parameters {
   matrix[2, nStages-1] mnDaysStage_beta; // [Int, temp][Ch1-Ch2, Ch2-PA1, PA1-PA2, PA2-Ad]
   vector[nStageGroups] detect_p;
   // intermediate quantities
-  matrix[nHours, nFarms] ensIP; // ensemble IP
-  matrix[nHours, nFarms] pr_attach; // attachment probability
-  matrix[nHours, nFarms] N_attach; // number of copepodids that attach
-  array[nFarms] matrix[nDays, nStages] stage_Surv; // survival rates
-  array[nFarms] matrix[nDays, nStages-1] pMolt; // transition probabilities
-  array[nFarms, nDays] matrix[nStages, nStages] trans_mx; // transition matrix
-  array[nFarms] matrix[nStages, nDays] mu; // latent daily mean lice per fish
-  array[nStageGroups] row_vector[nSamples] y_bar; // expected observed (mu*prDet)
+  matrix<lower=0>[nHours, nFarms] ensIP; // ensemble IP
+  matrix<lower=0,upper=1>[nHours, nFarms] pr_attach; // attachment probability
+  matrix<lower=0>[nHours, nFarms] N_attach; // number of copepodids that attach
+  array[nFarms] matrix<lower=0,upper=1>[nDays, nStages] stage_Surv; // survival rates
+  array[nFarms] matrix<lower=0,upper=1>[nDays, nStages-1] pMolt; // transition probabilities
+  array[nFarms, nDays] matrix<lower=0,upper=1>[nStages, nStages] trans_mx; // transition matrix
+  array[nFarms] matrix<lower=0>[nStages, nDays] mu; // latent daily mean lice per fish
+  array[nStageGroups] row_vector<lower=0>[nSamples] y_bar; // expected observed (mu*prDet)
   real<lower=0> nb_prec = 1 / inv_sqrt_nb_prec^2; // neg_binom precision
 
   // re-scale and de-center parameters
