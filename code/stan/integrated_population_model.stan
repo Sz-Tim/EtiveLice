@@ -93,7 +93,6 @@ data {
   matrix[nDays, nFarms] temp_z_mx; // z-transformed temperature
   // array[nDays, nFarms] int<lower=0,upper=nTrtTypes> treatApplied;
   array[nFarms] matrix<lower=0,upper=1>[nDays, nTrtTypes] trtApplied; // indicator for treatment application
-  array[nTrtTypes] int<lower=1,upper=nTrtMethods> trt_meth_ii; // index of method for each type
   matrix[nDays, nFarms] nFish_mx; // number of fish on each farm each day
   array[nSamples, 2] int sample_i; // rows: sample; cols: farm, day; sorted by farm, day
   array[nFarms, 2] int sample_ii; // start/end indexes for each farm in sample_i
@@ -104,7 +103,6 @@ data {
   array[nSurvCov, nStageGroups, 2] real prior_surv_beta; // p(surv) intercept & slopes
   vector<lower=0>[3] prior_surv_int_farm_sd; // p(surv) int sd: student_t(nu, mu, sd)
   vector[2] prior_logit_trtEff_global; // treatment efficacy: normal(mu, sd)
-  vector<lower=0>[3] prior_trtEff_sd_methods; // treatment efficacy: sd among methods
   vector<lower=0>[3] prior_trtEff_sd_types; // treatment efficacy: sd among types within methods
   array[2, nStageGroups-1, 2] real prior_mnDaysStage_F; // mean days per stage (Ch, PA)
   array[nStageGroups-1, 2] real prior_logit_detect_p; // detection probability
@@ -192,16 +190,14 @@ parameters {
   // This is equivalent to param ~ N(prior_mean, prior_sd)
   real<lower=0> IP_bg_m3; // background infection pressure per m3
   vector[nSims] ensWts_p_uc;  // unconstrained mixture proportions
-  vector[nAttachCov-1] attach_beta_z; // p(attach) [Int, RW_logit, sal_z, temp_z, uv_z]
+  vector[nAttachCov-1] attach_beta_z; // p(attach) [RW_logit, sal_z, temp_z, uv_z]
   real<upper=0> attach_betaUV2_z; // p(attach) uv_z^2 coefficient: constrain to concave down
   matrix[nSurvCov, nStages] surv_beta_z; // p(surv) [Int, sal][Ch1, Ch2, PA1, PA2, Ad]
   row_vector<lower=0>[nStages] surv_int_farm_sd; // p(surv) sd for farm-level Int; logit-scale
   matrix[nFarms, nStages] surv_int_farm_z; // p(surv) [farm][Ch1, Ch2, PA1, PA2, Ad]
   real logit_trtEff_global; // global treatment efficacy mean
-  vector[nTrtMethods] logit_trtEff_method; // treatment efficacy group means
-  real<lower=0> trtEff_sd_methods; // treatment efficacy sd among methods
-  vector[nTrtTypes] logit_trtEff_type; // treatment efficacy group means
-  real<lower=0> trtEff_sd_types; // treatment efficacy sd among types within methods
+  vector[nTrtTypes] logit_trtEff_type; // treatment efficacies for each type
+  real<lower=0> trtEff_sd_types; // treatment efficacy sd among types
   matrix[2, nStages-1] mnDaysStage_beta_z; // [Int, temp][Ch1-Ch2, Ch2-PA1, PA1-PA2, PA2-Ad]
   vector[nStageGroups] logit_detect_p; // p(detect) by stage
   real<lower=0> inv_sqrt_nb_prec; // negative binomial precision (1/sqrt(prec))
@@ -213,7 +209,7 @@ transformed parameters {
   vector<lower=0>[nFarms] IP_bg = IP_bg_m3 * IP_volume; // background N_copepodids per pen
   simplex[nSims] ensWts_p = softmax(ensWts_p_uc);  // mixture proportions
   vector[nAttachCov] attach_beta; // p(attach) [RW_logit, sal_z, temp_z, uv_z, uv_z^2]
-  vector<lower=0,upper=1>[nTrtTypes] trtEff_type; // treatment efficacy group means (0-1)
+  vector<lower=0,upper=1>[nTrtTypes] trtEff_type = inv_logit(logit_trtEff_type); // treatment efficacy (0-1)
   vector[nTrtTypes] log1m_trtEff_type = log1m(trtEff_type); // log(1 - trtEff_type)
   matrix[nSurvCov, nStages] surv_beta; // p(surv) [Int, sal][Ch1, Ch2, PA1, PA2, Ad]
   array[nFarms] matrix[nSurvCov, nStages] surv_beta_farm; // p(surv) [farmInt, sal][Ch1, Ch2, PA1, PA2, Ad]
@@ -239,7 +235,6 @@ transformed parameters {
   attach_beta[nAttachCov] = fma(attach_betaUV2_z,
                                 prior_attach_beta[nAttachCov,2],
                                 prior_attach_beta[nAttachCov,1]);
-  trtEff_type = inv_logit(logit_trtEff_type);
   for(i in 1:nSurvCov) {
     for(stage in 1:nStages) {
       surv_beta[i,stage] = fma(surv_beta_z[i,stage],
@@ -276,12 +271,6 @@ transformed parameters {
     for(stage in 1:nStages) {
       stage_Surv[farm, , stage] = stage_Surv[farm, , stage] .* fishPresent[, farm] .* exp(trtApplied[farm] * log1m_trtEff_type);
     }
-    // for(day in 1:nDays) {
-    //   if(treatApplied[day, farm] == 1) {
-    //     stage_Surv[farm, day, ] = stage_Surv[farm, day, ] .* (1 - trtEff_type[treatApplied[day, farm]]);
-    //
-    //   }
-    // }
   }
   N_attach = 0.5 * ensIP .* pr_attach;
   trans_mx = make_trans_mx(trans_mx_init, nFarms, nDays, stage_Surv, pMolt);
@@ -304,10 +293,7 @@ transformed parameters {
     lprior += std_normal_lpdf(attach_beta_z);
     lprior += std_normal_lpdf(attach_betaUV2_z) - std_normal_lcdf(0);
     lprior += normal_lpdf(logit_trtEff_global | prior_logit_trtEff_global[1], prior_logit_trtEff_global[2]);
-    lprior += normal_lpdf(logit_trtEff_method | logit_trtEff_global, trtEff_sd_methods);
-    lprior += student_t_lpdf(trtEff_sd_methods | prior_trtEff_sd_methods[1], prior_trtEff_sd_methods[2], prior_trtEff_sd_methods[3]) -
-      student_t_lccdf(0 | prior_trtEff_sd_methods[1], prior_trtEff_sd_methods[2], prior_trtEff_sd_methods[3]);
-    lprior += normal_lpdf(logit_trtEff_type | logit_trtEff_method[trt_meth_ii], trtEff_sd_types);
+    lprior += normal_lpdf(logit_trtEff_type | logit_trtEff_global, trtEff_sd_types);
     lprior += student_t_lpdf(trtEff_sd_types | prior_trtEff_sd_types[1], prior_trtEff_sd_types[2], prior_trtEff_sd_types[3]) -
       student_t_lccdf(0 | prior_trtEff_sd_types[1], prior_trtEff_sd_types[2], prior_trtEff_sd_types[3]);
     for(i in 1:nSurvCov) {
@@ -366,15 +352,6 @@ generated quantities {
       for(stage in 1:nStages) {
         stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm] .* exp(trtApplied_GQ[farm] * log1m_trtEff_type);
       }
-      // for(stage in 1:nStages) {
-      //   stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm];
-      // }
-      // for(day in 1:nDays_GQ) {
-      //   if(treatTypes_GQ[day, farm] == 1) {
-      //     stage_Surv_GQ[farm, day, ] = stage_Surv_GQ[farm, day, ] .* (1 - trtEff_type[treatTypes_GQ[day, farm]]);
-      //
-      //   }
-      // }
     }
     N_attach_GQ = 0.5 * ensIP_GQ .* pr_attach_GQ;
     trans_mx_GQ = make_trans_mx(trans_mx_init_GQ, nFarms, nDays_GQ, stage_Surv_GQ, pMolt_GQ);
