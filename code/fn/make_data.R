@@ -68,16 +68,16 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
                             rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
                           dim=c(nrow(params$surv_beta), info$nStages, 2),
                           dimnames=list(c("int", "temp"),
-                                        c("Ch", "Pr", "Ad"),
+                                        c("Ch1", "Ch2", "PA1", "PA2", "Ad"),
                                         c("mu", "sd"))),
     # surv beta: sd for farm-level intercepts: student_t(nu, mu, sd)
     prior_surv_int_farm_sd=c(3, 0, 0.75),
-    # mnDaysStage: [c(Int, Temp), c(Ch-Pr, Pr-Ad), c(mu, sd)]; normal
+    # mnDaysStage: [c(Int, Temp), c(Ch1/Ch2, PA1/PA2), c(mu, sd)]; normal
     prior_mnDaysStage_F=array(c(params$mnDaysStageCh[,1]/2, params$mnDaysStagePA[,1]/2,
                                 params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
-                              dim=c(2, info$nStages-1, 2),
+                              dim=c(2, info$nStageGroups-1, 2),
                               dimnames=list(c("int", "temp"),
-                                            c("Pr", "Ad"),
+                                            c("Ch1,2", "PA1,2"),
                                             c("mu", "sd"))),
     # logit_detect_p: [c(Ch, Pr), c(mu, sd)]
     prior_logit_detect_p=cbind(c(-1, 1),
