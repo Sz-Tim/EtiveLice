@@ -66,8 +66,10 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
 
   keep_pars <- c("IP_bg_m3",
                  "ensWts_p", "attach_beta",
-                 "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
-                 "detect_p", "nb_prec", "treatEff_type")
+                 "surv_beta", "surv_int_farm_sd",
+                 "trtEff_type",
+                 "mnDaysStage_beta",
+                 "detect_p", "nb_prec")
   iter <- 10
   stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2025-01-01")
 
@@ -112,7 +114,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
              paste0("surv_beta[2,", 1:stan_dat$dat$nStages, "]"),
              paste0("surv_int_farm_sd[", 1:stan_dat$dat$nStages, "]"),
              paste0("detect_p[", 1:stan_dat$dat$nStageGroups, "]"), "nb_prec",
-             "treatEfficacy"),
+             paste0("trtEff_type[", 1:8, "]")),
       value=c(stan_dat$params$attach_beta,
               stan_dat$params$IP_bg_m3,
               stan_dat$params$ensWts_p,
@@ -120,7 +122,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
               stan_dat$params$surv_int_farm_sd,
               stan_dat$params$detect_p,
               stan_dat$params$nb_prec,
-              stan_dat$params$treat_efficacy)
+              stan_dat$params$trt_efficacy)
     )
     write_csv(dat_full_df, glue("{sim_dir}stan_params{ifelse(prior_only, '_PRIORS', '')}.csv"))
   }
@@ -146,17 +148,22 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
     map(~.x |> filter(grepl("mnDaysStage_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
     post_summary_plot(ncol=4, scales="free_y") +
     geom_vline(xintercept=0, linetype=3)
+  p_trt <- list(out_full_df, out_full_sum, dat_full_df) |>
+    map(~.x |> filter(grepl("trtEff_type", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(ncol=4, scales="free_y") +
+    xlim(0, 1)
   p_detectp <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("detect_p", name)) |> inner_join(param_key, by=join_by(name))) |>
     post_summary_plot(scales="free_y") +
     xlim(0, 1)
   p_else <- list(out_full_df, out_full_sum, dat_full_df) |>
-    map(~.x |> filter(grepl("IP_bg|nb_prec|IP_halfSat|treat", name)) |> inner_join(param_key, by=join_by(name))) |>
+    map(~.x |> filter(grepl("IP_bg|nb_prec|IP_halfSat", name)) |> inner_join(param_key, by=join_by(name))) |>
     post_summary_plot(ncol=5, scales="free")
 
-  p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_pMoltTemp, p_detectp, p_else,
-            nrow=7, align="hv", axis="trbl", rel_heights=c(2, 1, 2, 1, 1, 1, 1))
-  ggsave(glue("{sim_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=12)
+  p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_trt, p_pMoltTemp,
+                 plot_grid(p_detectp, p_else, nrow=1, axis="tblr", align="hv"),
+            nrow=7, align="v", axis="rl", rel_heights=c(2, 1, 2, 1, 2, 2, 1))
+  ggsave(glue("{sim_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=14)
 
   if(any(grepl("GQ", keep))) {
     mu_draws_df <- take_mu_draws(out_full_df, glue("{sim_dir}/mu.rds"),
