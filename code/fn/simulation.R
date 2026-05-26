@@ -180,7 +180,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
         if(nFishSampled_mx[day, farm] > 0 &
            (y[info$nStages, 1, day, farm]/nFishSampled_mx[day, farm] > params$trt_thresh) &
             day < info$nDays)  {
-          trtApplied_mx[farm, day,] <- rbinom(info$nTrtTypes, 1, 1/info$nTrtTypes)
+          trtApplied_mx[farm, day,] <- rbinom(info$nTrtTypes, 1, info$trt_proportions)
           stage_survRate[farm, day,] <- stage_survRate[farm, day,] *
             exp(sum(trtApplied_mx[farm, day,] %*% log(1 - params$trt_efficacy)))
         }

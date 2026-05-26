@@ -7,7 +7,7 @@ mainfont: Garamond
 monofont: Lucida Console
 fontsize: 10pt
 page-layout: full
-editor: visual
+editor: source
 toc: true
 number-sections: true
 fig-responsive: true
@@ -103,9 +103,8 @@ farm_i <- read_csv(glue("{proj_dir}/data/farm_sites_widerLinnhe_2022-2025.csv"),
   filter(sepaSite %in% farm_order) |>
   inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
                mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
-               group_by(sepaSite) |>
-               summarise(vol=sum(vol)) |>
-               ungroup(), 
+               summarise(vol=sum(vol),
+                         .by=sepaSite), 
              by="sepaSite") |>
   mutate(firstDay=sample(1:5, n(), replace=T)) |>
   left_join(pen_df |> group_by(sepaSite) |> summarise(nPens=first(nPens)), 
@@ -137,7 +136,7 @@ ggplot() +
 
 Note that Mowi has integrated SAR1 into APT1. That doesn't seem to be reflected on the governmental aquaculture website.
 
-`farm_dat`: Daily interpolation of mean adult female lice per fish, reported fish biomass, estimated number of fish assuming 240 fish per tonne, estimated total adult female lice assuming 240 fish per tonne,, receiving area ratio, logit-transformed receiving area ratio, and whether lice were sampled on a given day. Receiving area ratio is calculated following @kragesteen2023 as $R(W_i) = \sqrt{\frac{W_i}{DV_r}}$ (recommended Method 3), with biomass $W$ = `actualBiomassOnSiteTonnes * 1000` ($kg$), stocking density $D = 20 kg \cdot m^{-3}$, and receiving area $V_r$ = `vol` ($m^3$). I assume here a depth of 20m for the receiving area. Thus, $R(W_i)$ = `RW` is the proportion of copepodids that successfully attach.
+`farm_dat`: Daily interpolation of mean adult female lice per fish, reported fish biomass, estimated number of fish assuming 240 fish per tonne, estimated total adult female lice assuming 240 fish per tonne,, receiving area ratio, logit-transformed receiving area ratio, and whether lice were sampled on a given day. Receiving area ratio is calculated following @kragesteen2023 as $R(W_i) = \sqrt{\frac{W_i}{DV_r}}$ (recommended Method 3), with biomass $W$ = `actualBiomassOnSiteTonnes * 1000` ($kg$), stocking density $D = 20 kg \cdot m^{-3}$, and receiving area $V_r$ = `vol` ($m^3$), which corresponds with the influx volume from the biotracer simulations. Thus, $R(W_i)$ = `RW` is the proportion of copepodids that successfully attach.
 
 ```{r}
 #| label: "farm_dat"
@@ -155,7 +154,7 @@ prod_cycles <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
   ungroup() |>
   select(sepaSite, date, productionCycleNumber)
 farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
-  right_join(farm_i |> select(sepaSite, firstDay, nPens), 
+  right_join(farm_i |> select(sepaSite, firstDay, nPens, vol), 
              by=join_by(sepaSite)) |>
   left_join(prod_cycles, by=c("sepaSite", "date")) |>
   fill(productionCycleNumber) |>
@@ -167,7 +166,7 @@ farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
          nFish_est=fishIn * maximumBiomassAllowedTonnes*240 * 
            ((1-mort_weekly)^(1/7))^prodDay,
          total_AF=weeklyAverageAf * nFish_est,
-         RW=sqrt(fishIn*maximumBiomassAllowedTonnes*1e3/(20*nPens*20*pi*30^2)),
+         RW=sqrt(fishIn*actualBiomassOnSiteTonnes*1e3/(20*vol)),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5)) |>
   group_by(sepaSite) |>
   mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:500)),
@@ -503,7 +502,7 @@ as_draws_df(surv_out) |>
 #| label: "set_params"
 use_farm_avg <- TRUE # F: use pens
 trt_meth_ii <- read_csv(glue("{proj_dir}/data/aquaculture/mowi_trt_cleaned.csv")) |>
-  summarise(.by=c(MethodNum, TypeNum, Method, Type)) |>
+  count(MethodNum, TypeNum, Method, Type) |>
   arrange(TypeNum)
 info <- list(nDays=n_distinct(influx_df$date),
              nHours=n_distinct(influx_df$time),
@@ -516,6 +515,7 @@ info <- list(nDays=n_distinct(influx_df$date),
              nTrtMethods=max(trt_meth_ii$MethodNum),
              nTrtTypes=max(trt_meth_ii$TypeNum),
              trt_meth_ii=trt_meth_ii$MethodNum,
+             trt_proportions=trt_meth_ii$n/sum(trt_meth_ii$n),
              IP_penVolume=(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"),
                                     show_col_types=F) |>
                              select(pen, vol) |>
