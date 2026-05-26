@@ -678,9 +678,10 @@ p_prSurv <- expand_grid(
                       labels=c("Ch1", "Ch2", "PA1", "PA2", "Ad"))) |>
   ggplot(aes(salinity+30, pr_surv, colour=stage, fill=stage)) +
   geom_ribbon(aes(ymin=pr_surv_mSD, ymax=pr_surv_pSD), alpha=0.25, colour=NA) +
-  geom_line() +
+  geom_line(aes(linetype=stage)) +
   scale_colour_manual(values=RColorBrewer::brewer.pal(4, "Paired")[c(1,1,2,2,4)]) +
   scale_fill_manual(values=RColorBrewer::brewer.pal(4, "Paired")[c(1,1,2,2,4)]) +
+  scale_linetype_manual(values=c(1,2,1,2,1)) +
   labs(x="Salinity (psu)", y="P(survival) ± farm sd") +
   ylim(0, 1) +
   theme(legend.title=element_blank(),
