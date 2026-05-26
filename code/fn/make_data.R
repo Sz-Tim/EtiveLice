@@ -31,6 +31,8 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     nFarms=info$nFarms,
     nSims=info$nSims,
     nStages=info$nStages,
+    nStageGroups=info$nStageGroups,
+    stg_grp_ii=info$stg_grp_ii,
     nPens=info$nPens,
     nTrtMethods=info$nTrtMethods,
     nTrtTypes=info$nTrtTypes,
@@ -136,7 +138,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates_GQ,],
            temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates_GQ,],
            nFish_mx_GQ=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates_GQ,],
-           trtApplied=readRDS(glue("{dat_dir}trtApplied_mx.rds"))[,dates,],
+           trtApplied_GQ=readRDS(glue("{dat_dir}trtApplied_mx.rds"))[,dates_GQ,],
            sample_i_GQ=readRDS(glue("{dat_dir}sampledDays.rds")) |>
              as_tibble() |>
              filter(day %in% dates_GQ) |>
