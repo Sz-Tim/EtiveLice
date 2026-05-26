@@ -65,12 +65,12 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     prior_trtEff_sd_methods=0.5,
     # treatment: trtEff[type] ~ N(trtEff[method], trtEff_sd_types)  (logit scale)
     prior_trtEff_sd_types=0.5,
-    # surv_beta: [c(Int, Temp), c(Ch, Pr, Ad), c(mu, sigma)]; normal (logit scale)
-    prior_surv_beta=array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStages),
-                            rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStages)),
-                          dim=c(nrow(params$surv_beta), info$nStages, 2),
+    # surv_beta: [c(Int, Temp), c(Ch1/Ch2, PA1/PA2, Ad), c(mu, sigma)]; normal (logit scale)
+    prior_surv_beta=array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStageGroups),
+                            rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStageGroups)),
+                          dim=c(nrow(params$surv_beta), info$nStageGroups, 2),
                           dimnames=list(c("int", "temp"),
-                                        c("Ch1", "Ch2", "PA1", "PA2", "Ad"),
+                                        c("Ch1,2", "PA1,2", "Ad"),
                                         c("mu", "sd"))),
     # surv beta: sd for farm-level intercepts: student_t(nu, mu, sd)
     prior_surv_int_farm_sd=c(3, 0, 0.75),
