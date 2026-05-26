@@ -19,9 +19,9 @@ dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
 prior_only <- F
-keep_licePreds <- F
+keep_licePreds <- T
 refit <- F
-n_parallel <- 3
+n_parallel <- 1
 
 n_chains <- 3
 stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
@@ -60,17 +60,21 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
 
 sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/")
 
-plan(multicore, workers=n_parallel)
+# SAMPLER WARNINGS:
+# stage_Surv[1][1, 1] is -nan
+# pMolt[1][592, 2] is 1.01869
 
-foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = TRUE)) %dofuture% {
+# plan(multicore, workers=n_parallel)
 
+# foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = TRUE)) %dofuture% {
+for(sim_dir in sim_dirs) {
   keep_pars <- c("IP_bg_m3",
                  "ensWts_p", "attach_beta",
                  "surv_beta", "surv_int_farm_sd",
                  "trtEff_type",
                  "mnDaysStage_beta",
                  "detect_p", "nb_prec")
-  iter <- 10
+  iter <- 1000
   stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2025-01-01")
 
   if(!refit & file.exists(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.rds"))) {
@@ -83,7 +87,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
 
     mod_full <- cmdstan_model("code/stan/integrated_population_model.stan")
     fit_full <- mod_full$sample(
-      data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
+      data=stan_dat$dat, init=0, seed=101, refresh=max(iter/200, 1),
       iter_warmup=iter, iter_sampling=iter,
       chains=n_chains, parallel_chains=n_chains
     )

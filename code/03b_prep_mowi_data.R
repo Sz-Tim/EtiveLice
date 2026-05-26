@@ -10,6 +10,7 @@
 library(tidyverse); library(glue)
 library(sevcheck) # devtools::install_github("Sz-Tim/sevcheck")
 library(biotrackR) # devtools::install_github("Sz-Tim/biotrackR@dev")
+dir("code/fn", ".R", full.names=T) |> walk(source)
 
 dat_dir <- "data/aquaculture"
 dat_stan_dir <- "data/aquaculture/mowi_stan"
@@ -26,6 +27,8 @@ sepa_key <- c("APT1"="Etive 4",
               "MCLN1"="Macleans Nose",
               "SAR1"="Etive 6")
 
+
+
 # farm data ---------------------------------------------------------------
 
 mowi_df_ext <- read_csv(glue("{dat_dir}/mowi_cleaned.csv")) |>
@@ -33,10 +36,18 @@ mowi_df_ext <- read_csv(glue("{dat_dir}/mowi_cleaned.csv")) |>
   arrange(date, sepaSite) |>
   rename(nFish_est=nFish) |>
   mutate(day=as.numeric(factor(date)),
-         sepaSite=factor(sepaSite),
          pen=sepaSite,
          nFishSampled=if_else(is.na(nFishSampled), 0, nFishSampled),
-         sampled=nFishSampled > 0)
+         sampled=nFishSampled > 0) |>
+  left_join(read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
+              summarise(.by=c(sepaSite, maximumBiomassAllowedTonnes))) |>
+  left_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
+              mutate(sepaSite=str_split_fixed(pen, "_", 2)[,1]) |>
+              summarise(vol=sum(vol),
+                        .by=sepaSite)) |>
+  mutate(RW=sqrt(biomass/(20*vol)),
+         RW_logit=brms::logit_scaled(RW, lb=-1e-5),
+         sepaSite=factor(sepaSite))
 farm_i <- read_csv("data/farm_sites_widerLinnhe_2022-2025.csv") |>
   filter(sepaSite %in% names(sepa_key)) |>
   inner_join(read_csv(glue("{inputs_dir}/farm_influx_vols.csv"), show_col_types=F) |>
@@ -64,7 +75,7 @@ trt_meth_ii <- read_csv(glue("{dat_dir}/mowi_trt_cleaned.csv")) |>
 info <- list(nDays=as.numeric(diff(range(mowi_df_ext$date)))+1,
              nHours=(as.numeric(diff(range(mowi_df_ext$date)))+1)*24,
              nFarms=n_distinct(mowi_df_ext$sepaSite),
-             nSims=10,
+             nSims=3,
              nStages=5, # cII-V, Ad (Piasecki 2023)
              nStageGroups=3, # ch, mobile, adult
              stg_grp_ii=c(1, 1, 2, 2, 3), # index for matching stages to stage groups
@@ -74,6 +85,10 @@ info <- list(nDays=as.numeric(diff(range(mowi_df_ext$date)))+1,
              trt_meth_ii=trt_meth_ii$MethodNum,
              IP_penVolume=farm_i$vol,
              dateRange=range(mowi_df_ext$date))
+# Dimensions only, for setting priors and covariate structures
+params <- list(attach_beta=rep(0, 5),
+               surv_beta=matrix(0, ncol=3, nrow=2))
+
 day_hour <- matrix(1:info$nHours, ncol=24, byrow=T)
 nFish_mx <- make_nFish_mx(mowi_df_ext, info)
 sampledDays <- make_sampledDays(mowi_df_ext |> mutate(pen=sepaSite))
@@ -106,14 +121,11 @@ farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F)
          hour=hour(time)) |>
   mutate(day=as.numeric(as.factor(date))) |>
   inner_join(
-    farm_dat |>
-      select(sepaSite, pen, date, nFish_est, RW, RW_logit, sampled, nFishSampled),
-    by=join_by(sepaSite, pen, date)) |>
+    mowi_df_ext |>
+      select(sepaSite, date, RW_logit),
+    by=join_by(sepaSite, date)) |>
   arrange(sepaSite, time) |>
   # calculate farm-level averages
-  summarise(pen=first(pen),
-            across(all_of(c("RW_logit", "temperature", "salinity", "uv")), mean),
-            .by=c(time, date, day, hour, sepaSite)) |>
   mutate(u=u*100, # cm/s
          v=v*100, # cm/s
          w=w*100, # cm/s
@@ -131,8 +143,7 @@ farm_env_avg <- farm_env |>
 farm_env_daily <- farm_env |>
   select(-time, -hour, -elapsedHours) |>
   summarise(across(where(is.numeric), mean),
-            sampled=first(sampled),
-            .by=c(sepaSite, pen, day, date))
+            .by=c(sepaSite, day, date))
 attach_env_mx <- make_attach_env_mx(farm_env, info, params)
 sal_mx <- make_sal_mx(farm_env_daily, info, params)
 temp_mx <- make_temp_mx(farm_env_daily, info)
@@ -166,16 +177,13 @@ influx_df <- read_csv(glue("{inputs_dir}/influx_hourly.csv"), show_col_types=F) 
   summarise(pen=first(pen),
             influx=sum(influx),
             .by=c(time, date, day, hour, sepaSite, sim))
-make_IP_mx(influx_df, info)
+IP_mx <- make_IP_mx(influx_df, info)
 saveRDS(IP_mx, glue("{dat_stan_dir}/IP_mx.rds"))
 
 
 
 # params ------------------------------------------------------------------
 
-# Dimensions only, for setting priors in make_stan_data()
-params <- list(attach_beta=rep(0, ncol(attach_env_mx)),
-               surv_beta=matrix(0, ncol=info$nStageGroups, nrow=2))
 # For calculating priors: mean stage duration
 mnDaysStage_df <- expand_grid(Ch=seq(125, 175, length.out=100),
                               PA=seq(325, 375, length.out=100)) |>
