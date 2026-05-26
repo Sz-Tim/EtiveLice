@@ -555,12 +555,12 @@ params <- list(
   # Half saturation constant for attachment (cop/m3/day) 
   IP_halfSat_m3=runif(n=1, 1, 50) + rbinom(1, 1, 0.5)*1e6,
   # Treatment threshold for AF
-  treat_thresh=sample(c(0.5, 1), 1),
-  treat_efficacy_method=rbeta(info$nTrtMethods, 4, 2),
-  treat_efficacy=rbeta(info$nTrtTypes, 4, 2)
+  trt_thresh=sample(c(0.5, 1), 1),
+  trt_efficacy_method=rbeta(info$nTrtMethods, 4, 2),
+  trt_efficacy=rbeta(info$nTrtTypes, 4, 2)
 )
-params$treat_efficacy <- boot::inv.logit(
-  boot::logit(params$treat_efficacy_method[info$trt_meth_ii]) + rnorm(info$nTrtTypes, 0, 1)
+params$trt_efficacy <- boot::inv.logit(
+  boot::logit(params$trt_efficacy_method[info$trt_meth_ii]) + rnorm(info$nTrtTypes, 0, 1)
 )
 # Randomly set salinity and uv effects to 0 for attachment
 params$attach_beta[2:5] <- params$attach_beta[2:5] * rbinom(3, 1, 0.75)[c(1,2,3,3)]

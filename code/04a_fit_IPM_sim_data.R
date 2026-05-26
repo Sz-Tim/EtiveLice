@@ -27,6 +27,10 @@ n_chains <- 3
 stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
 stageGrps <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch1-Ch2", "Ch2-PA1", "PA1-PA2", "PA2-Ad")
+trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
+  summarise(.by=c(MethodNum, TypeNum, Method, Type)) |>
+  arrange(TypeNum) |>
+  mutate(abbr=paste0(str_sub(Method, 1, 1), "_", str_split_i(Type, "_", 2)))
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            paste0("ensWts_p[", 1:10, "]"),
                            "IP_bg", "IP_bg_m3",
@@ -38,7 +42,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            paste0("detect_p[", 1:2, "]"),
                            "nb_prec",
                            "IP_scale", "IP_halfSat_m3",
-                           "treatEfficacy"),
+                           paste0("trtEff_type[", 1:8, "]")),
                     label=c(paste0("attach_", c("RW", "Sal", "Temp", "UV", "UVsq")),
                             paste0("ensWt_", 1:10),
                             "IP_bg", "IP_bg_m3",
@@ -50,7 +54,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                             paste0("p_detect_", stageGrps[-3]),
                             "neg_binom_prec",
                             "IP_scale", "IP_halfSat_m3",
-                            "treatEfficacy"
+                            paste0("trtEff_", trt_meth_ii$abbr)
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
@@ -63,8 +67,8 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
   keep_pars <- c("IP_bg_m3",
                  "ensWts_p", "attach_beta",
                  "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
-                 "detect_p", "nb_prec", "treatEfficacy")
-  iter <- 1000
+                 "detect_p", "nb_prec", "treatEff_type")
+  iter <- 10
   stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2025-01-01")
 
   if(!refit & file.exists(glue("{sim_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.rds"))) {

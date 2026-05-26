@@ -78,7 +78,7 @@ day_hour <- matrix(1:info$nHours, ncol=24, byrow=T)
 nFish_mx <- make_nFish_mx(mowi_df_ext, info)
 sampledDays <- make_sampledDays(mowi_df_ext |> mutate(pen=sepaSite))
 nFishSampled_mx <- make_nFishSampled_mx(mowi_df_ext, info, nFish_mx)
-treatApplied_mx <- make_trtApplied_mx(trt_df, info)
+trtApplied_mx <- make_trtApplied_mx(trt_df, info)
 mowi_y_obs <- mowi_df_ext |>
   mutate(across(all_of(c("Ch", "PA", "AF")), ~if_else(is.na(.x), 0, .x))) |>
   select(sepaSite, date, Ch, PA, AF) |>
@@ -92,7 +92,7 @@ saveRDS(day_hour, glue("{dat_stan_dir}/day_hour.rds"))
 saveRDS(nFish_mx, glue("{dat_stan_dir}/nFish_mx.rds"))
 saveRDS(sampledDays, glue("{dat_stan_dir}/sampledDays.rds"))
 saveRDS(nFishSampled_mx, glue("{dat_stan_dir}/nFishSampled_mx.rds"))
-saveRDS(treatTypes_mx, glue("{dat_stan_dir}/treatTypes.rds"))
+saveRDS(trtApplied_mx, glue("{dat_stan_dir}/trtApplied_mx.rds"))
 saveRDS(y_obs, glue("{dat_stan_dir}/y_obs.rds"))
 
 

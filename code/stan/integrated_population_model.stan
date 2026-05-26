@@ -92,7 +92,7 @@ data {
   array[nFarms] matrix[nDays, nSurvCov] surv_env_mx; // covariates for p(Surv) incl. intercept
   matrix[nDays, nFarms] temp_z_mx; // z-transformed temperature
   // array[nDays, nFarms] int<lower=0,upper=nTrtTypes> treatApplied;
-  array[nFarms] matrix<lower=0,upper=1>[nDays, nTrtTypes] treatApplied; // indicator for treatment application
+  array[nFarms] matrix<lower=0,upper=1>[nDays, nTrtTypes] trtApplied; // indicator for treatment application
   array[nTrtTypes] int<lower=1,upper=nTrtMethods> trt_meth_ii; // index of method for each type
   matrix[nDays, nFarms] nFish_mx; // number of fish on each farm each day
   array[nSamples, 2] int sample_i; // rows: sample; cols: farm, day; sorted by farm, day
@@ -119,7 +119,7 @@ data {
   array[nFarms] matrix[nDays_GQ, nSurvCov] surv_env_mx_GQ; // covariates for p(Surv) incl. intercept
   matrix[nDays_GQ, nFarms] temp_z_mx_GQ; // z-transformed temperature
   matrix[nDays_GQ, nFarms] nFish_mx_GQ; // number of fish on each farm each day
-  array[nFarms] matrix<lower=0,upper=1>[nDays_GQ, nTrtTypes] treatApplied_GQ; // indicator for treatment application
+  array[nFarms] matrix<lower=0,upper=1>[nDays_GQ, nTrtTypes] trtApplied_GQ; // indicator for treatment application
   array[nSamples_GQ, 2] int sample_i_GQ; // rows: sample; cols: farm, day; sorted by farm, day
   array[nFarms, 2] int sample_ii_GQ; // start/end indexes for each farm in sample_i
   matrix[nFarms, nDays_GQ] nFishSampled_mx_GQ; // number of fish sampled on each farm each day
@@ -274,7 +274,7 @@ transformed parameters {
       pMolt[farm, , stage] = 1 / (temp_X[farm] * mnDaysStage_beta[, stage]);
     }
     for(stage in 1:nStages) {
-      stage_Surv[farm, , stage] = stage_Surv[farm, , stage] .* fishPresent[, farm] .* exp(treatApplied[farm] * log1m_trtEff_type);
+      stage_Surv[farm, , stage] = stage_Surv[farm, , stage] .* fishPresent[, farm] .* exp(trtApplied[farm] * log1m_trtEff_type);
     }
     // for(day in 1:nDays) {
     //   if(treatApplied[day, farm] == 1) {
@@ -364,7 +364,7 @@ generated quantities {
         pMolt_GQ[farm, , stage] = 1 / (temp_X_GQ[farm] * mnDaysStage_beta[, stage]);
       }
       for(stage in 1:nStages) {
-        stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm] .* exp(treatApplied_GQ[farm] * log1m_trtEff_type);
+        stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm] .* exp(trtApplied_GQ[farm] * log1m_trtEff_type);
       }
       // for(stage in 1:nStages) {
       //   stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm];
