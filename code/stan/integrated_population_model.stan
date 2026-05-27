@@ -7,23 +7,24 @@ functions {
   array[,] matrix make_trans_mx(array[,] matrix trans_mx_init,
                                 int nFarms,
                                 int nDays,
+                                array[] int stg_grp_ii,
                                 array[] matrix stage_Surv,
                                 array[] matrix pMolt) {
     array[nFarms, nDays] matrix[5, 5] trans_mx = trans_mx_init;
     for(farm in 1:nFarms) {
       for(day in 1:nDays) {
         // Chalimus 1-2
-        trans_mx[farm, day, 1, 1] = (1-pMolt[farm, day, 1]) * stage_Surv[farm, day, 1];
-        trans_mx[farm, day, 2, 1] = pMolt[farm, day, 1] * stage_Surv[farm, day, 1];
-        trans_mx[farm, day, 2, 2] = (1-pMolt[farm, day, 2]) * stage_Surv[farm, day, 2];
-        trans_mx[farm, day, 3, 2] = pMolt[farm, day, 2] * stage_Surv[farm, day, 2];
+        trans_mx[farm, day, 1, 1] = (1-pMolt[farm, day, stg_grp_ii[1]]) * stage_Surv[farm, day, stg_grp_ii[1]];
+        trans_mx[farm, day, 2, 1] = pMolt[farm, day, stg_grp_ii[1]] * stage_Surv[farm, day, stg_grp_ii[1]];
+        trans_mx[farm, day, 2, 2] = (1-pMolt[farm, day, stg_grp_ii[2]]) * stage_Surv[farm, day, stg_grp_ii[2]];
+        trans_mx[farm, day, 3, 2] = pMolt[farm, day, stg_grp_ii[2]] * stage_Surv[farm, day, stg_grp_ii[2]];
         // Pre-adult 1-2
-        trans_mx[farm, day, 3, 3] = (1-pMolt[farm, day, 3]) * stage_Surv[farm, day, 3];
-        trans_mx[farm, day, 4, 3] = pMolt[farm, day, 3] * stage_Surv[farm, day, 3];
-        trans_mx[farm, day, 4, 4] = (1-pMolt[farm, day, 4]) * stage_Surv[farm, day, 4];
-        trans_mx[farm, day, 5, 4] = pMolt[farm, day, 4] * stage_Surv[farm, day, 4];
+        trans_mx[farm, day, 3, 3] = (1-pMolt[farm, day, stg_grp_ii[3]]) * stage_Surv[farm, day, stg_grp_ii[3]];
+        trans_mx[farm, day, 4, 3] = pMolt[farm, day, stg_grp_ii[3]] * stage_Surv[farm, day, stg_grp_ii[3]];
+        trans_mx[farm, day, 4, 4] = (1-pMolt[farm, day, stg_grp_ii[4]]) * stage_Surv[farm, day, stg_grp_ii[4]];
+        trans_mx[farm, day, 5, 4] = pMolt[farm, day, stg_grp_ii[4]] * stage_Surv[farm, day, stg_grp_ii[4]];
         // Adult
-        trans_mx[farm, day, 5, 5] = stage_Surv[farm, day, 5];
+        trans_mx[farm, day, 5, 5] = stage_Surv[farm, day, stg_grp_ii[5]];
       }
     }
     return trans_mx;
@@ -192,14 +193,14 @@ parameters {
   vector[nSims] ensWts_p_uc;  // unconstrained mixture proportions
   vector[nAttachCov-1] attach_beta_z; // p(attach) [RW_logit, sal_z, temp_z, uv_z]
   real<upper=0> attach_betaUV2_z; // p(attach) uv_z^2 coefficient: constrain to concave down
-  matrix[nSurvCov, nStages] surv_beta_z; // p(surv) [Int, sal][Ch1, Ch2, PA1, PA2, Ad]
-  row_vector<lower=0>[nStages] surv_int_farm_sd; // p(surv) sd for farm-level Int; logit-scale
-  matrix[nFarms, nStages] surv_int_farm_z; // p(surv) [farm][Ch1, Ch2, PA1, PA2, Ad]
+  matrix[nSurvCov, nStageGroups] surv_beta_z; // p(surv) [Int, sal][Ch1-2, PA1-2, Ad]
+  row_vector<lower=0>[nStageGroups] surv_int_farm_sd; // p(surv) sd for farm-level Int; logit-scale
+  matrix[nFarms, nStageGroups] surv_int_farm_z; // p(surv) [farm][Ch1-2, PA1-2, Ad]
   real logit_trtEff_global; // global treatment efficacy mean
   vector[nTrtTypes] logit_trtEff_type; // treatment efficacies for each type
   real<lower=0> trtEff_sd_types; // treatment efficacy sd among types
-  matrix[2, nStages-1] mnDaysStage_beta_z; // [Int, temp][Ch1-Ch2, Ch2-PA1, PA1-PA2, PA2-Ad]
-  vector[nStageGroups] logit_detect_p; // p(detect) by stage
+  matrix[2, nStageGroups-1] mnDaysStage_beta_z; // [Int, temp][Ch-PA, PA-Ad]
+  vector[nStageGroups] logit_detect_p; // p(detect) by stage group
   real<lower=0> inv_sqrt_nb_prec; // negative binomial precision (1/sqrt(prec))
 }
 
@@ -211,16 +212,16 @@ transformed parameters {
   vector[nAttachCov] attach_beta; // p(attach) [RW_logit, sal_z, temp_z, uv_z, uv_z^2]
   vector<lower=0,upper=1>[nTrtTypes] trtEff_type = inv_logit(logit_trtEff_type); // treatment efficacy (0-1)
   vector[nTrtTypes] log1m_trtEff_type = log1m(trtEff_type); // log(1 - trtEff_type)
-  matrix[nSurvCov, nStages] surv_beta; // p(surv) [Int, sal][Ch1, Ch2, PA1, PA2, Ad]
-  array[nFarms] matrix[nSurvCov, nStages] surv_beta_farm; // p(surv) [farmInt, sal][Ch1, Ch2, PA1, PA2, Ad]
-  matrix[2, nStages-1] mnDaysStage_beta; // [Int, temp][Ch1-Ch2, Ch2-PA1, PA1-PA2, PA2-Ad]
+  matrix[nSurvCov, nStageGroups] surv_beta; // p(surv) [Int, sal][Ch1-2, PA1-2, Ad]
+  array[nFarms] matrix[nSurvCov, nStageGroups] surv_beta_farm; // p(surv) [farmInt, sal][Ch1-2, PA1-2, Ad]
+  matrix[2, nStageGroups-1] mnDaysStage_beta; // [Int, temp][Ch-PA, PA-Ad]
   vector[nStageGroups] detect_p;
   // intermediate quantities
   matrix<lower=0>[nHours, nFarms] ensIP; // ensemble IP
   matrix<lower=0,upper=1>[nHours, nFarms] pr_attach; // attachment probability
   matrix<lower=0>[nHours, nFarms] N_attach; // number of copepodids that attach
-  array[nFarms] matrix<lower=0,upper=1>[nDays, nStages] stage_Surv; // survival rates
-  array[nFarms] matrix<lower=0,upper=1>[nDays, nStages-1] pMolt; // transition probabilities
+  array[nFarms] matrix<lower=0,upper=1>[nDays, nStageGroups] stage_Surv; // survival rates
+  array[nFarms] matrix<lower=0,upper=1>[nDays, nStageGroups-1] pMolt; // transition probabilities
   array[nFarms, nDays] matrix<lower=0,upper=1>[nStages, nStages] trans_mx; // transition matrix
   array[nFarms] matrix<lower=0>[nStages, nDays] mu; // latent daily mean lice per fish
   array[nStageGroups] row_vector<lower=0>[nSamples] y_bar; // expected observed (mu*prDet)
@@ -236,10 +237,10 @@ transformed parameters {
                                 prior_attach_beta[nAttachCov,2],
                                 prior_attach_beta[nAttachCov,1]);
   for(i in 1:nSurvCov) {
-    for(stage in 1:nStages) {
-      surv_beta[i,stage] = fma(surv_beta_z[i,stage],
-                               prior_surv_beta[i,stg_grp_ii[stage],2],
-                               prior_surv_beta[i,stg_grp_ii[stage],1]);
+    for(grp in 1:nStageGroups) {
+      surv_beta[i,grp] = fma(surv_beta_z[i,grp],
+                               prior_surv_beta[i,grp,2],
+                               prior_surv_beta[i,grp,1]);
     }
   }
   for(farm in 1:nFarms) {
@@ -247,10 +248,10 @@ transformed parameters {
       surv_beta_farm[farm,2,] = surv_beta[2,];
   }
   for(i in 1:2) {
-    for(stage in 1:(nStages-1)) {
-      mnDaysStage_beta[i,stage] = fma(mnDaysStage_beta_z[i,stage],
-                                      prior_mnDaysStage_F[i,stg_grp_ii[stage],2],
-                                      prior_mnDaysStage_F[i,stg_grp_ii[stage],1]);
+    for(grp in 1:(nStageGroups-1)) {
+      mnDaysStage_beta[i,grp] = fma(mnDaysStage_beta_z[i,grp],
+                                      prior_mnDaysStage_F[i,grp,2],
+                                      prior_mnDaysStage_F[i,grp,1]);
     }
   }
   for(grp in 1:(nStageGroups-1)) {
@@ -265,15 +266,15 @@ transformed parameters {
     ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg[farm];
     pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
     stage_Surv[farm] = inv_logit(surv_env_mx[farm] * surv_beta_farm[farm]);
-    for(stage in 1:(nStages-1)) {
-      pMolt[farm, , stage] = 1 / (temp_X[farm] * mnDaysStage_beta[, stage]);
+    for(grp in 1:(nStageGroups-1)) {
+      pMolt[farm, , grp] = 1 / (temp_X[farm] * mnDaysStage_beta[, grp]);
     }
-    for(stage in 1:nStages) {
-      stage_Surv[farm, , stage] = stage_Surv[farm, , stage] .* fishPresent[, farm] .* exp(trtApplied[farm] * log1m_trtEff_type);
+    for(grp in 1:nStageGroups) {
+      stage_Surv[farm, , grp] = stage_Surv[farm, , grp] .* fishPresent[, farm] .* exp(trtApplied[farm] * log1m_trtEff_type);
     }
   }
   N_attach = 0.5 * ensIP .* pr_attach;
-  trans_mx = make_trans_mx(trans_mx_init, nFarms, nDays, stage_Surv, pMolt);
+  trans_mx = make_trans_mx(trans_mx_init, nFarms, nDays, stg_grp_ii, stage_Surv, pMolt);
 
   mu = N_init;
   // Population projection: Newly attached Ch1 + existing population transitions
@@ -299,8 +300,8 @@ transformed parameters {
     for(i in 1:nSurvCov) {
         lprior += std_normal_lpdf(surv_beta_z[i,]);
     }
-    for(stage in 1:nStages) {
-      lprior += std_normal_lpdf(surv_int_farm_z[,stage]);
+    for(grp in 1:nStageGroups) {
+      lprior += std_normal_lpdf(surv_int_farm_z[,grp]);
     }
     for(i in 1:2) {
       lprior += std_normal_lpdf(mnDaysStage_beta_z[i,]);
@@ -327,8 +328,8 @@ generated quantities {
   matrix[nHours_GQ, nFarms] ensIP_GQ;
   matrix[nHours_GQ, nFarms] pr_attach_GQ;
   matrix[nHours_GQ, nFarms] N_attach_GQ;
-  array[nFarms] matrix[nDays_GQ, nStages] stage_Surv_GQ; // survival rates
-  array[nFarms] matrix[nDays_GQ, nStages-1] pMolt_GQ; // transition probabilities
+  array[nFarms] matrix[nDays_GQ, nStageGroups] stage_Surv_GQ; // survival rates
+  array[nFarms] matrix[nDays_GQ, nStageGroups-1] pMolt_GQ; // transition probabilities
   array[nFarms, nDays_GQ] matrix[nStages, nStages] trans_mx_GQ; // transition matrix
   array[nFarms] matrix[nStages, nDays_GQ] mu_GQ; // latent daily mean lice per fish
   array[nStageGroups] row_vector[nSamples_GQ] y_bar_GQ; // expected observed mean lice per fish
@@ -346,15 +347,15 @@ generated quantities {
       ensIP_GQ[,farm] = IP_mx_GQ[farm] * ensWts_p + IP_bg[farm];
       pr_attach_GQ[,farm] = inv_logit(attach_env_mx_GQ[farm] * attach_beta);
       stage_Surv_GQ[farm] = inv_logit(surv_env_mx_GQ[farm] * surv_beta_farm[farm]);
-      for(stage in 1:(nStages-1)) {
-        pMolt_GQ[farm, , stage] = 1 / (temp_X_GQ[farm] * mnDaysStage_beta[, stage]);
+      for(grp in 1:(nStageGroups-1)) {
+        pMolt_GQ[farm, , grp] = 1 / (temp_X_GQ[farm] * mnDaysStage_beta[, grp]);
       }
-      for(stage in 1:nStages) {
-        stage_Surv_GQ[farm, , stage] = stage_Surv_GQ[farm, , stage] .* fishPresent_GQ[, farm] .* exp(trtApplied_GQ[farm] * log1m_trtEff_type);
+      for(grp in 1:nStageGroups) {
+        stage_Surv_GQ[farm, , grp] = stage_Surv_GQ[farm, , grp] .* fishPresent_GQ[, farm] .* exp(trtApplied_GQ[farm] * log1m_trtEff_type);
       }
     }
     N_attach_GQ = 0.5 * ensIP_GQ .* pr_attach_GQ;
-    trans_mx_GQ = make_trans_mx(trans_mx_init_GQ, nFarms, nDays_GQ, stage_Surv_GQ, pMolt_GQ);
+    trans_mx_GQ = make_trans_mx(trans_mx_init_GQ, nFarms, nDays_GQ, stg_grp_ii, stage_Surv_GQ, pMolt_GQ);
     // Population projection: Newly attached Ch1 + existing population transitions
     mu_GQ = N_init_GQ;
     for(farm in 1:nFarms) {

@@ -23,7 +23,7 @@ dat_dir <- "data/aquaculture/mowi_stan/"
 out_dir <- "out/ipm_fit/"
 stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
 stageGrps <- c("Ch", "PA", "Ad")
-stage_trans <- c("Ch1-Ch2", "Ch2-PA1", "PA1-PA2", "PA2-Ad")
+stage_trans <- c("Ch-PA", "PA-Ad")
 trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
   summarise(.by=c(MethodNum, TypeNum, Method, Type)) |>
   arrange(TypeNum) |>
@@ -31,11 +31,11 @@ trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            paste0("ensWts_p[", 1:10, "]"),
                            "IP_bg", "IP_bg_m3",
-                           paste0("surv_beta[1,", 1:5, "]"),
-                           paste0("surv_beta[2,", 1:5, "]"),
-                           paste0("surv_int_farm_sd[", 1:5, "]"),
-                           paste0("mnDaysStage_beta[1,", 1:4, "]"),
-                           paste0("mnDaysStage_beta[2,", 1:4, "]"),
+                           paste0("surv_beta[1,", 1:3, "]"),
+                           paste0("surv_beta[2,", 1:3, "]"),
+                           paste0("surv_int_farm_sd[", 1:3, "]"),
+                           paste0("mnDaysStage_beta[1,", 1:2, "]"),
+                           paste0("mnDaysStage_beta[2,", 1:2, "]"),
                            paste0("detect_p[", 1:2, "]"),
                            "nb_prec",
                            "IP_scale", "IP_halfSat_m3",
@@ -43,11 +43,11 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     label=c(paste0("attach_", c("RW", "Sal", "Temp", "UV", "UVsq")),
                             paste0("ensWt_", 1:10),
                             "IP_bg", "IP_bg_m3",
-                            paste0("surv_Int_", stages),
-                            paste0("surv_Sal_", stages),
-                            paste0("surv_int_farm_sd_", stages),
-                            paste0("mnDaysStage_Int_", stages[1:4]),
-                            paste0("mnDaysStage_Temp_", stages[1:4]),
+                            paste0("surv_Int_", stageGrps),
+                            paste0("surv_Sal_", stageGrps),
+                            paste0("surv_int_farm_sd_", stageGrps),
+                            paste0("mnDaysStage_Int_", stageGrps[1:2]),
+                            paste0("mnDaysStage_Temp_", stageGrps[1:2]),
                             paste0("p_detect_", stageGrps[-3]),
                             "neg_binom_prec",
                             "IP_scale", "IP_halfSat_m3",
@@ -78,7 +78,9 @@ fit_full <- mod_full$sample(
 # Sampler warnings:
 # pMolt[5][423, 2] is 1.01913
 # also for 422, 418, 421; all farm 5 (FFMC84)
+# Farm 1 also:  pMolt[1][423, 4] is 1.00683
 # But does this only happen early on? So far only 10 iter
+# Could be an issue with 2 inseparable durations... maybe go back to stageGroups...
 
 out_full_df <- fit_full$draws(
   variables=keep_pars,
