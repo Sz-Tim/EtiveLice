@@ -58,7 +58,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
 keep_pars <- c("IP_bg_m3", "ensWts_p", "attach_beta",
                "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
                "detect_p", "nb_prec", "trtEff_type",
-               "mu"
+               "mu", "mu_GQ"
 )
 
 
@@ -132,6 +132,13 @@ p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_trt, p_pMoltTemp,
                nrow=7, align="v", axis="rl", rel_heights=c(2, 1, 2, 1, 2, 2, 1))
 ggsave(glue("{out_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=14)
 
+
+
+obs_df <- read_csv("data/aquaculture/mowi_cleaned.csv") |>
+  filter(!is.na(nFishSampled)) |>
+  mutate(farm=paste("Farm", as.numeric(factor(sepaSite))))
+
+
 mu_draws_df <- take_mu_draws(out_full_df, NULL,
                              stan_dat$dat, ndraws=min(1e2, iter), GQ=TRUE) |>
   drop_na(mu) # some prior draws give NAs because of negbinom constraints
@@ -150,8 +157,9 @@ mu_draws_df <- take_mu_draws(out_full_df, NULL,
   drop_na(mu) # some prior draws give NAs because of negbinom constraints
 p <- mu_draws_df |>
   filter(stage=="Ad") |>
-  ggplot(aes(day, mu, group=as.character(.draw))) +
-  geom_line() +
+  ggplot() +
+  geom_line(aes(day, mu, group=as.character(.draw)), alpha=0.1) +
+  geom_point(data=obs_df, aes(date, AF/nFishSampled), shape=1, colour="steelblue3") +
   labs(x="Date", y="Mean lice per fish (latent)") +
   {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
   scale_x_date(date_labels="%b") +

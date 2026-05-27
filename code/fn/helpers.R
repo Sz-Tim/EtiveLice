@@ -154,11 +154,15 @@ take_mu_draws <- function(out_full_df, f_mu_true=NULL, dat, ndraws=100, GQ=T) {
   } else {
     mu_ii <- 1:dat$nDays
   }
-  mu_true_df <- expand_grid(farm=as.character(1:dat$nFarms),
-                            day=1:ifelse(GQ, dat$nDays_GQ, dat$nDays),
-                            stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
-    mutate(mu=c(readRDS(f_mu_true)[,1,mu_ii,])) |>
-    mutate(type="True")
+  if(is.null(f_mu_true)) {
+    mu_true_df <- NULL
+  } else {
+    mu_true_df <- expand_grid(farm=as.character(1:dat$nFarms),
+                              day=1:ifelse(GQ, dat$nDays_GQ, dat$nDays),
+                              stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
+      mutate(mu=c(readRDS(f_mu_true)[,1,mu_ii,])) |>
+      mutate(type="True")
+  }
   mu_draws_df <- out_full_df |>
     filter(.draw %in% draws & grepl(ifelse(GQ, "mu_GQ", "mu(?!_GQ)"), name, perl=T)) |>
     separate_wider_delim(name, delim=",", names=c("farm", "stage5", "day")) |>
@@ -175,7 +179,7 @@ take_mu_draws <- function(out_full_df, f_mu_true=NULL, dat, ndraws=100, GQ=T) {
            value=pmax(value, 0)) |>
     rename(mu=value) |>
     bind_rows(mu_true_df) |>
-    mutate(day=ymd("2023-01-01") + ifelse(GQ, dat$nDays, 0) + day - 1,
+    mutate(day=ymd("2022-01-01") + ifelse(GQ, dat$nDays, 0) + day - 1,
            farm=paste("Farm", farm))
 }
 
