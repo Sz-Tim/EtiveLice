@@ -159,9 +159,13 @@ take_mu_draws <- function(out_full_df, f_mu_true=NULL, dat, ndraws=100, GQ=T) {
   } else {
     mu_true_df <- expand_grid(farm=as.character(1:dat$nFarms),
                               day=1:ifelse(GQ, dat$nDays_GQ, dat$nDays),
-                              stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
-      mutate(mu=c(readRDS(f_mu_true)[,1,mu_ii,])) |>
-      mutate(type="True")
+                              stage5=1:5) |>
+      mutate(stage=case_when(stage5 %in% 1:2 ~ "Ch",
+                             stage5 %in% 3:4 ~ "PA",
+                             stage5 == 5 ~ "Ad"),
+             stage=factor(stage, levels=c("Ch", "PA", "Ad")),
+             mu=c(readRDS(f_mu_true)[,1,mu_ii,]),
+             type="True")
   }
   mu_draws_df <- out_full_df |>
     filter(.draw %in% draws & grepl(ifelse(GQ, "mu_GQ", "mu(?!_GQ)"), name, perl=T)) |>

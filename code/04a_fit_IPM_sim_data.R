@@ -20,13 +20,13 @@ theme_set(theme_classic())
 
 prior_only <- F
 keep_licePreds <- T
-refit <- F
+refit <- T
 n_parallel <- 1
 
 n_chains <- 3
 stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
 stageGrps <- c("Ch", "PA", "Ad")
-stage_trans <- c("Ch1-Ch2", "Ch2-PA1", "PA1-PA2", "PA2-Ad")
+stage_trans <- c("Ch-PA", "PA-Ad")
 trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
   summarise(.by=c(MethodNum, TypeNum, Method, Type)) |>
   arrange(TypeNum) |>
@@ -34,11 +34,11 @@ trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            paste0("ensWts_p[", 1:10, "]"),
                            "IP_bg", "IP_bg_m3",
-                           paste0("surv_beta[1,", 1:5, "]"),
-                           paste0("surv_beta[2,", 1:5, "]"),
-                           paste0("surv_int_farm_sd[", 1:5, "]"),
-                           paste0("mnDaysStage_beta[1,", 1:4, "]"),
-                           paste0("mnDaysStage_beta[2,", 1:4, "]"),
+                           paste0("surv_beta[1,", 1:3, "]"),
+                           paste0("surv_beta[2,", 1:3, "]"),
+                           paste0("surv_int_farm_sd[", 1:3, "]"),
+                           paste0("mnDaysStage_beta[1,", 1:2, "]"),
+                           paste0("mnDaysStage_beta[2,", 1:2, "]"),
                            paste0("detect_p[", 1:2, "]"),
                            "nb_prec",
                            "IP_scale", "IP_halfSat_m3",
@@ -46,11 +46,11 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     label=c(paste0("attach_", c("RW", "Sal", "Temp", "UV", "UVsq")),
                             paste0("ensWt_", 1:10),
                             "IP_bg", "IP_bg_m3",
-                            paste0("surv_Int_", stages),
-                            paste0("surv_Sal_", stages),
-                            paste0("surv_int_farm_sd_", stages),
-                            paste0("mnDaysStage_Int_", stages[1:4]),
-                            paste0("mnDaysStage_Temp_", stages[1:4]),
+                            paste0("surv_Int_", stageGrps),
+                            paste0("surv_Sal_", stageGrps),
+                            paste0("surv_int_farm_sd_", stageGrps),
+                            paste0("mnDaysStage_Int_", stageGrps[1:2]),
+                            paste0("mnDaysStage_Temp_", stageGrps[1:2]),
                             paste0("p_detect_", stageGrps[-3]),
                             "neg_binom_prec",
                             "IP_scale", "IP_halfSat_m3",
@@ -142,15 +142,15 @@ for(sim_dir in sim_dirs) {
     geom_vline(xintercept=0, linetype=3)
   p_surv <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("surv_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
-    post_summary_plot(ncol=5, scales="free") +
+    post_summary_plot(ncol=3, scales="free") +
     geom_vline(xintercept=0, linetype=3)
   p_surv_sd <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("surv_int_farm_sd", name)) |> inner_join(param_key, by=join_by(name))) |>
-    post_summary_plot(ncol=5, scales="free") +
+    post_summary_plot(ncol=3, scales="free") +
     geom_vline(xintercept=0, linetype=3)
   p_pMoltTemp <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("mnDaysStage_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
-    post_summary_plot(ncol=4, scales="free_y") +
+    post_summary_plot(ncol=2, scales="free_y") +
     geom_vline(xintercept=0, linetype=3)
   p_trt <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("trtEff_type", name)) |> inner_join(param_key, by=join_by(name))) |>

@@ -65,7 +65,7 @@ keep_pars <- c("IP_bg_m3", "ensWts_p", "attach_beta",
 
 # fit ---------------------------------------------------------------------
 
-iter <- 1000
+iter <- 10
 stan_dat <- make_stan_data(dat_dir, priors_only=prior_only, GQ_start="2025-01-01", source="real")
 
 mod_full <- cmdstan_model("code/stan/integrated_population_model.stan")
@@ -107,11 +107,11 @@ p_attach <- list(out_full_df, out_full_sum) |>
   geom_vline(xintercept=0, linetype=3)
 p_surv <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("surv_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
-  post_summary_plot(ncol=5, scales="free") +
+  post_summary_plot(ncol=3, scales="free") +
   geom_vline(xintercept=0, linetype=3)
 p_surv_sd <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("surv_int_farm_sd", name)) |> inner_join(param_key, by=join_by(name))) |>
-  post_summary_plot(ncol=5, scales="free") +
+  post_summary_plot(ncol=3, scales="free") +
   geom_vline(xintercept=0, linetype=3)
 p_trt <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("trtEff_type", name)) |> inner_join(param_key, by=join_by(name))) |>
@@ -119,7 +119,7 @@ p_trt <- list(out_full_df, out_full_sum) |>
   xlim(0, 1)
 p_pMoltTemp <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("mnDaysStage_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
-  post_summary_plot(ncol=4, scales="free_y") +
+  post_summary_plot(ncol=2, scales="free_y") +
   geom_vline(xintercept=0, linetype=3)
 p_detectp <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("detect_p", name)) |> inner_join(param_key, by=join_by(name))) |>
@@ -146,8 +146,9 @@ mu_draws_df <- take_mu_draws(out_full_df, NULL,
   drop_na(mu) # some prior draws give NAs because of negbinom constraints
 p <- mu_draws_df |>
   filter(stage=="Ad") |>
-  ggplot(aes(day, mu, group=as.character(.draw))) +
-  geom_line() +
+  ggplot() +
+  geom_line(aes(day, mu, group=as.character(.draw)), alpha=0.1) +
+  geom_point(data=obs_df, aes(date, AF/nFishSampled), shape=1, colour="steelblue3") +
   labs(x="Date", y="Mean lice per fish (latent)") +
   {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
   scale_x_date(date_labels="%b") +
