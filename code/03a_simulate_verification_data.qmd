@@ -260,10 +260,10 @@ farm_env_avg
 # daily values
 farm_env_daily <- farm_env |>
   select(-time, -hour, -elapsedHours) |>
-  group_by(sepaSite, day, date) |>
   summarise(across(where(is.numeric), mean),
-            sampled=first(sampled)) |>
-  ungroup()
+            sampled=first(sampled),
+            .by=c(sepaSite, day, date)) |>
+  mutate(yday=yday(date))
 ```
 
 ```{r}
@@ -524,7 +524,10 @@ info <- list(nDays=n_distinct(influx_df$date),
              dateRange=range(influx_df$date))
 params <- list(
   # Ensemble proportional weight for each biotracker simulation
-  ensWts_p=rlnorm(info$nSims, sdlog=0.75) |> make_compositional(),
+  # ensWts_p=rlnorm(info$nSims, sdlog=0.75) |> make_compositional(),
+  # Coefficients: logit-scale yday harmonic regression (Int, cos, sin)
+  ensWts_harm=matrix(c(log(rlnorm(info$nSims, sdlog=1)), rnorm(info$nSims*2)), 
+                     ncol=info$nSims, nrow=3, byrow=T),
   # Pr(copepodid attachment): RW_logit, salinity, temp, uv, uv^2
   attach_beta=glue("{proj_dir}/data/sim/inputs/posterior_prAttach.csv") |>
     read_csv() |> sample_n(1) |> 
@@ -655,14 +658,28 @@ p_prAttachIP <- expand_grid(
         legend.key.width=unit(0.6, "cm"),
         legend.key.height=unit(0.2, "cm"))
 # ensemble weights
-p_ensWts <- tibble(sim=unique(influx_df$sim), 
-                   p=params$ensWts_p) |>
-  ggplot() +
-  geom_bar(aes(x=sim, y=p, fill=sim), stat="identity", colour="grey30") +
-  scale_fill_viridis_d("Sim", option="turbo", guide="none") +
+# p_ensWts <- tibble(sim=unique(influx_df$sim), 
+#                    p=params$ensWts_p) |>
+#   ggplot() +
+#   geom_bar(aes(x=sim, y=p, fill=sim), stat="identity", colour="grey30") +
+#   scale_fill_viridis_d("Sim", option="turbo", guide="none") +
+#   scale_y_continuous("Ensemble weight p", limits=c(0, 1),
+#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+#   xlab("Biotracker simulation")
+p_ensWts <- as_tibble(make_ydayh_mx() %*% params$ensWts_harm) |>
+  set_names(unique(influx_df$sim)) |>
+  mutate(ydayh=row_number()) |>
+  pivot_longer(-ydayh, names_to="sim", values_to="logit_p") |>
+  group_by(ydayh) |>
+  mutate(p=make_compositional(logit_p)) |>
+  ungroup() |>
+  mutate(date_std=ymd_h("2020-01-01 00") + dhours(ydayh - 1)) |>
+  ggplot(aes(date_std, p, colour=sim)) + 
+  geom_line() + 
+  scale_colour_viridis_d(option="turbo", guide="none") +
   scale_y_continuous("Ensemble weight p", limits=c(0, 1),
                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-  xlab("Biotracker simulation")
+  scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") 
 # survival
 p_prSurv <- expand_grid(
   salinity=seq_range(farm_env$salinity_m30, length.out=100),

@@ -41,6 +41,9 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   # trtApplied_mx[farm, days, trtTypes] -- initialize as 0s
   trtApplied_mx <- array(0, dim=c(info$nFarms, info$nDays, ncol=info$nTrtTypes))
 
+  # ydayh_mx[hour, c(Int, cos, sin)]
+  ydayh_mx <- make_ydayh_mx(farm_env)
+
 
   #---- Data structures
   #### Ensemble infection pressure: Number of copepodids in radius
@@ -80,8 +83,9 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   cat(format(now(), "%F %T"), "Starting simulation \n")
 
   #---- Ensemble IP, attachement, survival rates
+  ensWts_p <- t(apply(ydayh_mx %*% params$ensWts_harm, 1, make_compositional))
   for(farm in 1:info$nFarms) {
-    ensIP[,farm] <- IP_mx[farm,,] %*% params$ensWts_p + params$IP_bg[farm]
+    ensIP[,farm] <- rowSums(IP_mx[farm,,] * ensWts_p) + params$IP_bg[farm]
     if(length(params$attach_beta) > 1) {
       pr_attach[,farm] <- plogis(attach_env_mx[farm,,] %*% params$attach_beta)
     } else {
@@ -229,6 +233,7 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   saveRDS(pr_attach, glue("{out_dir}/pr_attach.rds"))
   saveRDS(day_hour, glue("{out_dir}/day_hour.rds"))
   saveRDS(stage_survRate, glue("{out_dir}/stage_survRate.rds"))
+  saveRDS(ydayh_mx, glue("{out_dir}/ydayh_mx.rds"))
 
   cat(format(now(), "%F %T"), "  Storing cohort structures  \n")
   saveRDS(cohort_N, glue("{out_dir}/cohort_N.rds"))

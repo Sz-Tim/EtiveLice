@@ -18,10 +18,10 @@ fread <- data.table::fread
 dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
-prior_only <- F
+prior_only <- T
 keep_licePreds <- T
 refit <- T
-n_parallel <- 1
+n_parallel <- 2
 
 n_chains <- 3
 stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
@@ -64,10 +64,10 @@ sim_dirs <- paste0(dir("data/sim", "sim_", include.dirs=T, full.names=T), "/")
 # stage_Surv[1][1, 1] is -nan
 # pMolt[1][592, 2] is 1.01869
 
-# plan(multicore, workers=n_parallel)
+plan(multicore, workers=n_parallel)
 
-# foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = TRUE)) %dofuture% {
-for(sim_dir in sim_dirs) {
+foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = TRUE)) %dofuture% {
+# for(sim_dir in sim_dirs) {
   keep_pars <- c("IP_bg_m3",
                  "ensWts_p", "attach_beta",
                  "surv_beta", "surv_int_farm_sd",

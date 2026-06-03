@@ -54,6 +54,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     surv_env_mx=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates,],
     temp_mx=readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
     temp_z_mx=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
+    ydayh_mx=readRDS(glue("{dat_dir}ydayh_mx.rds"))[hours,],
     # priors
     sample_prior_only=as.numeric(priors_only),
     # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
@@ -121,6 +122,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            attach_env_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nAttachCov)),
            surv_env_mx_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nSurvCov)),
            temp_z_mx_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
+           ydayh_mx_GQ=matrix(0, nrow=1, ncol=3),
            nFish_mx_GQ=matrix(0, nrow=1, ncol=stan_dat$nFarms),
            trtApplied_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nTrtTypes)),
            sample_i_GQ=matrix(0, nrow=1, ncol=2),
@@ -137,6 +139,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours_GQ,],
            surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates_GQ,],
            temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates_GQ,],
+           ydayh_mx_GQ=readRDS(glue("{dat_dir}ydayh_mx.rds"))[hours_GQ,],
            nFish_mx_GQ=readRDS(glue("{dat_dir}nFish_mx.rds"))[dates_GQ,],
            trtApplied_GQ=readRDS(glue("{dat_dir}trtApplied_mx.rds"))[,dates_GQ,],
            sample_i_GQ=readRDS(glue("{dat_dir}sampledDays.rds")) |>
@@ -280,3 +283,18 @@ make_nFishSampled_mx <- function(farm_env, info, nFish_mx, out_dir=NULL) {
 }
 
 
+make_ydayh_mx <- function(farm_env=NULL, out_dir=NULL) {
+  n_h <- 366*24
+  if(is.null(farm_env)) {
+    hour_vec <- 1:n_h
+  } else {
+    hour_vec <- 1:max(farm_env$elapsedHours)
+  }
+  ydayh_mx <- cbind(1,
+                   cos(hour_vec/n_h*2*pi),
+                   sin(hour_vec/n_h*2*pi))
+  if(!is.null(out_dir)) {
+    saveRDS(ydayh_mx, glue("{out_dir}/ydayh_mx.rds"))
+  }
+  return(ydayh_mx)
+}

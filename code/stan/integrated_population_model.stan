@@ -85,6 +85,7 @@ data {
   vector<lower=0>[nFarms] IP_volume; // per-farm volume to use for scaling IP_m3 to N_copepodids
   real<lower=0> y_bar_minimum; // minimum possible expected lice counts (0 not allowed)
   array[nDays,24] int<lower=1,upper=nHours> day_hour; // hour numbers corresponding to each day
+  matrix[nHours, 3] ydayh_mx; // 1, cos(ydayh), sin(ydayh)
   array[nStages] int<lower=1,upper=nStageGroups> stg_grp_ii; // index for stages into stage groups (1,1,2,2,3)
   // data
   array[nStageGroups, nDays, nFarms] int y_F; // FEMALE lice counts for each day 1:nDays
@@ -113,6 +114,7 @@ data {
   int<lower=0> nHours_GQ; // number of hours from start to end
   int<lower=1> nSamples_GQ; // total number of sampling bouts across all farms
   array[nDays_GQ,24] int<lower=1,upper=nHours_GQ> day_hour_GQ; // hour numbers corresponding to each day
+  matrix[nHours_GQ, 3] ydayh_mx_GQ; // 1, cos(ydayh), sin(ydayh)
   array[nFarms] matrix<lower=0>[nHours_GQ, nSims] IP_mx_GQ; // IP from particle tracking simulations
   array[nFarms] matrix[nHours_GQ, nAttachCov] attach_env_mx_GQ; // covariates for p(Attach)
   array[nFarms] matrix[nDays_GQ, nSurvCov] surv_env_mx_GQ; // covariates for p(Surv) incl. intercept
@@ -190,7 +192,8 @@ parameters {
   // with param_z ~ Norm(0, 1), solely for more efficient execution in Stan.
   // This is equivalent to param ~ N(prior_mean, prior_sd)
   real<lower=0> IP_bg_m3; // background infection pressure per m3
-  vector[nSims] ensWts_p_uc;  // unconstrained mixture proportions
+  // vector[nSims] ensWts_p_uc;  // unconstrained mixture proportions
+  matrix[3, nSims] ensWts_harm; // coefficients for ydayh harmonic terms
   vector[nAttachCov-1] attach_beta_z; // p(attach) [RW_logit, sal_z, temp_z, uv_z]
   real<upper=0> attach_betaUV2_z; // p(attach) uv_z^2 coefficient: constrain to concave down
   matrix[nSurvCov, nStageGroups] surv_beta_z; // p(surv) [Int, sal][Ch1-2, PA1-2, Ad]
@@ -199,7 +202,10 @@ parameters {
   real logit_trtEff_global; // global treatment efficacy mean
   vector[nTrtTypes] logit_trtEff_type; // treatment efficacies for each type
   real<lower=0> trtEff_sd_types; // treatment efficacy sd among types
-  matrix[2, nStageGroups-1] mnDaysStage_beta_z; // [Int, temp][Ch-PA, PA-Ad]
+  // matrix[2, nStageGroups-1] mnDaysStage_beta_z; // [Int, temp][Ch-PA, PA-Ad]
+  row_vector[nStageGroups-1] mnDaysStage_int_z;
+  real<upper=-prior_mnDaysStage_F[2,1,1]/prior_mnDaysStage_F[2,1,2]> mnDaysStage_tempCh_z;
+  real<upper=-prior_mnDaysStage_F[2,2,1]/prior_mnDaysStage_F[2,2,2]> mnDaysStage_tempPA_z;
   vector[nStageGroups] logit_detect_p; // p(detect) by stage group
   real<lower=0> inv_sqrt_nb_prec; // negative binomial precision (1/sqrt(prec))
 }
@@ -208,7 +214,9 @@ transformed parameters {
   // parameters
   real lprior = 0;  // prior contributions to the log posterior
   vector<lower=0>[nFarms] IP_bg = IP_bg_m3 * IP_volume; // background N_copepodids per pen
-  simplex[nSims] ensWts_p = softmax(ensWts_p_uc);  // mixture proportions
+  // simplex[nSims] ensWts_p = softmax(ensWts_p_uc);  // mixture proportions
+  matrix[nHours, nSims] ensWts_p_uc = ydayh_mx * ensWts_harm;
+  array[nHours] simplex[nSims] ensWts_p; // mixture proportions
   vector[nAttachCov] attach_beta; // p(attach) [RW_logit, sal_z, temp_z, uv_z, uv_z^2]
   vector<lower=0,upper=1>[nTrtTypes] trtEff_type = inv_logit(logit_trtEff_type); // treatment efficacy (0-1)
   vector[nTrtTypes] log1m_trtEff_type = log1m(trtEff_type); // log(1 - trtEff_type)
@@ -239,21 +247,32 @@ transformed parameters {
   for(i in 1:nSurvCov) {
     for(grp in 1:nStageGroups) {
       surv_beta[i,grp] = fma(surv_beta_z[i,grp],
-                               prior_surv_beta[i,grp,2],
-                               prior_surv_beta[i,grp,1]);
+                             prior_surv_beta[i,grp,2],
+                             prior_surv_beta[i,grp,1]);
     }
   }
   for(farm in 1:nFarms) {
       surv_beta_farm[farm,1,] = surv_beta[1,] + surv_int_farm_z[farm,] .* surv_int_farm_sd;
       surv_beta_farm[farm,2,] = surv_beta[2,];
   }
-  for(i in 1:2) {
-    for(grp in 1:(nStageGroups-1)) {
-      mnDaysStage_beta[i,grp] = fma(mnDaysStage_beta_z[i,grp],
-                                      prior_mnDaysStage_F[i,grp,2],
-                                      prior_mnDaysStage_F[i,grp,1]);
-    }
+  for(grp in 1:(nStageGroups-1)) {
+      mnDaysStage_beta[1,grp] = fma(mnDaysStage_int_z[grp],
+                                    prior_mnDaysStage_F[1,grp,2],
+                                    prior_mnDaysStage_F[1,grp,1]);
   }
+  mnDaysStage_beta[2,1] = fma(mnDaysStage_tempCh_z,
+                              prior_mnDaysStage_F[2,1,2],
+                              prior_mnDaysStage_F[2,1,1]);
+  mnDaysStage_beta[2,2] = fma(mnDaysStage_tempPA_z,
+                              prior_mnDaysStage_F[2,2,2],
+                              prior_mnDaysStage_F[2,2,1]);
+  // for(i in 1:2) {
+  //   for(grp in 1:(nStageGroups-1)) {
+  //     mnDaysStage_beta[i,grp] = fma(mnDaysStage_beta_z[i,grp],
+  //                                     prior_mnDaysStage_F[i,grp,2],
+  //                                     prior_mnDaysStage_F[i,grp,1]);
+  //   }
+  // }
   for(grp in 1:(nStageGroups-1)) {
     detect_p[grp] = inv_logit(fma(logit_detect_p[grp],
                                     prior_logit_detect_p[grp,2],
@@ -261,9 +280,17 @@ transformed parameters {
   }
   detect_p[nStageGroups] = 1; // all adults are detected
 
+  // calculate ensWts
+  for(hour in 1:nHours) {
+    ensWts_p[hour] = softmax(ensWts_p_uc[hour]');
+  }
+
   // calculate ensIP, pr_attach, N_attach, stage_Surv
   for(farm in 1:nFarms) {
-    ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg[farm];
+    for(hour in 1:nHours) {
+      ensIP[hour,farm] = dot_product(IP_mx[farm,hour], ensWts_p[hour]) + IP_bg[farm];
+    }
+    // ensIP[,farm] = IP_mx[farm] * ensWts_p + IP_bg[farm];
     pr_attach[,farm] = inv_logit(attach_env_mx[farm] * attach_beta);
     stage_Surv[farm] = inv_logit(surv_env_mx[farm] * surv_beta_farm[farm]);
     for(grp in 1:(nStageGroups-1)) {
@@ -290,7 +317,8 @@ transformed parameters {
   {
     lprior += normal_lpdf(IP_bg_m3 | prior_IP_bg_m3[1], prior_IP_bg_m3[2]) -
       normal_lccdf(0 | prior_IP_bg_m3[1], prior_IP_bg_m3[2]);
-    lprior += std_normal_lpdf(ensWts_p_uc);
+    // lprior += std_normal_lpdf(ensWts_p_uc);
+    lprior += std_normal_lpdf(to_vector(ensWts_harm));
     lprior += std_normal_lpdf(attach_beta_z);
     lprior += std_normal_lpdf(attach_betaUV2_z) - std_normal_lcdf(0);
     lprior += normal_lpdf(logit_trtEff_global | prior_logit_trtEff_global[1], prior_logit_trtEff_global[2]);
@@ -303,9 +331,14 @@ transformed parameters {
     for(grp in 1:nStageGroups) {
       lprior += std_normal_lpdf(surv_int_farm_z[,grp]);
     }
-    for(i in 1:2) {
-      lprior += std_normal_lpdf(mnDaysStage_beta_z[i,]);
-    }
+    // for(i in 1:2) {
+    //   lprior += std_normal_lpdf(mnDaysStage_beta_z[i,]);
+    // }
+    lprior += std_normal_lpdf(mnDaysStage_int_z);
+    lprior += std_normal_lpdf(mnDaysStage_tempCh_z) -
+      std_normal_lcdf(-prior_mnDaysStage_F[2,1,1]/prior_mnDaysStage_F[2,1,2]);
+    lprior += std_normal_lpdf(mnDaysStage_tempPA_z) -
+      std_normal_lcdf(-prior_mnDaysStage_F[2,2,1]/prior_mnDaysStage_F[2,2,2]);
     lprior += std_normal_lpdf(logit_detect_p);
     lprior += normal_lpdf(inv_sqrt_nb_prec | prior_inv_sqrt_nb_prec[1], prior_inv_sqrt_nb_prec[2]) -
       normal_lccdf(0 | prior_inv_sqrt_nb_prec[1], prior_inv_sqrt_nb_prec[2]);
@@ -325,6 +358,8 @@ model {
 
 generated quantities {
   array[nStages, nSamples] int y_pred;
+  matrix[nHours_GQ, nSims] ensWts_p_uc_GQ = ydayh_mx_GQ * ensWts_harm;
+  array[nHours_GQ] simplex[nSims] ensWts_p_GQ; // mixture proportions
   matrix[nHours_GQ, nFarms] ensIP_GQ;
   matrix[nHours_GQ, nFarms] pr_attach_GQ;
   matrix[nHours_GQ, nFarms] N_attach_GQ;
@@ -342,9 +377,16 @@ generated quantities {
   }
   // predictions for NEW observations
   if(GQ_new==1) {
+    for(hour in 1:nHours_GQ) {
+      ensWts_p_GQ[hour] = softmax(ensWts_p_uc_GQ[hour]');
+    }
+
     // calculate ensIP_GQ, pr_attach_GQ, N_attach_GQ, stage_Surv_GQ
     for(farm in 1:nFarms) {
-      ensIP_GQ[,farm] = IP_mx_GQ[farm] * ensWts_p + IP_bg[farm];
+      for(hour in 1:nHours_GQ) {
+        ensIP_GQ[hour,farm] = dot_product(IP_mx_GQ[farm,hour], ensWts_p_GQ[hour]) + IP_bg[farm];
+      }
+      //ensIP_GQ[,farm] = IP_mx_GQ[farm] * ensWts_p + IP_bg[farm];
       pr_attach_GQ[,farm] = inv_logit(attach_env_mx_GQ[farm] * attach_beta);
       stage_Surv_GQ[farm] = inv_logit(surv_env_mx_GQ[farm] * surv_beta_farm[farm]);
       for(grp in 1:(nStageGroups-1)) {
