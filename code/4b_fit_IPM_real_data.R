@@ -21,6 +21,7 @@ prior_only <- F
 n_chains <- 3
 dat_dir <- "data/aquaculture/mowi_stan/"
 out_dir <- "out/ipm_fit/"
+fig_dir <- "figs/ipm_fit/"
 stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
 stageGrps <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch-PA", "PA-Ad")
@@ -75,7 +76,7 @@ stan_dat <- make_stan_data(dat_dir, priors_only=prior_only, GQ_start="2025-01-01
 mod_full <- cmdstan_model("code/stan/tuning_integrated_population_model.stan")
 fit_full <- mod_full$sample(
   data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
-  iter_warmup=iter*1.5, iter_sampling=iter,
+  iter_warmup=iter*2, iter_sampling=iter,
   chains=n_chains, parallel_chains=n_chains
 )
 
@@ -132,7 +133,7 @@ p_else <- list(out_full_df, out_full_sum) |>
 p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_trt, p_pMoltTemp,
                plot_grid(p_detectp, p_else, nrow=1, axis="tblr", align="hv"),
                nrow=7, align="v", axis="rl", rel_heights=c(2, 1, 2, 1, 2, 2, 1))
-ggsave(glue("{out_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=14)
+ggsave(glue("{fig_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=14)
 
 
 
@@ -153,7 +154,7 @@ p <- mu_draws_df |>
   {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
   scale_x_date(date_labels="%b") +
   facet_grid(farm~., scales="free_y")
-ggsave(glue("{out_dir}/fig_mu_draws_GQ{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
+ggsave(glue("{fig_dir}/fig_mu_draws_GQ{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
 
 mu_draws_df <- take_mu_draws(out_full_df, NULL,
                              stan_dat$dat, ndraws=min(1e2, iter), GQ=F) |>
@@ -167,7 +168,7 @@ p <- mu_draws_df |>
   {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
   scale_x_date(date_labels="%b") +
   facet_grid(farm~., scales="free_y")
-ggsave(glue("{out_dir}/fig_mu_draws{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
+ggsave(glue("{fig_dir}/fig_mu_draws{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
 
 if("y_pred" %in% keep_pars) {
   sampledDays <- readRDS(glue("{dat_dir}/sampledDays.rds")) |>
@@ -236,7 +237,6 @@ if("y_pred" %in% keep_pars) {
 # FOR A NEW SCRIPT --------------------------------------------------------
 
 # RESULTS
-fig_dir <- "figs/ipm_fit/"
 # Performance using 2025 GQ predictions
 # - Bayes R2
 # - Bayes Factor over priors (?)
