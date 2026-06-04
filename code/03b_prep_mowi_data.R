@@ -75,7 +75,7 @@ trt_meth_ii <- read_csv(glue("{dat_dir}/mowi_trt_cleaned.csv")) |>
 info <- list(nDays=as.numeric(diff(range(mowi_df_ext$date)))+1,
              nHours=(as.numeric(diff(range(mowi_df_ext$date)))+1)*24,
              nFarms=n_distinct(mowi_df_ext$sepaSite),
-             nSims=8,
+             nSims=10,
              nStages=5, # cII-V, Ad (Piasecki 2023)
              nStageGroups=3, # ch, mobile, adult
              stg_grp_ii=c(1, 1, 2, 2, 3), # index for matching stages to stage groups
