@@ -95,6 +95,56 @@ post_summary_plot <- function(df_ls, ncol=6, nrow=1, scales="fixed") {
 }
 
 
+post_summary_ensWt_plot <- function(df_ls, lo=0.05, hi=0.95, ncol=5, nrow=2, scales="fixed") {
+  yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%24==1,]) |>
+    set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
+    mutate(yday=1:366)
+  post_df <- df_ls[[1]] |>
+    mutate(sim=paste("Sim", str_split_i(label, "_", 3)),
+           param=str_split_i(label, "_", 2)) |>
+    select(sim, param, .draw, value) |>
+    pivot_wider(names_from="param", values_from="value") |>
+    mutate(yday_df=list(yday_df)) |>
+    unnest(yday_df) |>
+    mutate(logit_p=Int*yday_Int + cos*yday_cos + sin*yday_sin) |>
+    group_by(yday, .draw) |>
+    mutate(p=make_compositional(logit_p, method="softmax")) |>
+    ungroup() |>
+    summarise(mn=mean(p),
+              lo=quantile(p, probs=lo),
+              hi=quantile(p, probs=hi),
+              .by=c(sim, yday)) |>
+    mutate(date_std=ymd("2020-01-01") + yday - 1,
+           sim=factor(sim, levels=paste("Sim", 1:50)))
+  if(length(df_ls)==3) {
+    true_df <- df_ls[[3]] |>
+      mutate(sim=paste("Sim", str_split_i(label, "_", 3)),
+             param=str_split_i(label, "_", 2)) |>
+      select(sim, param, value) |>
+      pivot_wider(names_from="param", values_from="value") |>
+      mutate(yday_df=list(yday_df)) |>
+      unnest(yday_df) |>
+      mutate(logit_p=Int*yday_Int + cos*yday_cos + sin*yday_sin) |>
+      group_by(yday) |>
+      mutate(p=make_compositional(logit_p, method="softmax")) |>
+      ungroup() |>
+      mutate(date_std=ymd("2020-01-01") + yday - 1,
+             sim=factor(sim, levels=paste("Sim", 1:50)))
+  }
+  ggplot(post_df, aes(date_std, mn, ymin=lo, ymax=hi)) +
+    geom_ribbon(colour=NA, alpha=0.25) +
+    geom_line() +
+    {if(length(df_ls)==3) geom_line(data=true_df, aes(y=p), colour="red")} +
+    scale_y_continuous("Ensemble weight p", limits=c(0, 1),
+                       breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+    scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
+    facet_wrap(~sim, ncol=ncol, scales=scales) +
+    theme(axis.title=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank())
+}
+
+
 
 
 verification_plot <- function(df, ncol=6, nrow=1, scales="fixed") {

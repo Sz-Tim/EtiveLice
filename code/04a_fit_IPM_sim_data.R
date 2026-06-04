@@ -18,7 +18,7 @@ fread <- data.table::fread
 dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
-prior_only <- T
+prior_only <- F
 keep_licePreds <- T
 refit <- T
 n_parallel <- 2
@@ -32,7 +32,9 @@ trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
   arrange(TypeNum) |>
   mutate(abbr=paste0(str_sub(Method, 1, 1), "_", str_split_i(Type, "_", 2)))
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
-                           paste0("ensWts_p[", 1:10, "]"),
+                           paste0("ensWts_harm[1,", 1:10, "]"),
+                           paste0("ensWts_harm[2,", 1:10, "]"),
+                           paste0("ensWts_harm[3,", 1:10, "]"),
                            "IP_bg", "IP_bg_m3",
                            paste0("surv_beta[1,", 1:3, "]"),
                            paste0("surv_beta[2,", 1:3, "]"),
@@ -44,7 +46,9 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            "IP_scale", "IP_halfSat_m3",
                            paste0("trtEff_type[", 1:8, "]")),
                     label=c(paste0("attach_", c("RW", "Sal", "Temp", "UV", "UVsq")),
-                            paste0("ensWt_", 1:10),
+                            paste0("ensWt_Int_", 1:10),
+                            paste0("ensWt_cos_", 1:10),
+                            paste0("ensWt_sin_", 1:10),
                             "IP_bg", "IP_bg_m3",
                             paste0("surv_Int_", stageGrps),
                             paste0("surv_Sal_", stageGrps),
@@ -68,12 +72,10 @@ plan(multicore, workers=n_parallel)
 
 foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = TRUE)) %dofuture% {
 # for(sim_dir in sim_dirs) {
-  keep_pars <- c("IP_bg_m3",
-                 "ensWts_p", "attach_beta",
-                 "surv_beta", "surv_int_farm_sd",
-                 "trtEff_type",
-                 "mnDaysStage_beta",
-                 "detect_p", "nb_prec")
+  keep_pars <- c("IP_bg_m3", "ensWts_harm", "attach_beta",
+                 "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
+                 "detect_p", "nb_prec", "trtEff_type")
+
   iter <- 1000
   stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2025-01-01")
 
@@ -85,7 +87,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
   } else {
     # IEM: full model pop -----------------------------------------------------
 
-    mod_full <- cmdstan_model("code/stan/integrated_population_model.stan")
+    mod_full <- cmdstan_model("code/stan/tuning_integrated_population_model.stan")
     fit_full <- mod_full$sample(
       data=stan_dat$dat, init=0, seed=101, refresh=max(iter/200, 1),
       iter_warmup=iter, iter_sampling=iter,
@@ -113,7 +115,9 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
     dat_full_df <- tibble(
       name=c(paste0("attach_beta[", 1:5, "]"),
              "IP_bg_m3",
-             paste0("ensWts_p[", 1:stan_dat$dat$nSims, "]"),
+             paste0("ensWts_harm[1,", 1:stan_dat$dat$nSims, "]"),
+             paste0("ensWts_harm[2,", 1:stan_dat$dat$nSims, "]"),
+             paste0("ensWts_harm[3,", 1:stan_dat$dat$nSims, "]"),
              paste0("surv_beta[1,", 1:stan_dat$dat$nStages, "]"),
              paste0("surv_beta[2,", 1:stan_dat$dat$nStages, "]"),
              paste0("surv_int_farm_sd[", 1:stan_dat$dat$nStages, "]"),
@@ -121,7 +125,9 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
              paste0("trtEff_type[", 1:8, "]")),
       value=c(stan_dat$params$attach_beta,
               stan_dat$params$IP_bg_m3,
-              stan_dat$params$ensWts_p,
+              stan_dat$params$ensWts_harm[1,],
+              stan_dat$params$ensWts_harm[2,],
+              stan_dat$params$ensWts_harm[3,],
               c(t(stan_dat$params$surv_beta)),
               stan_dat$params$surv_int_farm_sd,
               stan_dat$params$detect_p,
@@ -134,8 +140,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
   info <- readRDS(glue("{sim_dir}info.rds"))
   p_ensWts <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("ensWts", name)) |> inner_join(param_key, by=join_by(name))) |>
-    post_summary_plot(scales="free_y", ncol=if_else(info$nSims > 10, 10, 5)) +
-    xlim(0, 1)
+    post_summary_ensWt_plot(scales="fixed", ncol=if_else(info$nSims > 10, 10, 5))
   p_attach <- list(out_full_df, out_full_sum, dat_full_df) |>
     map(~.x |> filter(grepl("attach_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
     post_summary_plot(scales="free") +

@@ -29,7 +29,9 @@ trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
   arrange(TypeNum) |>
   mutate(abbr=paste0(str_sub(Method, 1, 1), "_", str_split_i(Type, "_", 2)))
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
-                           paste0("ensWts_p[", 1:10, "]"),
+                           paste0("ensWts_harm[1,", 1:10, "]"),
+                           paste0("ensWts_harm[2,", 1:10, "]"),
+                           paste0("ensWts_harm[3,", 1:10, "]"),
                            "IP_bg", "IP_bg_m3",
                            paste0("surv_beta[1,", 1:3, "]"),
                            paste0("surv_beta[2,", 1:3, "]"),
@@ -41,7 +43,9 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            "IP_scale", "IP_halfSat_m3",
                            paste0("trtEff_type[", 1:8, "]")),
                     label=c(paste0("attach_", c("RW", "Sal", "Temp", "UV", "UVsq")),
-                            paste0("ensWt_", 1:10),
+                            paste0("ensWt_Int_", 1:10),
+                            paste0("ensWt_cos_", 1:10),
+                            paste0("ensWt_sin_", 1:10),
                             "IP_bg", "IP_bg_m3",
                             paste0("surv_Int_", stageGrps),
                             paste0("surv_Sal_", stageGrps),
@@ -55,7 +59,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
-keep_pars <- c("IP_bg_m3", "ensWts_p", "attach_beta",
+keep_pars <- c("IP_bg_m3", "ensWts_harm", "attach_beta",
                "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
                "detect_p", "nb_prec", "trtEff_type",
                "mu", "mu_GQ"
@@ -68,19 +72,16 @@ keep_pars <- c("IP_bg_m3", "ensWts_p", "attach_beta",
 iter <- 1000
 stan_dat <- make_stan_data(dat_dir, priors_only=prior_only, GQ_start="2025-01-01", source="real")
 
-mod_full <- cmdstan_model("code/stan/integrated_population_model.stan")
+mod_full <- cmdstan_model("code/stan/tuning_integrated_population_model.stan")
 fit_full <- mod_full$sample(
   data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
   iter_warmup=iter*1.5, iter_sampling=iter,
   chains=n_chains, parallel_chains=n_chains
 )
 
-# Sampler warnings:
-# pMolt[5][423, 2] is 1.01913
-# also for 422, 418, 421; all farm 5 (FFMC84)
-# Farm 1 also:  pMolt[1][423, 4] is 1.00683
-# But does this only happen early on? So far only 10 iter
-# Could be an issue with 2 inseparable durations... maybe go back to stageGroups...
+# 847 s for 1 chain @ iter <- 10 (total 25)
+# 739 s for tuning_ipm
+# 753 s
 
 out_full_df <- fit_full$draws(
   variables=keep_pars,
@@ -99,8 +100,7 @@ saveRDS(out_full_sum, glue("{out_dir}posterior_summary{ifelse(prior_only, '_PRIO
 info <- readRDS(glue("{dat_dir}info.rds"))
 p_ensWts <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("ensWts", name)) |> inner_join(param_key, by=join_by(name))) |>
-  post_summary_plot(scales="free_y", ncol=if_else(info$nSims > 10, 10, 5)) +
-  xlim(0, 1)
+  post_summary_ensWt_plot(scales="fixed", ncol=if_else(info$nSims > 10, 10, 5))
 p_attach <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("attach_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
   post_summary_plot(scales="free") +
