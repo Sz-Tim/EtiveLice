@@ -18,9 +18,9 @@ fread <- data.table::fread
 dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
-prior_only <- F
+prior_only <- T
 keep_licePreds <- T
-refit <- T
+refit <- F
 n_parallel <- 2
 
 n_chains <- 3
@@ -74,7 +74,7 @@ foreach(sim_dir=sim_dirs, .errorhandling="pass", .options.future = list(seed = T
 # for(sim_dir in sim_dirs) {
   keep_pars <- c("IP_bg_m3", "ensWts_harm", "attach_beta",
                  "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
-                 "detect_p", "nb_prec", "trtEff_type")
+                 "detect_p", "nb_prec", "trtEff_type", "log_lik")
 
   iter <- 1000
   stan_dat <- make_stan_data(sim_dir, priors_only=prior_only, GQ_start="2025-01-01")

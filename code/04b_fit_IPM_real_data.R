@@ -63,7 +63,7 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
 keep_pars <- c("IP_bg_m3", "ensWts_harm", "attach_beta",
                "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
                "detect_p", "nb_prec", "trtEff_type",
-               "mu", "mu_GQ"
+               "mu", "mu_GQ", "log_lik"
 )
 
 

@@ -127,7 +127,8 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            trtApplied_GQ=array(0, dim=c(stan_dat$nFarms, 1, stan_dat$nTrtTypes)),
            sample_i_GQ=matrix(0, nrow=1, ncol=2),
            sample_ii_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=2),
-           nFishSampled_mx_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=1)
+           nFishSampled_mx_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=1),
+           y_F_GQ=array(0, dim=c(stan_dat$nStageGroups, stan_dat$nDays_GQ, stan_dat$nFarms))
       ))
   } else {
     stan_dat <- c(
@@ -151,6 +152,18 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
       ))
     stan_dat$nSamples_GQ <- nrow(stan_dat$sample_i_GQ)
     stan_dat$sample_ii_GQ <- make_sample_ii(stan_dat$sample_i_GQ, info$nFarms)
+    if(source=="sim") {
+      # add male Ch/PA, re-divide assuming a 50:50 ratio
+      stan_dat$y_GQ <- readRDS(glue("{dat_dir}y_obs.rds"))[,,dates_GQ,]
+      stan_dat$y_F_GQ <- stan_dat$y_GQ[,1,,]
+      stan_dat$y_F_GQ[1,,] <- round((stan_dat$y_F_GQ[1,,] + stan_dat$y_GQ[1,2,,])/2)
+      stan_dat$y_F_GQ[2,,] <- round((stan_dat$y_F_GQ[2,,] + stan_dat$y_GQ[2,2,,])/2)
+    } else {
+      stan_dat$y_GQ <- readRDS(glue("{dat_dir}y_obs.rds"))[,dates_GQ,]
+      stan_dat$y_F_GQ <- stan_dat$y_GQ
+      stan_dat$y_F_GQ[1,,] <- round(stan_dat$y_F_GQ[1,,]/2)
+      stan_dat$y_F_GQ[2,,] <- round(stan_dat$y_F_GQ[2,,]/2)
+    }
   }
 
   return(list(dat=stan_dat, params=params))
