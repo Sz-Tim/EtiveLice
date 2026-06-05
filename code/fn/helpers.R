@@ -95,7 +95,7 @@ post_summary_plot <- function(df_ls, ncol=6, nrow=1, scales="fixed") {
 }
 
 
-post_summary_ensWt_plot <- function(df_ls, lo=0.05, hi=0.95, ncol=5, nrow=2, scales="fixed") {
+post_summary_ensWt_plot <- function(df_ls, ncol=5, nrow=2, scales="fixed") {
   yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%24==1,]) |>
     set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
     mutate(yday=1:366)
@@ -110,9 +110,13 @@ post_summary_ensWt_plot <- function(df_ls, lo=0.05, hi=0.95, ncol=5, nrow=2, sca
     group_by(yday, .draw) |>
     mutate(p=make_compositional(logit_p, method="softmax")) |>
     ungroup() |>
-    summarise(mn=mean(p),
-              lo=quantile(p, probs=lo),
-              hi=quantile(p, probs=hi),
+    summarise(md=median(p),
+              q05=quantile(p, probs=0.05),
+              q10=quantile(p, probs=0.1),
+              q25=quantile(p, probs=0.25),
+              q75=quantile(p, probs=0.75),
+              q90=quantile(p, probs=0.9),
+              q95=quantile(p, probs=0.95),
               .by=c(sim, yday)) |>
     mutate(date_std=ymd("2020-01-01") + yday - 1,
            sim=factor(sim, levels=paste("Sim", 1:50)))
@@ -131,8 +135,10 @@ post_summary_ensWt_plot <- function(df_ls, lo=0.05, hi=0.95, ncol=5, nrow=2, sca
       mutate(date_std=ymd("2020-01-01") + yday - 1,
              sim=factor(sim, levels=paste("Sim", 1:50)))
   }
-  ggplot(post_df, aes(date_std, mn, ymin=lo, ymax=hi)) +
-    geom_ribbon(colour=NA, alpha=0.25) +
+  ggplot(post_df, aes(date_std, md)) +
+    geom_ribbon(aes(ymin=q05, ymax=q95), colour=NA, alpha=0.1) +
+    geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.1) +
+    geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.1) +
     geom_line() +
     {if(length(df_ls)==3) geom_line(data=true_df, aes(y=p), colour="red")} +
     scale_y_continuous("Ensemble weight p", limits=c(0, 1),
