@@ -18,10 +18,23 @@ theme_set(theme_classic())
 
 prior_only <- F
 
+mod <- c("noHarm", "Harm", "noHarm_ucTemp", "Harm_ucTemp", "Harm_randIPbg")[5]
+fishCol <- c("RW_logit", "BSA")[2]
+suffix <- paste0(switch(mod,
+                        'noHarm'='_noHarm',
+                        'Harm'='',
+                        'noHarm_ucTemp'='_noHarm_ucTemp',
+                        'Harm_ucTemp'='_ucTemp',
+                        'Harm_randIPbg'='_randIPbg'),
+                 ifelse(prior_only, '_PRIORS', ''),
+                 "_", fishCol)
+
 n_chains <- 3
 dat_dir <- "data/aquaculture/mowi_stan/"
 out_dir <- "out/ipm_fit/"
 fig_dir <- "figs/ipm_fit/"
+info <- readRDS(glue("{dat_dir}info.rds"))
+
 stages <- c("Ch1", "Ch2", "PA1", "PA2", "Ad")
 stageGrps <- c("Ch", "PA", "Ad")
 stage_trans <- c("Ch-PA", "PA-Ad")
@@ -30,10 +43,19 @@ trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
   arrange(TypeNum) |>
   mutate(abbr=paste0(str_sub(Method, 1, 1), "_", str_split_i(Type, "_", 2)))
 param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
-                           paste0("ensWts_harm[1,", 1:10, "]"),
-                           paste0("ensWts_harm[2,", 1:10, "]"),
-                           paste0("ensWts_harm[3,", 1:10, "]"),
-                           "IP_bg", "IP_bg_m3",
+                           {if(grepl("noHarm", mod)) {
+                             paste0("ensWts_p[", 1:info$nSims, "]")
+                           } else {
+                             c(paste0("ensWts_harm[1,", 1:info$nSims, "]"),
+                               paste0("ensWts_harm[2,", 1:info$nSims, "]"),
+                               paste0("ensWts_harm[3,", 1:info$nSims, "]"))
+                           }},
+                           {if(grepl("randIP", mod)) {
+                             c(paste0("IP_bg[", 1:info$nFarms, "]"),
+                               paste0("IP_bg_m3[", 1:info$nFarms, "]"))
+                           } else {
+                             c("IP_bg", "IP_bg_m3")
+                           }},
                            paste0("surv_beta[1,", 1:3, "]"),
                            paste0("surv_beta[2,", 1:3, "]"),
                            paste0("surv_int_farm_sd[", 1:3, "]"),
@@ -44,10 +66,19 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                            "IP_scale", "IP_halfSat_m3",
                            paste0("trtEff_type[", 1:8, "]")),
                     label=c(paste0("attach_", c("RW", "Sal", "Temp", "UV", "UVsq")),
-                            paste0("ensWt_Int_", 1:10),
-                            paste0("ensWt_cos_", 1:10),
-                            paste0("ensWt_sin_", 1:10),
-                            "IP_bg", "IP_bg_m3",
+                            {if(grepl("noHarm", mod)) {
+                              paste0("ensWts_", 1:info$nSims)
+                            } else {
+                              c(paste0("ensWt_Int_", 1:info$nSims),
+                                paste0("ensWt_cos_", 1:info$nSims),
+                                paste0("ensWt_sin_", 1:info$nSims))
+                            }},
+                            {if(grepl("randIP", mod)) {
+                              c(paste0("IP_bg[", 1:info$nFarms, "]"),
+                                paste0("IP_bg_m3[", 1:info$nFarms, "]"))
+                            } else {
+                              c("IP_bg", "IP_bg_m3")
+                            }},
                             paste0("surv_Int_", stageGrps),
                             paste0("surv_Sal_", stageGrps),
                             paste0("surv_int_farm_sd_", stageGrps),
@@ -60,8 +91,8 @@ param_key <- tibble(name=c(paste0("attach_beta[", 1:5, "]"),
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
-keep_pars <- c("IP_bg_m3", "ensWts_harm", "attach_beta",
-               "surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
+keep_pars <- c("IP_bg_m3", ifelse(grepl("noHarm", mod), "ensWts_p", "ensWts_harm"),
+               "attach_beta","surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
                "detect_p", "nb_prec", "trtEff_type",
                "mu", "mu_GQ", "log_lik"
 )
@@ -70,16 +101,18 @@ keep_pars <- c("IP_bg_m3", "ensWts_harm", "attach_beta",
 
 # fit ---------------------------------------------------------------------
 
-iter <- 1000
-stan_dat <- make_stan_data(dat_dir, priors_only=prior_only, GQ_start="2025-01-01", source="real")
+iter <- 10
+stan_dat <- make_stan_data(dat_dir, priors_only=prior_only, source="real",
+                           GQ_start="2025-01-01", fishCol=fishCol)
 
-mod_full <- cmdstan_model("code/stan/tuning_integrated_population_model.stan")
+mod_full <- cmdstan_model(glue("code/stan/tuning_integrated_population_model{str_remove(suffix, '_PRIORS') |> str_remove(paste0('_', fishCol))}.stan"))
 fit_full <- mod_full$sample(
   data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
   iter_warmup=iter*2, iter_sampling=iter,
   chains=n_chains, parallel_chains=n_chains
 )
 
+# pMolt 580:591, 1:2 are regularly > 1 for priors (or -28??)
 # 847 s for 1 chain @ iter <- 10 (total 25)
 # 739 s for tuning_ipm
 # 753 s
@@ -88,20 +121,37 @@ out_full_df <- fit_full$draws(
   variables=keep_pars,
   format="df") |>
   pivot_longer(-starts_with("."))
-saveRDS(out_full_df, glue("{out_dir}posterior{ifelse(prior_only, '_PRIORS', '')}.rds"))
+saveRDS(out_full_df, glue("{out_dir}posterior{suffix}.rds"))
 out_full_sum <- out_full_df |>
   group_by(name) |>
   sevcheck::get_intervals(value, type="qi")
-saveRDS(out_full_sum, glue("{out_dir}posterior_summary{ifelse(prior_only, '_PRIORS', '')}.rds"))
+saveRDS(out_full_sum, glue("{out_dir}posterior_summary{suffix}.rds"))
 
+
+
+# log likelihood ----------------------------------------------------------
+
+p_loglik <- out_full_sum |>
+  filter(grepl("log_lik", name)) |>
+  mutate(stage=str_sub(name, 9, 9)) |>
+  ggplot(aes(med)) +
+  geom_histogram() +
+  facet_grid(.~stage, scales="free")
+ggsave(glue("{fig_dir}/fig_loglik{suffix}.png"),
+       p_loglik, width=9, height=3.5)
 
 
 # parameter distributions -------------------------------------------------
 
-info <- readRDS(glue("{dat_dir}info.rds"))
-p_ensWts <- list(out_full_df, out_full_sum) |>
-  map(~.x |> filter(grepl("ensWts", name)) |> inner_join(param_key, by=join_by(name))) |>
-  post_summary_ensWt_plot(scales="fixed", ncol=if_else(info$nSims > 10, 10, 5))
+if(grepl("noHarm", mod)) {
+  p_ensWts <- list(out_full_df, out_full_sum) |>
+    map(~.x |> filter(grepl("ensWts", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_plot(scales="fixed", ncol=if_else(info$nSims > 10, 10, 5))
+} else {
+  p_ensWts <- list(out_full_df, out_full_sum) |>
+    map(~.x |> filter(grepl("ensWts", name)) |> inner_join(param_key, by=join_by(name))) |>
+    post_summary_ensWt_plot(scales="fixed", ncol=if_else(info$nSims > 10, 10, 5))
+}
 p_attach <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("attach_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
   post_summary_plot(scales="free") +
@@ -127,13 +177,14 @@ p_detectp <- list(out_full_df, out_full_sum) |>
   post_summary_plot(scales="free_y") +
   xlim(0, 1)
 p_else <- list(out_full_df, out_full_sum) |>
-  map(~.x |> filter(grepl("IP_bg|nb_prec", name)) |> inner_join(param_key, by=join_by(name))) |>
+  map(~.x |> filter(grepl("IP_bg|nb_prec", name)) |> inner_join(param_key, by=join_by(name)) |>
+        mutate(label=str_split_i(label, "\\[", 1))) |>
   post_summary_plot(ncol=5, scales="free")
 
 p <- plot_grid(p_ensWts, p_attach, p_surv, p_surv_sd, p_trt, p_pMoltTemp,
                plot_grid(p_detectp, p_else, nrow=1, axis="tblr", align="hv"),
                nrow=7, align="v", axis="rl", rel_heights=c(2, 1, 2, 1, 2, 2, 1))
-ggsave(glue("{fig_dir}/fig_pars{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=14)
+ggsave(glue("{fig_dir}/fig_pars{suffix}.png"), p, width=10, height=14)
 
 
 
@@ -154,7 +205,7 @@ p <- mu_draws_df |>
   {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
   scale_x_date(date_labels="%b") +
   facet_grid(farm~., scales="free_y")
-ggsave(glue("{fig_dir}/fig_mu_draws_GQ{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
+ggsave(glue("{fig_dir}/fig_mu_draws_GQ{suffix}.png"), p, width=10, height=15)
 
 mu_draws_df <- take_mu_draws(out_full_df, NULL,
                              stan_dat$dat, ndraws=min(1e2, iter), GQ=F) |>
@@ -168,7 +219,7 @@ p <- mu_draws_df |>
   {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
   scale_x_date(date_labels="%b") +
   facet_grid(farm~., scales="free_y")
-ggsave(glue("{fig_dir}/fig_mu_draws{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=10, height=15)
+ggsave(glue("{fig_dir}/fig_mu_draws{suffix}.png"), p, width=10, height=15)
 
 if("y_pred" %in% keep_pars) {
   sampledDays <- readRDS(glue("{dat_dir}/sampledDays.rds")) |>
@@ -205,7 +256,7 @@ if("y_pred" %in% keep_pars) {
            farm=paste("Farm", farm),
            y_perFish=y/nFishSampled)
   y_df |>
-    saveRDS(glue("{dat_dir}/y_sim_fitted{ifelse(prior_only, '_PRIORS', '')}.rds"))
+    saveRDS(glue("{dat_dir}/y_sim_fitted{suffix}.rds"))
 
   p <- y_df |>
     ggplot(aes(day, y_perFish)) +
@@ -216,7 +267,7 @@ if("y_pred" %in% keep_pars) {
     labs(x="Date", y="Mean lice per fish (observed) [50% CI]") +
     scale_x_date(date_labels="%b") +
     facet_grid(stage~farm, scales="free_y")
-  ggsave(glue("{dat_dir}/fig_y{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=15, height=7)
+  ggsave(glue("{dat_dir}/fig_y{suffix}.png"), p, width=15, height=7)
 
   p <- y_df |>
     filter(stage=="Ad") |>
@@ -228,7 +279,7 @@ if("y_pred" %in% keep_pars) {
     labs(x="Date", y="Mean adult female lice per fish (observed) [50% CI]") +
     scale_x_date(date_labels="%b") +
     facet_grid(farm~., scales="free_y")
-  ggsave(glue("{dat_dir}/fig_y_AF{ifelse(prior_only, '_PRIORS', '')}.png"), p, width=6, height=15)
+  ggsave(glue("{dat_dir}/fig_y_AF{suffix}.png"), p, width=6, height=15)
 }
 
 
@@ -254,7 +305,7 @@ farm_env_avg <- readRDS(glue("{dat_dir}/farm_env_avg.rds"))
 
 attach_mx <- readRDS(glue("{dat_dir}/attach_env_mx.rds"))
 draw_sample <- sample.int(1500, 50)
-pAttach_post_draws <- glue("{out_dir}/posterior{ifelse(prior_only, '_PRIORS', '')}.rds") |>
+pAttach_post_draws <- glue("{out_dir}/posterior{suffix}.rds") |>
   readRDS() |>
   filter(.draw %in% draw_sample) |>
   filter(grepl("attach_beta", name)) |>
@@ -323,14 +374,14 @@ plot_grid(pA + theme(legend.position="none"),
           get_legend(pA),
           nrow=1, ncol=3, rel_widths=c(1,1,0.3),
           align="hv", axis="tblr", labels=c("A", "B", "")) |>
-  ggsave(glue("{fig_dir}/postAttachReg{ifelse(prior_only, '_PRIORS', '')}.png"),
+  ggsave(glue("{fig_dir}/postAttachReg{suffix}.png"),
        plot=_, width=12, height=4)
 
 
 # . Salinity covariate effects --------------------------------------------
 S_range <- range(readRDS(glue("{dat_dir}/sal_mx.rds")))
 S_df <- tibble(sal=seq_range(S_range, length.out=100))
-pSurv_post <- glue("{out_dir}/posterior{ifelse(prior_only, '_PRIORS', '')}.rds") |>
+pSurv_post <- glue("{out_dir}/posterior{suffix}.rds") |>
   readRDS() |>
   filter(.draw %in% draw_sample) |>
   filter(grepl("surv_beta", name)) |>
@@ -356,7 +407,7 @@ p <- pSurv_post |>
   facet_wrap(~Stage, nrow=1) +
   guides(colour=guide_legend(override.aes=list(alpha=1, linewidth=0.5))) +
   theme(legend.position="bottom")
-ggsave(glue("{fig_dir}/postSalReg{ifelse(prior_only, '_PRIORS', '')}.png"), p,
+ggsave(glue("{fig_dir}/postSalReg{suffix}.png"), p,
        width=8, height=4)
 
 
@@ -368,7 +419,7 @@ T_z_range <- range(readRDS(glue("{dat_dir}/temp_z_mx.rds")))
 T_df <- tibble(temp=seq_range(T_range, length.out=100),
                temp_z=seq_range(T_z_range, length.out=100))
 
-stageDur_df <-  glue("{out_dir}/posterior{ifelse(prior_only, '_PRIORS', '')}.rds") |>
+stageDur_df <-  glue("{out_dir}/posterior{suffix}.rds") |>
   readRDS() |>
   filter(.draw %in% draw_sample) |>
   filter(grepl("mnDaysStage_beta", name)) |>
@@ -395,7 +446,7 @@ p <- stageDur_df |>
   facet_wrap(~Stage, nrow=1) +
   guides(colour=guide_legend(override.aes=list(alpha=1, linewidth=0.5))) +
   theme(legend.position="bottom")
-ggsave(glue("{fig_dir}/postStageDur{ifelse(prior_only, '_PRIORS', '')}.png"), p,
+ggsave(glue("{fig_dir}/postStageDur{suffix}.png"), p,
        width=8, height=4)
 p <- stageDur_df |>
   filter(Stage != "Ad") |>
@@ -406,7 +457,7 @@ p <- stageDur_df |>
   facet_wrap(~Stage, nrow=1) +
   guides(colour=guide_legend(override.aes=list(alpha=1, linewidth=0.5))) +
   theme(legend.position="bottom")
-ggsave(glue("{fig_dir}/postPMolt{ifelse(prior_only, '_PRIORS', '')}.png"), p,
+ggsave(glue("{fig_dir}/postPMolt{suffix}.png"), p,
        width=6, height=4)
 p <- stageDur_df |>
   ggplot(aes(GDD, mnDays, colour=Stage, group=.draw)) +
@@ -416,7 +467,7 @@ p <- stageDur_df |>
   facet_wrap(~Stage, nrow=1) +
   guides(colour=guide_legend(override.aes=list(alpha=1, linewidth=0.5))) +
   theme(legend.position="bottom")
-ggsave(glue("{fig_dir}/postStageDur_GDD{ifelse(prior_only, '_PRIORS', '')}.png"), p,
+ggsave(glue("{fig_dir}/postStageDur_GDD{suffix}.png"), p,
        width=8, height=4)
 
 
@@ -427,3 +478,129 @@ ggsave(glue("{fig_dir}/postStageDur_GDD{ifelse(prior_only, '_PRIORS', '')}.png")
 # - Mu timeseries
 # - Attachment covariate effects
 # -
+
+
+
+
+
+
+# comparison --------------------------------------------------------------
+
+post_df <- bind_rows(
+  readRDS("out/ipm_fit/posterior_summary.rds") |>
+    mutate(mod="harm", prior=F) |> filter(grepl("log_lik", name)),
+  readRDS("out/ipm_fit/posterior_summary_noHarm.rds") |>
+    mutate(mod="noHarm", prior=F) |> filter(grepl("log_lik", name)),
+  readRDS("out/ipm_fit/posterior_summary_PRIORS.rds") |>
+    mutate(mod="harm", prior=T) |> filter(grepl("log_lik", name)),
+  readRDS("out/ipm_fit/posterior_summary_noHarm_PRIORS.rds") |>
+    mutate(mod="noHarm", prior=T) |> filter(grepl("log_lik", name))
+) |>
+  mutate(stage=str_sub(name, 9, 9))
+
+post_df |>
+  ggplot(aes(med, colour=mod, linetype=prior)) +
+  geom_density() +
+  facet_grid(.~stage, scales="free")
+
+# harm is mostly very similar, but has a tail of points with a lot of improvement
+post_df |>
+  filter(!prior) |>
+  arrange(mod) |>
+  summarise(harm_m_noHarm=first(med)-last(med),
+            pct=harm_m_noHarm / last(med),
+            .by=c(name, stage)) |>
+  ggplot(aes(harm_m_noHarm)) +
+  ggdist::stat_halfeye() +
+  facet_grid(.~stage, scales="free")
+
+post_df |>
+  filter(!prior) |>
+  arrange(mod) |>
+  summarise(harm_m_noHarm=first(med)-last(med),
+            pct=harm_m_noHarm / abs(last(med)),
+            .by=c(name, stage)) |>
+  ggplot(aes(pct)) +
+  ggdist::stat_halfeye() +
+  facet_grid(.~stage, scales="free")
+
+post_df |>
+  filter(!prior) |>
+  arrange(mod) |>
+  summarise(harm_m_noHarm=first(med)-last(med),
+            pct=harm_m_noHarm / abs(last(med)),
+            .by=c(name, stage)) |>
+  summary()
+
+
+library(loo)
+
+harm <- readRDS("out/ipm_fit/posterior.rds") |>
+  filter(grepl("log_lik", name)) |>
+  mutate(name=factor(name)) |>
+  arrange(name, .chain, .iteration)
+noHarm <- readRDS("out/ipm_fit/posterior_noHarm.rds") |>
+  filter(grepl("log_lik", name)) |>
+  mutate(name=factor(name)) |>
+  arrange(name, .chain, .iteration)
+harm_ucT <- readRDS("out/ipm_fit/posterior_ucTemp.rds") |>
+  filter(grepl("log_lik", name)) |>
+  mutate(name=factor(name)) |>
+  arrange(name, .chain, .iteration)
+noHarm_ucT <- readRDS("out/ipm_fit/posterior_noHarm_ucTemp.rds") |>
+  filter(grepl("log_lik", name)) |>
+  mutate(name=factor(name)) |>
+  arrange(name, .chain, .iteration)
+
+ll_harm <- array(harm$value, dim=c(1000,3,1500))
+ll_noHarm <- array(noHarm$value, dim=c(1000,3,1500))
+ll_harm_ucT <- array(harm_ucT$value, dim=c(1000,3,1500))
+ll_noHarm_ucT <- array(noHarm_ucT$value, dim=c(1000,3,1500))
+
+ll_harm_Ch <- ll_harm[,,seq(1, 1500, by=3)]
+ll_noHarm_Ch <- ll_noHarm[,,seq(1, 1500, by=3)]
+ll_harm_ucT_Ch <- ll_harm_ucT[,,seq(1, 1500, by=3)]
+ll_noHarm_ucT_Ch <- ll_noHarm_ucT[,,seq(1, 1500, by=3)]
+
+ll_harm_PA <- ll_harm[,,seq(2, 1500, by=3)]
+ll_noHarm_PA <- ll_noHarm[,,seq(2, 1500, by=3)]
+ll_harm_ucT_PA <- ll_harm_ucT[,,seq(2, 1500, by=3)]
+ll_noHarm_ucT_PA <- ll_noHarm_ucT[,,seq(2, 1500, by=3)]
+
+ll_harm_Ad <- ll_harm[,,seq(3, 1500, by=3)]
+ll_noHarm_Ad <- ll_noHarm[,,seq(3, 1500, by=3)]
+ll_harm_ucT_Ad <- ll_harm_ucT[,,seq(3, 1500, by=3)]
+ll_noHarm_ucT_Ad <- ll_noHarm_ucT[,,seq(3, 1500, by=3)]
+
+
+loo_harm <- loo(ll_harm, r_eff=relative_eff(ll_harm))
+loo_noHarm <- loo(ll_noHarm, r_eff=relative_eff(ll_noHarm))
+loo_harm_ucT <- loo(ll_harm_ucT, r_eff=relative_eff(ll_harm_ucT))
+loo_noHarm_ucT <- loo(ll_noHarm_ucT, r_eff=relative_eff(ll_noHarm_ucT))
+
+loo_harm_Ch <- loo(ll_harm_Ch, r_eff=relative_eff(ll_harm_Ch))
+loo_noHarm_Ch <- loo(ll_noHarm_Ch, r_eff=relative_eff(ll_noHarm_Ch))
+loo_harm_ucT_Ch <- loo(ll_harm_ucT_Ch, r_eff=relative_eff(ll_harm_ucT_Ch))
+loo_noHarm_ucT_Ch <- loo(ll_noHarm_ucT_Ch, r_eff=relative_eff(ll_noHarm_ucT_Ch))
+
+loo_harm_PA <- loo(ll_harm_PA, r_eff=relative_eff(ll_harm_PA))
+loo_noHarm_PA <- loo(ll_noHarm_PA, r_eff=relative_eff(ll_noHarm_PA))
+loo_harm_ucT_PA <- loo(ll_harm_ucT_PA, r_eff=relative_eff(ll_harm_ucT_PA))
+loo_noHarm_ucT_PA <- loo(ll_noHarm_ucT_PA, r_eff=relative_eff(ll_noHarm_ucT_PA))
+
+loo_harm_Ad <- loo(ll_harm_Ad, r_eff=relative_eff(ll_harm_Ad))
+loo_noHarm_Ad <- loo(ll_noHarm_Ad, r_eff=relative_eff(ll_noHarm_Ad))
+loo_harm_ucT_Ad <- loo(ll_harm_ucT_Ad, r_eff=relative_eff(ll_harm_ucT_Ad))
+loo_noHarm_ucT_Ad <- loo(ll_noHarm_ucT_Ad, r_eff=relative_eff(ll_noHarm_ucT_Ad))
+
+
+loo_compare(loo_harm, loo_noHarm, loo_harm_ucT, loo_noHarm_ucT)
+loo_compare(loo_harm_Ch, loo_noHarm_Ch, loo_harm_ucT_Ch, loo_noHarm_ucT_Ch)
+loo_compare(loo_harm_PA, loo_noHarm_PA, loo_harm_ucT_PA, loo_noHarm_ucT_PA)
+loo_compare(loo_harm_Ad, loo_noHarm_Ad, loo_harm_ucT_Ad, loo_noHarm_ucT_Ad)
+
+
+plot(loo_harm, label_points=T)
+plot(loo_noHarm)
+
+

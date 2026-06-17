@@ -78,7 +78,7 @@ render_qmd <- function(input_file, output_path, file_ext, ...) {
 
 
 post_summary_plot <- function(df_ls, ncol=6, nrow=1, scales="fixed") {
-  ggplot(data=df_ls[[1]]) +
+  ggplot(data=df_ls[[1]], aes(group=name)) +
     geom_pointrange(data=df_ls[[2]],
                     aes(x=mn, xmin=L25, xmax=L75, y=0), linewidth=1.25) +
     geom_linerange(data=df_ls[[2]],
