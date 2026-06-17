@@ -26,6 +26,7 @@ sepa_key <- c("APT1"="Etive 4",
               "KING1"="Kingairloch",
               "MCLN1"="Macleans Nose",
               "SAR1"="Etive 6")
+saveRDS(sepa_key, glue("{dat_stan_dir}/site_names.rds"))
 
 
 
@@ -88,7 +89,8 @@ info <- list(nDays=as.numeric(diff(range(mowi_df_ext$date)))+1,
              IP_penVolume=farm_i$vol,
              dateRange=range(mowi_df_ext$date))
 # Dimensions only, for setting priors and covariate structures
-params <- list(attach_beta=rep(0, 5),
+params <- list(attach_beta_RW=rep(0, 5),
+               attach_beta_BSA=rep(0, 6),
                surv_beta=matrix(0, ncol=3, nrow=2))
 
 day_hour <- matrix(1:info$nHours, ncol=24, byrow=T)

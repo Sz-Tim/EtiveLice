@@ -37,7 +37,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     nTrtMethods=info$nTrtMethods,
     nTrtTypes=info$nTrtTypes,
     trt_meth_ii=info$trt_meth_ii,
-    nAttachCov=length(params$attach_beta),
+    nAttachCov=if_else(fishCol=="RW_logit", length(params$attach_beta_RW), length(params$attach_beta_BSA)),
     nSurvCov=nrow(params$surv_beta),
     IP_volume=info$IP_penVolume,
     y_bar_minimum=1e-5,
@@ -57,9 +57,6 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     ydayh_mx=readRDS(glue("{dat_dir}ydayh_mx.rds"))[hours,],
     # priors
     sample_prior_only=as.numeric(priors_only),
-    # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
-    prior_attach_beta=cbind(c(1, rep(0.25, length(params$attach_beta)-2), 0),
-                            c(rep(0.25, length(params$attach_beta)-1), 0.25)),
     # treatment: trtEff[global] ~ N(mu, sigma) (logit scale)
     prior_logit_trtEff_global=c(0, 1),
     # treatment: trtEff[method] ~ N(trtEff[global], trtEff_sd_methods)  (logit scale)  student_t(nu, mu, sd)
@@ -91,8 +88,14 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     prior_inv_sqrt_nb_prec=c(0, 1)
   )
   if(fishCol=="RW_logit") {
+    # attach_beta: [c(RW, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
+    stan_dat$prior_attach_beta=cbind(c(1, rep(0.25, stan_dat$nAttachCov-2), 0),
+                                     c(rep(0.25, stan_dat$nAttachCov-1), 0.25))
     stan_dat$attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx_RW.rds"))[,hours,]
   } else if(fishCol=="BSA") {
+    # attach_beta: [c(Int, BSA, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
+    stan_dat$prior_attach_beta=cbind(c(-3, rep(0.25, stan_dat$nAttachCov-2), 0),
+                                     c(rep(0.5, stan_dat$nAttachCov-1), 0.25))
     stan_dat$attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx_BSA.rds"))[,hours,]
   }
   # reformat sample info for Stan
@@ -213,14 +216,16 @@ make_attach_env_mx <- function(farm_env, info, params, fishCol="RW_logit", out_d
   if("pen" %notin% names(farm_env)) {
     farm_env$pen <- "a"
   }
+  Int <- as.numeric(fishCol=="BSA_z")
   farm_env <- farm_env |> arrange(time, sepaSite, pen)
-  attach_env_mx <- array(1, dim=c(info$nFarms, info$nHours, 5))
-  attach_env_mx[,,1] <- farm_env[[fishCol]]
-  attach_env_mx[,,2] <- farm_env$salinity_z
-  attach_env_mx[,,3] <- farm_env$temperature_z
-  attach_env_mx[,,4] <- farm_env$uv_z
-  attach_env_mx[,,5] <- farm_env$uv_z_sq
-  attach_env_mx <- attach_env_mx[,,1:length(params$attach_beta), drop=F]
+  attach_env_mx <- array(1, dim=c(info$nFarms, info$nHours, 5+Int))
+  if(Int==1) attach_env_mx[,,1] <- 1
+  attach_env_mx[,,1+Int] <- farm_env[[fishCol]]
+  attach_env_mx[,,2+Int] <- farm_env$salinity_z
+  attach_env_mx[,,3+Int] <- farm_env$temperature_z
+  attach_env_mx[,,4+Int] <- farm_env$uv_z
+  attach_env_mx[,,5+Int] <- farm_env$uv_z_sq
+  attach_env_mx <- attach_env_mx[,,1:(length(params$attach_beta)+Int), drop=F]
   if(!is.null(out_dir)) {
     saveRDS(attach_env_mx, glue("{out_dir}/attach_env_mx.rds"))
   }
