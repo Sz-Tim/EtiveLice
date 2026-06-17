@@ -225,7 +225,6 @@ make_attach_env_mx <- function(farm_env, info, params, fishCol="RW_logit", out_d
   attach_env_mx[,,3+Int] <- farm_env$temperature_z
   attach_env_mx[,,4+Int] <- farm_env$uv_z
   attach_env_mx[,,5+Int] <- farm_env$uv_z_sq
-  attach_env_mx <- attach_env_mx[,,1:(length(params$attach_beta)+Int), drop=F]
   if(!is.null(out_dir)) {
     saveRDS(attach_env_mx, glue("{out_dir}/attach_env_mx.rds"))
   }
