@@ -47,6 +47,8 @@ mowi_df_ext <- read_csv(glue("{dat_dir}/mowi_cleaned.csv")) |>
                         .by=sepaSite)) |>
   mutate(RW=sqrt(biomass/(20*vol)),
          RW_logit=brms::logit_scaled(RW, lb=-1e-5),
+         BSA=nFish_est * (13.9*(biomass/nFish_est)^0.61),
+         BSA=replace_na(BSA, 0),
          sepaSite=factor(sepaSite))
 farm_i <- read_csv("data/farm_sites_widerLinnhe_2022-2025.csv") |>
   filter(sepaSite %in% names(sepa_key)) |>
@@ -122,7 +124,7 @@ farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F)
   mutate(day=as.numeric(as.factor(date))) |>
   inner_join(
     mowi_df_ext |>
-      select(sepaSite, date, RW_logit),
+      select(sepaSite, date, RW_logit, BSA),
     by=join_by(sepaSite, date)) |>
   arrange(sepaSite, time) |>
   # calculate farm-level averages
@@ -132,8 +134,9 @@ farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F)
          uv=uv*100, # cm/s
          uv_sq=uv^2,
          salinity_m30=salinity - 30) |> # recenter so intercept = high salinity
-  mutate(across(c(temperature, u, v, w, uv, salinity), ~c(scale(.x)), .names="{.col}_z")) |>
-  mutate(uv_z_sq=uv_z^2)
+  mutate(across(c(temperature, u, v, w, uv, salinity, BSA), ~c(scale(.x)), .names="{.col}_z")) |>
+  mutate(uv_z_sq=uv_z^2,
+         BSA_z=BSA/sd(BSA))
 # for back-transforming z-scores
 farm_env_avg <- farm_env |>
   reframe(across(where(is.numeric), ~c(mn=mean(.x), sd=sd(.x)))) |>
@@ -144,7 +147,8 @@ farm_env_daily <- farm_env |>
   select(-time, -hour, -elapsedHours) |>
   summarise(across(where(is.numeric), mean),
             .by=c(sepaSite, day, date))
-attach_env_mx <- make_attach_env_mx(farm_env, info, params)
+attach_env_mx_RW <- make_attach_env_mx(farm_env, info, params, "RW_logit")
+attach_env_mx_BSA <- make_attach_env_mx(farm_env, info, params, "BSA_z")
 sal_mx <- make_sal_mx(farm_env_daily, info, params)
 temp_mx <- make_temp_mx(farm_env_daily, info)
 temp_z_mx <- make_temp_z_mx(farm_env_daily, info)
@@ -153,7 +157,8 @@ ydayh_mx <- make_ydayh_mx(farm_env)
 saveRDS(farm_env, glue("{dat_stan_dir}/farm_env.rds"))
 saveRDS(farm_env_avg, glue("{dat_stan_dir}/farm_env_avg.rds"))
 saveRDS(farm_env_daily, glue("{dat_stan_dir}/farm_env_daily.rds"))
-saveRDS(attach_env_mx, glue("{dat_stan_dir}/attach_env_mx.rds"))
+saveRDS(attach_env_mx_RW, glue("{dat_stan_dir}/attach_env_mx_RW.rds"))
+saveRDS(attach_env_mx_BSA, glue("{dat_stan_dir}/attach_env_mx_BSA.rds"))
 saveRDS(sal_mx, glue("{dat_stan_dir}/sal_mx.rds"))
 saveRDS(temp_mx, glue("{dat_stan_dir}/temp_mx.rds"))
 saveRDS(temp_z_mx, glue("{dat_stan_dir}/temp_z_mx.rds"))

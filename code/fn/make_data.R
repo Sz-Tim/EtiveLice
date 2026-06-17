@@ -1,7 +1,7 @@
 
 
 
-make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, priors_only=FALSE, prior_ls=NULL) {
+make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, priors_only=FALSE, prior_ls=NULL, fishCol="RW_logit") {
   library(tidyverse)
   library(glue)
 
@@ -50,7 +50,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     # IP from biotracker
     IP_mx=readRDS(glue("{dat_dir}IP_mx.rds"))[,hours,],
     # farm environment
-    attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours,],
+    # attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours,],
     surv_env_mx=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates,],
     temp_mx=readRDS(glue("{dat_dir}temp_mx.rds"))[dates,],
     temp_z_mx=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates,],
@@ -90,6 +90,11 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     # inv_sqrt_nb_prec: df; normal(mu, sd); nb_prec = 1/inv_sqrt_nb_prec^2
     prior_inv_sqrt_nb_prec=c(0, 1)
   )
+  if(fishCol=="RW_logit") {
+    stan_dat$attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx_RW.rds"))[,hours,]
+  } else if(fishCol=="BSA") {
+    stan_dat$attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx_BSA.rds"))[,hours,]
+  }
   # reformat sample info for Stan
   stan_dat$nSamples <- nrow(stan_dat$sample_i)
   stan_dat$sample_ii <- make_sample_ii(stan_dat$sample_i, info$nFarms)
@@ -137,7 +142,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            nHours_GQ=info$nHours_GQ,
            day_hour_GQ=readRDS(glue("{dat_dir}day_hour.rds"))[dates_GQ,] - info$nHours,
            IP_mx_GQ=readRDS(glue("{dat_dir}IP_mx.rds"))[,hours_GQ,],
-           attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours_GQ,],
+           # attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx.rds"))[,hours_GQ,],
            surv_env_mx_GQ=readRDS(glue("{dat_dir}sal_mx.rds"))[,dates_GQ,],
            temp_z_mx_GQ=readRDS(glue("{dat_dir}temp_z_mx.rds"))[dates_GQ,],
            ydayh_mx_GQ=readRDS(glue("{dat_dir}ydayh_mx.rds"))[hours_GQ,],
@@ -150,6 +155,11 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
              as.matrix(),
            nFishSampled_mx_GQ=t(readRDS(glue("{dat_dir}nFishSampled_mx.rds"))[dates_GQ,])
       ))
+    if(fishCol=="RW_logit") {
+      stan_dat$attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx_RW.rds"))[,hours_GQ,]
+    } else if(fishCol=="BSA") {
+      stan_dat$attach_env_mx_GQ=readRDS(glue("{dat_dir}attach_env_mx_BSA.rds"))[,hours_GQ,]
+    }
     stan_dat$nSamples_GQ <- nrow(stan_dat$sample_i_GQ)
     stan_dat$sample_ii_GQ <- make_sample_ii(stan_dat$sample_i_GQ, info$nFarms)
     if(source=="sim") {
@@ -199,13 +209,13 @@ make_IP_mx <- function(influx_df, info, out_dir=NULL) {
 
 
 
-make_attach_env_mx <- function(farm_env, info, params, out_dir=NULL) {
+make_attach_env_mx <- function(farm_env, info, params, fishCol="RW_logit", out_dir=NULL) {
   if("pen" %notin% names(farm_env)) {
     farm_env$pen <- "a"
   }
   farm_env <- farm_env |> arrange(time, sepaSite, pen)
   attach_env_mx <- array(1, dim=c(info$nFarms, info$nHours, 5))
-  attach_env_mx[,,1] <- farm_env$RW_logit
+  attach_env_mx[,,1] <- farm_env[[fishCol]]
   attach_env_mx[,,2] <- farm_env$salinity_z
   attach_env_mx[,,3] <- farm_env$temperature_z
   attach_env_mx[,,4] <- farm_env$uv_z
