@@ -151,6 +151,59 @@ post_summary_ensWt_plot <- function(df_ls, ncol=5, nrow=2, scales="fixed") {
 }
 
 
+post_summary_IPbg_plot <- function(df_ls, ncol=5, nrow=2, scales="fixed") {
+  yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%24==1,]) |>
+    set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
+    mutate(yday=1:366)
+  post_df <- df_ls[[1]] |>
+    mutate(farm=paste("Farm", str_split_i(label, "_", 3)),
+           param=str_split_i(label, "_", 2)) |>
+    select(farm, param, .draw, value) |>
+    pivot_wider(names_from="param", values_from="value") |>
+    mutate(yday_df=list(yday_df)) |>
+    unnest(yday_df) |>
+    mutate(log_IP_bg_m3=Int*yday_Int + cos*yday_cos + sin*yday_sin) |>
+    group_by(yday, .draw) |>
+    mutate(IP_bg_m3=exp(log_IP_bg_m3)) |>
+    ungroup() |>
+    summarise(md=median(IP_bg_m3),
+              q05=quantile(IP_bg_m3, probs=0.05),
+              q10=quantile(IP_bg_m3, probs=0.1),
+              q25=quantile(IP_bg_m3, probs=0.25),
+              q75=quantile(IP_bg_m3, probs=0.75),
+              q90=quantile(IP_bg_m3, probs=0.9),
+              q95=quantile(IP_bg_m3, probs=0.95),
+              .by=c(farm, yday)) |>
+    mutate(date_std=ymd("2020-01-01") + yday - 1,
+           farm=factor(farm, levels=paste("Farm", 1:50)))
+  if(length(df_ls)==3) {
+    true_df <- df_ls[[3]] |>
+      mutate(farm=paste("Farm", str_split_i(label, "_", 3)),
+             param=str_split_i(label, "_", 2)) |>
+      select(farm, param, value) |>
+      pivot_wider(names_from="param", values_from="value") |>
+      mutate(yday_df=list(yday_df)) |>
+      unnest(yday_df) |>
+      mutate(log_IP_bg_m3=Int*yday_Int + cos*yday_cos + sin*yday_sin) |>
+      group_by(yday) |>
+      mutate(IP_bg_m3=exp(log_IP_bg_m3)) |>
+      ungroup() |>
+      mutate(date_std=ymd("2020-01-01") + yday - 1,
+             farm=factor(farm, levels=paste("Farm", 1:50)))
+  }
+  ggplot(post_df, aes(date_std, md)) +
+    geom_ribbon(aes(ymin=q05, ymax=q95), colour=NA, alpha=0.1) +
+    geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.1) +
+    geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.1) +
+    geom_line() +
+    {if(length(df_ls)==3) geom_line(data=true_df, aes(y=IP_bg_m3), colour="red")} +
+    scale_y_continuous("Background IP/m3") +
+    scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
+    facet_wrap(~farm, ncol=ncol, scales=scales) +
+    theme(axis.title.x=element_blank())
+}
+
+
 
 
 verification_plot <- function(df, ncol=6, nrow=1, scales="fixed") {
@@ -308,12 +361,14 @@ calc_mu_metrics <- function(mu_draws_df, lice_thresh) {
 
 
 pivot_spp <- function(df, spp_names=c("Lernaeocera_branchialis",
+                                      "Lernaeenicus_sprattae",
                                       "Lepeophtheirus_salmonis",
                                       "Caligus_elongatus"),
                       spp_levels=c("Nauplii",
                                    "Lepeophtheirus salmonis",
                                    "Caligus elongatus",
-                                   "Lernaeocera branchialis")) {
+                                   "Lernaeocera branchialis",
+                                   "Lernaeenicus sprattae")) {
   df |>
     filter(Stage=="Copepodids") |>
     select(-Count) |>
