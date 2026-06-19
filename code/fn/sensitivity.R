@@ -23,6 +23,7 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
     D_hVert=c(1e-4, 1e-1),
     mortSal_fn=c("constant", "logistic"),
     eggTemp_fn=c("constant", "logistic"),
+    swimLightLevel=c("true", "false"),
     lightN=c(0.005, 0.5),
     lightC=c(2e-6, 2e-4),
     tempPrefN=c("none", "warm", "cold"),
@@ -66,6 +67,8 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
       mortSal_fn=bounds$mortSal_fn[qinteger(LHS[,5], 1, length(bounds$mortSal_fn))],
       # Egg production function
       eggTemp_fn=bounds$eggTemp_fn[qinteger(LHS[,6], 1, length(bounds$eggTemp_fn))],
+      # rDVM: Induced by light (true) or time (false)
+      swimLightLevel=bounds$swimLightLevel[qinteger(LHS[,1], 1, 2)],
       # Light responses: sample on a sqrt scale
       lightThreshNauplius=sqrt(bounds$lightN) |>
         qunif_minmax(LHS[,7]) |>
