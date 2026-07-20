@@ -136,7 +136,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
            sample_i_GQ=matrix(0, nrow=1, ncol=2),
            sample_ii_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=2),
            nFishSampled_mx_GQ=matrix(0, nrow=stan_dat$nFarms, ncol=1),
-           y_F_GQ=array(0, dim=c(stan_dat$nStageGroups, stan_dat$nDays_GQ, stan_dat$nFarms))
+           y_F_GQ=array(0, dim=c(stan_dat$nStageGroups, 1, stan_dat$nFarms))
       ))
   } else {
     stan_dat <- c(
