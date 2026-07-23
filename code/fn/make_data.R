@@ -93,9 +93,9 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
                                      c(rep(0.25, stan_dat$nAttachCov-1), 0.25))
     stan_dat$attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx_RW.rds"))[,hours,]
   } else if(fishCol=="BSA") {
-    # attach_beta: [c(Int, BSA, Sal, Temp, UV, UV^2), c(mu, sigma)]; normal (logit scale)
-    stan_dat$prior_attach_beta=cbind(c(-3, rep(0.25, stan_dat$nAttachCov-2), 0),
-                                     c(rep(0.5, stan_dat$nAttachCov-1), 0.25))
+    # attach_beta: [c(Int, BSA, Sal, Temp, UV, Temp^2, UV^2), c(mu, sigma)]; normal (logit scale)
+    stan_dat$prior_attach_beta=cbind(c(-3, 0.25, -0.25, 0.25, 0, 0),
+                                     c(0.5, rep(0.25, stan_dat$nAttachCov-3), 0.25, 0.25))
     stan_dat$attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx_BSA.rds"))[,hours,]
   }
   # reformat sample info for Stan
@@ -212,19 +212,20 @@ make_IP_mx <- function(influx_df, info, out_dir=NULL) {
 
 
 
-make_attach_env_mx <- function(farm_env, info, params, fishCol="RW_logit", out_dir=NULL) {
+make_attach_env_mx <- function(farm_env, info, params, fishCol="BSA_z", out_dir=NULL) {
   if("pen" %notin% names(farm_env)) {
     farm_env$pen <- "a"
   }
   Int <- as.numeric(fishCol=="BSA_z")
   farm_env <- farm_env |> arrange(time, sepaSite, pen)
-  attach_env_mx <- array(1, dim=c(info$nFarms, info$nHours, 5+Int))
+  attach_env_mx <- array(1, dim=c(info$nFarms, info$nHours, 6+Int))
   if(Int==1) attach_env_mx[,,1] <- 1
   attach_env_mx[,,1+Int] <- farm_env[[fishCol]]
   attach_env_mx[,,2+Int] <- farm_env$salinity_z
   attach_env_mx[,,3+Int] <- farm_env$temperature_z
   attach_env_mx[,,4+Int] <- farm_env$uv_z
-  attach_env_mx[,,5+Int] <- farm_env$uv_z_sq
+  attach_env_mx[,,5+Int] <- farm_env$temperature_z_sq
+  attach_env_mx[,,6+Int] <- farm_env$uv_z_sq
   if(!is.null(out_dir)) {
     saveRDS(attach_env_mx, glue("{out_dir}/attach_env_mx.rds"))
   }

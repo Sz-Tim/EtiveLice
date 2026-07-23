@@ -167,7 +167,9 @@ farm_dat <- read_csv(glue("{inputs_dir}/farm_dat.csv"), show_col_types=F) |>
            ((1-mort_weekly)^(1/7))^prodDay,
          total_AF=weeklyAverageAf * nFish_est,
          RW=sqrt(fishIn*actualBiomassOnSiteTonnes*1e3/(20*vol)),
-         RW_logit=brms::logit_scaled(RW, lb=-1e-5)) |>
+         RW_logit=brms::logit_scaled(RW, lb=-1e-5),
+         BSA=nFish_est * (13.9*(actualBiomassOnSiteTonnes/nFish_est)^0.61),
+         BSA=replace_na(BSA, 0)) |>
   group_by(sepaSite) |>
   mutate(sampled=date %in% (first(date) + first(firstDay) + 7*(0:500)),
          sampled=sampled & (nFish_est > 0)) |>
@@ -202,7 +204,7 @@ farm_dat_gg <- ggplot(farm_dat, aes(x=date)) +
 p_ls <- list(farm_dat_gg + geom_line(aes(y=nFish_est)),
              farm_dat_gg + geom_line(aes(y=weeklyAverageAf)),
              farm_dat_gg + geom_line(aes(y=total_AF)),
-             farm_dat_gg + geom_line(aes(y=RW)))
+             farm_dat_gg + geom_line(aes(y=BSA)))
 cowplot::plot_grid(plotlist=p_ls, ncol=1, align="hv")
 
 if(save_figs) {
@@ -239,7 +241,7 @@ farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F)
   mutate(day=as.numeric(as.factor(date))) |>
   inner_join(
     farm_dat |> 
-      select(sepaSite, date, nFish_est, RW, RW_logit, sampled, nFishSampled), 
+      select(sepaSite, date, nFish_est, RW, RW_logit, BSA, sampled, nFishSampled), 
       by=join_by(sepaSite, date)) |>
   arrange(sepaSite, time) |>
   mutate(u=u*100, # cm/s
@@ -249,7 +251,9 @@ farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F)
          uv_sq=uv^2,
          salinity_m30=salinity - 30) |> # recenter so intercept = high salinity
   mutate(across(c(temperature, u, v, w, uv, salinity), ~c(scale(.x)), .names="{.col}_z"),
-         uv_z_sq=uv_z^2)
+         uv_z_sq=uv_z^2,
+         temperature_z_sq=temperature_z^2,
+         BSA_z=BSA/sd(BSA))
 glimpse(farm_env)
 # for back-transforming z-scores
 farm_env_avg <- farm_env |>
@@ -429,38 +433,39 @@ library(plotly)
 
 # Pr(attach)
 # attach_mn <- c(-2.25, .8, 0.2, 0.2, -0.005)
-attach_mn <- c(0, 1, 0.2, 0.25, 0.2, -0.1)
+attach_mn <- c(-3.5, 1, 0.2, -0.2, -0.1, 0.2, -0.1) # Int, BSA, Sal, Temp, Temp^2, uv, uv^2
 attach_sigma <- 0.7
 attach_df <- expand_grid(
   salinity_z=seq_range(farm_env$salinity_z, length.out=100),
   uv_z=seq_range(farm_env$uv_z, length.out=100),
-  RW=seq_range(filter(farm_env, RW>0)$RW, length.out=100),
+  BSA_z=seq_range(filter(farm_env, BSA_z>0)$BSA_z, length.out=100),
   temp_z=seq_range(farm_env$temperature_z, length.out=100)
 ) |>
   slice_sample(n=50) |>
-  mutate(RW_logit=brms::logit_scaled(RW, lb=-1e-5),
-         salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
-         temp=temp_z*farm_env_avg$temperature[2] + farm_env_avg$temperature[1]) |>
+  mutate(salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
+         temp=temp_z*farm_env_avg$temperature[2] + farm_env_avg$temperature[1],
+         uv=uv_z*farm_env_avg$uv[2] + farm_env_avg$uv[1]) |>
   mutate(eta=attach_mn[1] + 
-           attach_mn[2] * RW_logit + 
+           attach_mn[2] * BSA_z + 
            attach_mn[3] * salinity_z + +
            attach_mn[4] * temp_z +
-           attach_mn[5] * uv_z +
-           attach_mn[6] * uv_z^2,
+           attach_mn[5] * temp_z^2 +
+           attach_mn[6] * uv_z +
+           attach_mn[7] * uv_z^2,
          obs=eta + rnorm(n(), 0, attach_sigma))
-ggplot(attach_df, aes(uv_z, plogis(eta), colour=RW)) + geom_point() + ylim(0, 1)
-ggplot(attach_df, aes(temp, plogis(eta), colour=RW)) + geom_point() + ylim(0, 1)
-ggplot(attach_df, aes(RW, plogis(eta), colour=uv_z)) + geom_point() + ylim(0, 1) + 
-  geom_abline() + scale_colour_viridis_c(option="turbo")
-ggplot(attach_df, aes(RW, plogis(eta), colour=temp)) + geom_point() + ylim(0, 1) + 
-  geom_abline() + scale_colour_viridis_c(option="turbo")
-plot_ly(attach_df, x=~uv_z, y=~RW, z=~salinity, color=~plogis(eta), type="scatter3d")
-plot_ly(attach_df, x=~uv_z, y=~RW, z=~temp, color=~plogis(eta), type="scatter3d")
+ggplot(attach_df, aes(uv, plogis(eta), colour=BSA_z)) + geom_point() + ylim(0, 1)
+ggplot(attach_df, aes(temp, plogis(eta), colour=BSA_z)) + geom_point() + ylim(0, 1)
+ggplot(attach_df, aes(BSA_z, plogis(eta), colour=uv_z)) + geom_point() + ylim(0, 1) + 
+  scale_colour_viridis_c(option="turbo")
+ggplot(attach_df, aes(BSA_z, plogis(eta), colour=temp)) + geom_point() + ylim(0, 1) + 
+  scale_colour_viridis_c(option="turbo")
+plot_ly(attach_df, x=~uv_z, y=~BSA_z, z=~salinity, color=~plogis(eta), type="scatter3d")
+plot_ly(attach_df, x=~uv_z, y=~BSA_z, z=~temp_z, color=~plogis(eta), type="scatter3d")
 summary(plogis(attach_df$eta))
 hist(plogis(attach_df$eta), xlim=c(0,1))
 
 
-attach_out <- brm(obs ~ 0 + RW_logit + salinity_z + temp_z + uv_z + I(uv_z^2),
+attach_out <- brm(obs ~ BSA_z + salinity_z + temp_z + I(temp_z^2) + uv_z + I(uv_z^2),
                   data=attach_df, cores=4)
 as_draws_df(attach_out) |>
   select(starts_with("b_")) |>
@@ -531,7 +536,7 @@ params <- list(
   # Pr(copepodid attachment): RW_logit, salinity, temp, uv, uv^2
   attach_beta=glue("{proj_dir}/data/sim/inputs/posterior_prAttach.csv") |>
     read_csv() |> sample_n(1) |> 
-    select(b_RW_logit, b_salinity_z, b_temp_z, b_uv_z, b_Iuv_zE2) |> unlist(),
+    select(b_Intercept, b_BSA_z, b_salinity_z, b_temp_z, b_uv_z, b_Itemp_zE2, b_Iuv_zE2) |> unlist(),
   # On-fish survival: chalimus, pre-adult, adult, gravid
   #   logit(p) = f(salinity); intercept, slope by stage
   surv_beta=glue("{proj_dir}/data/sim/inputs/posterior_prSurv.csv") |>
@@ -559,14 +564,13 @@ params <- list(
   IP_halfSat_m3=runif(n=1, 1, 50) + rbinom(1, 1, 0.5)*1e6,
   # Treatment threshold for AF
   trt_thresh=sample(c(0.5, 1), 1),
-  trt_efficacy_method=rbeta(info$nTrtMethods, 4, 2),
-  trt_efficacy=rbeta(info$nTrtTypes, 4, 2)
+  trt_efficacy_method=rbeta(info$nTrtMethods, 4, 2)
 )
 params$trt_efficacy <- boot::inv.logit(
   boot::logit(params$trt_efficacy_method[info$trt_meth_ii]) + rnorm(info$nTrtTypes, 0, 1)
 )
-# Randomly set salinity and uv effects to 0 for attachment
-params$attach_beta[2:5] <- params$attach_beta[2:5] * rbinom(3, 1, 0.75)[c(1,2,3,3)]
+# Randomly set salinity, temp, and uv effects to 0 for attachment
+params$attach_beta[3:7] <- params$attach_beta[3:7] * rbinom(3, 1, 0.75)[c(1,2,2,3,3)]
 # Randomly set salinity effects to 0 for survival
 params$surv_beta[2,] <- params$surv_beta[2,] * rbinom(info$nStages, 1, 0.75)
 # Background copepodid count per pen
@@ -608,29 +612,32 @@ map(params, ~signif(.x, 3))
 p_prAttach <- expand_grid(
   salinity_z=seq_quantiles(farm_env$salinity_z, 0.05, 0.995, length.out=100),
   uv_z=seq_quantiles(farm_env$uv_z, 0, 0.9995, length.out=100),
-  RW=c(0.25, 0.5),
+  BSA_z=quantile(farm_env_daily$BSA_z, probs=c(0.5, 0.95)),
   temp_z=seq_quantiles(farm_env$temperature_z, 0.05, 0.995, length.out=4)
 ) |>
   mutate(uv_sq=uv_z^2,
+         temp_sq=temp_z^2,
          uv=uv_z*farm_env_avg$uv[2] + farm_env_avg$uv[1],
          salinity=salinity_z*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
          temp=temp_z*farm_env_avg$temperature[2] + farm_env_avg$temperature[1],
          temp_lab=paste(round(temp, 1), " C"),
          temp_lab=factor(temp_lab, levels=unique(temp_lab)),
-         RW_logit=brms::logit_scaled(RW, lb=-1e-5),
-         RW_lab=paste("RW:", round(RW, 2))) |>
-  mutate(pr_attach=plogis(params$attach_beta[1] * RW_logit + 
-                            params$attach_beta[2] * salinity_z +
-                            params$attach_beta[3] * temp_z +
-                            params$attach_beta[4] * uv_z +
-                            params$attach_beta[5] * uv_sq)) |>
+         BSA=BSA_z*farm_env_avg$BSA[2],
+         BSA_lab=factor(BSA, labels=c("BSA: Median", "BSA: 95th %ile"))) |>
+  mutate(pr_attach=plogis(params$attach_beta[1] +
+                            params$attach_beta[2] * BSA_z +
+                            params$attach_beta[3] * salinity_z +
+                            params$attach_beta[4] * temp_z +
+                            params$attach_beta[5] * uv_z +
+                            params$attach_beta[6] * temp_sq +
+                            params$attach_beta[7] * uv_sq)) |>
   ggplot(aes(salinity, uv)) + 
   geom_raster(aes(fill=pr_attach)) + 
   geom_contour(aes(z=pr_attach), breaks=seq(0, 1, by=0.1), colour="white") +
   scale_fill_viridis_c("P(attach)", option="turbo", 
                        limits=c(0, 1), breaks=seq(0, 1, by=0.1),
                        labels=c("0", rep("", 4), "0.5", rep("", 4), "1")) +
-  facet_grid(RW_lab~temp_lab) +
+  facet_grid(BSA_lab~temp_lab) +
   scale_x_continuous("Salinity (psu)", breaks=c(10, 20, 30)) +
   labs(y="Water speed (cm/s)") +
   theme(legend.position="bottom",

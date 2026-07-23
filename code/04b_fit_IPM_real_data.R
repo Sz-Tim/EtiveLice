@@ -17,10 +17,10 @@ dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
 prior_only <- F
-GQ <- F
+GQ <- T
 
 mod <- c("noHarm", "Harm",
-         "Harm_randIPbg", "Harm_ydayIPbg", "noHarm_ydayIPbg")[1]
+         "Harm_randIPbg", "Harm_ydayIPbg", "noHarm_ydayIPbg")[5]
 fishCol <- c("RW_logit", "BSA")[2]
 suffix <- paste0(switch(mod,
                         'noHarm'='_noHarm',
@@ -32,7 +32,7 @@ suffix <- paste0(switch(mod,
                  "_", fishCol,
                  ifelse(GQ, '', '_noGQ'))
 
-n_chains <- 3
+n_chains <- 6
 dat_dir <- "data/aquaculture/mowi_stan/"
 out_dir <- "out/ipm_fit/"
 fig_dir <- "figs/ipm_fit/"
@@ -123,7 +123,8 @@ if(!GQ) keep_pars <- grep("_GQ", keep_pars, invert=T, value=T)
 
 # fit ---------------------------------------------------------------------
 
-iter <- 1000
+post_size <- 3000
+iter <- post_size/n_chains
 if(grepl("ydayIP", mod)) {
   prior_ls <- list(prior_IP_bg_m3=c(log(0.05), 0.5))
 } else {
@@ -138,7 +139,7 @@ mod_full <- cmdstan_model(glue("code/stan/tuning_integrated_population_model{str
 fit_full <- mod_full$sample(
   data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
   adapt_delta=0.95,
-  iter_warmup=iter*2, iter_sampling=iter,
+  iter_warmup=2000, iter_sampling=iter,
   chains=n_chains, parallel_chains=n_chains
 )
 
@@ -264,32 +265,35 @@ if(GQ) {
     facet_grid(farm~., scales="free_y")
   ggsave(glue("{fig_dir}/fig_mu_draws_GQ{suffix}.png"), p, width=10, height=15)
 
-  # mu_pred_df <- mu_draws_df |>
-  #   summarise(mn=mean(mu),
-  #             lo=quantile(mu, probs=0.25),
-  #             hi=quantile(mu, probs=0.75),
-  #             .by=c(farm, stage, day)) |>
-  #   inner_join(obs_df |>
-  #                mutate(across(all_of(c("Ch", "PA", "AF")),  ~.x/nFishSampled)) |>
-  #                select(farm, date, Ch, PA, AF) |>
-  #                rename(day=date, Ad=AF) |>
-  #                pivot_longer(3:5, names_to="stage", values_to="obs"),
-  #              by=join_by(stage, farm, day))
-  # ggplot(mu_pred_df, aes(mn, xmin=lo, xmax=hi, y=obs)) +
-  #   geom_point(shape=1) +
-  #   geom_linerange() +
-  #   geom_abline() +
-  #   facet_grid(farm~stage, scales="free")
-  # ggplot(mu_pred_df, aes(mn, xmin=lo, xmax=hi, y=obs)) +
-  #   geom_point(shape=1) +
-  #   geom_linerange() +
-  #   geom_abline() +
-  #   facet_wrap(~stage, scales="free")
-  # ggplot(mu_pred_df |> filter(stage=="Ad"), aes(mn, xmin=lo, xmax=hi, y=obs)) +
-  #   geom_point(shape=1) +
-  #   geom_linerange() +
-  #   geom_abline() +
-  #   facet_wrap(~farm, scales="free")
+  mu_pred_df <- mu_draws_df |>
+    summarise(mn=mean(mu),
+              lo=quantile(mu, probs=0.25),
+              hi=quantile(mu, probs=0.75),
+              .by=c(farm, stage, day)) |>
+    inner_join(obs_df |>
+                 mutate(across(all_of(c("Ch", "PA", "AF")),  ~.x/nFishSampled)) |>
+                 select(farm, date, Ch, PA, AF) |>
+                 rename(day=date, Ad=AF) |>
+                 pivot_longer(3:5, names_to="stage", values_to="obs"),
+               by=join_by(stage, farm, day))
+  p <- ggplot(mu_pred_df, aes(mn, xmin=lo, xmax=hi, y=obs)) +
+    geom_point(shape=1) +
+    geom_linerange() +
+    geom_abline() +
+    facet_grid(farm~stage, scales="free")
+  ggsave(glue("figs/ipm_fit/mu_scatter_1_{suffix}.png"), p)
+  p <- ggplot(mu_pred_df, aes(mn, xmin=lo, xmax=hi, y=obs)) +
+    geom_point(shape=1) +
+    geom_linerange() +
+    geom_abline() +
+    facet_wrap(~stage, scales="free")
+  ggsave(glue("figs/ipm_fit/mu_scatter_2_{suffix}.png"), p)
+  p <- ggplot(mu_pred_df |> filter(stage=="Ad"), aes(mn, xmin=lo, xmax=hi, y=obs)) +
+    geom_point(shape=1) +
+    geom_linerange() +
+    geom_abline() +
+    facet_wrap(~farm, scales="free")
+  ggsave(glue("figs/ipm_fit/mu_scatter_3_{suffix}.png"), p)
 }
 
 mu_draws_df <- take_mu_draws(out_full_df, NULL,
@@ -372,6 +376,26 @@ if("y_pred" %in% keep_pars) {
 
 
 
+
+# rhat --------------------------------------------------------------------
+
+out_split <- out_full |>
+  filter(name %in% param_key$name) |>
+  group_split(name)
+rhats <- future_map_dbl(out_split, ~rstan::Rhat(matrix(.x$value, nrow=500, ncol=6))) |>
+  set_names(map_chr(out_split, ~.x$name[1]))
+rhats |>
+  as_tibble() |>
+  mutate(name=names(rhats),
+         type=str_split_i(name, "\\[", 1)) |>
+  ggplot(aes(value, name)) +
+  geom_point() +
+  geom_vline(xintercept=1.05) +
+  facet_wrap(~type, scales="free_y", space="free_y", ncol=1) +
+  theme(axis.text.y=element_blank())
+
+
+
 # FOR A NEW SCRIPT --------------------------------------------------------
 
 # RESULTS
@@ -387,10 +411,139 @@ if("y_pred" %in% keep_pars) {
 #    - Population stage distributions
 
 # Analysis of posteriors
+
+draw_sample <- sample.int(1500, 300)
+
+
+# . IPbg ------------------------------------------------------------------
+
+library(sf)
+mesh_dir <- ifelse(sevcheck::get_os()=="windows", "../03_packages/WeStCOMS/data", "~/hydro/meshes")
+farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
+farm_bbox <- list(xmin=145000, xmax=225500, ymin=720000, ymax=785000)
+linnhe_fp <- st_read(glue("{mesh_dir}/WeStCOMS3_mesh_footprint.gpkg")) |>
+  st_crop(unlist(farm_bbox))
+
+site_names <- readRDS(glue("{dat_dir}/site_names.rds"))
+farm_sites <- read_csv("data/farm_sites_widerLinnhe_2022-2025.csv")
+farm_IPbg <- out_full_sum |>
+  filter(grepl("IP_bg", name)) |>
+  mutate(farm=str_sub(name, 10, -2) |> as.numeric(),
+         sepaSite=names(site_names)[farm]) |>
+  left_join(farm_sites)
+
+p <- ggplot(linnhe_fp) +
+  geom_sf() +
+  geom_point(data=farm_IPbg, aes(easting, northing, fill=med), size=5, shape=21) +
+  scale_fill_viridis_c(expression("Posterior median lice "%.%" m"^"-3"%.%" h"^"-1"),
+                         option="plasma", begin=0.05, end=0.95, limits=c(0, NA),
+                       breaks=seq(0, 0.2, by=0.05),
+                       labels=c("0", "0.05", "0.10", "0.15", "0.20")) +
+  scale_x_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=3) +
+  scale_y_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=4) +
+  ggtitle("Background IP") +
+  theme(axis.title=element_blank(),
+        legend.position="inside",
+        # legend.position.inside=c(0.277, 0.915),
+        legend.position.inside=c(0.293, 0.915),
+        legend.direction="horizontal",
+        legend.title.position="top",
+        legend.key.height=unit(0.2, "cm"),
+        legend.key.width=unit(1, "cm"),
+        legend.background=element_rect(colour="grey30", linewidth=0.2, fill="white"))
+ggsave(glue("{fig_dir}/IPbg_md_map{suffix}.png"),
+       plot=p, width=5, height=5)
+
+
+
+# . IP Ensemble weights ---------------------------------------------------
+
+yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%24==1,]) |>
+  set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
+  mutate(yday=1:366)
+ensP_post <- out_full |>
+  filter(grepl("ensWts", name)) |>
+  inner_join(param_key, by=join_by(name)) |>
+  mutate(sim=paste("Sim", str_split_i(label, "_", 3)),
+         param=str_split_i(label, "_", 2)) |>
+  select(sim, param, .draw, .chain, .iteration, value) |>
+  pivot_wider(names_from="param", values_from="value") |>
+  mutate(yday_df=list(yday_df)) |>
+  unnest(yday_df) |>
+  mutate(logit_p=Int*yday_Int + cos*yday_cos + sin*yday_sin) |>
+  group_by(yday, .draw, .chain, .iteration) |>
+  mutate(p=make_compositional(logit_p, method="softmax")) |>
+  ungroup()
+ensP_sum <- ensP_post |>
+  summarise(md=median(p),
+            mn=mean(p),
+            q05=quantile(p, probs=0.05),
+            q10=quantile(p, probs=0.1),
+            q25=quantile(p, probs=0.25),
+            q75=quantile(p, probs=0.75),
+            q90=quantile(p, probs=0.9),
+            q95=quantile(p, probs=0.95),
+            .by=c(sim, yday)) |>
+  mutate(date_std=ymd("2020-01-01") + yday - 1,
+         sim=factor(sim, levels=paste("Sim", 1:50)))
+
+ggplot(ensP_sum, aes(date_std, md, group=sim)) +
+  geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.1) +
+  geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.1) +
+  geom_line() +
+  scale_y_continuous("Ensemble weight p", limits=c(0, 1),
+                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b")
+
+p <- ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
+  geom_area(position="fill", colour="grey30", linewidth=0.1) +
+  scale_fill_brewer("Simulation", palette="Paired") +
+  scale_y_continuous("Posterior median weight", limits=c(0, 1),
+                     expand=c(0,0), oob=scales::oob_keep,
+                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  scale_x_datetime("Day of year", date_breaks="1 month", date_labels="%b",
+                   expand=c(0,0), oob=scales::oob_keep) +
+  ggtitle("Dispersal simulation IP") +
+  theme(axis.title.x=element_blank(),
+        legend.position="none")
+ggsave(glue("{fig_dir}/IPens_md{suffix}.png"),
+       plot=p, width=4.5, height=4.5)
+
+ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
+  geom_area(position="fill", colour="grey30", linewidth=0.1) +
+  scale_fill_brewer("Simulation", palette="Paired") +
+  scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  scale_x_datetime("Day of year", date_breaks="1 month", date_labels="%b") +
+  coord_polar()
+
+ensP_post |>
+  filter(.draw %in% draw_sample[1:20]) |>
+  mutate(date_std=ymd("2020-01-01") + yday - 1,
+         sim=factor(sim, levels=paste("Sim", 1:50))) |>
+  ggplot(aes(date_std, p, fill=sim)) +
+  geom_area(position="fill", colour="grey30", linewidth=0.1) +
+  scale_fill_brewer("Simulation", palette="Paired") +
+  scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
+  facet_wrap(~.draw, nrow=4)
+
+
+ensP_post |>
+  filter(.draw %in% draw_sample) |>
+  mutate(date_std=ymd("2020-01-01") + yday - 1,
+         sim=factor(sim, levels=paste("Sim", 1:50))) |>
+  ggplot(aes(date_std, p, group=.draw)) +
+  geom_line(alpha=0.2) +
+  scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
+  facet_wrap(~sim, nrow=2)
+
+
 # . Attachment covariate effects ------------------------------------------
 farm_env_avg <- readRDS(glue("{dat_dir}/farm_env_avg.rds"))
-
-draw_sample <- sample.int(1500, 50)
 
 if(fishCol=="RW_logit") {
   attach_mx <- readRDS(glue("{dat_dir}/attach_env_mx_RW.rds"))
@@ -407,7 +560,7 @@ if(fishCol=="RW_logit") {
     mutate(attach_df=list(
       expand_grid(
         RW=seq_quantiles(c(attach_mx[,,1])[c(attach_mx[,,1]) > -6], 0.25, 0.75, length.out=2),
-        Sal=seq_quantiles(c(attach_mx[,,2]), 0.25, 0.75, length.out=3),
+        Sal=seq_quantiles(c(attach_mx[,,2]), 0.01, 0.99, length.out=3),
         Temp=seq_quantiles(c(attach_mx[,,3]), 0.1, 0.9, length.out=3),
         UV=seq_quantiles(c(attach_mx[,,4]), 0, 0.995,  length.out=20)
       ) |>
@@ -425,7 +578,7 @@ if(fishCol=="RW_logit") {
         RW=seq_quantiles(c(attach_mx[,,1])[c(attach_mx[,,1]) > -6], 0.25, 0.75, length.out=2),
         Sal=seq_quantiles(c(attach_mx[,,2]), 0.01, 0.99, length.out=20),
         Temp=seq_quantiles(c(attach_mx[,,3]), 0.1, 0.9, length.out=3),
-        UV=seq_quantiles(c(attach_mx[,,4]), 0.25, 0.75,  length.out=3)
+        UV=seq_quantiles(c(attach_mx[,,4]), 0.1, 0.9,  length.out=3)
       ) |>
         mutate(UV_sq=UV^2)
     )) |>
@@ -445,7 +598,7 @@ if(fishCol=="RW_logit") {
     geom_line(alpha=0.2, linewidth=0.2) +
     scale_colour_viridis_c(option="plasma", end=0.9) +
     ylim(0, NA) +
-    labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
+    labs(x="UV (cm/s)", y="Pr(Attach to host)") +
     facet_grid(RW~salinity)
   pB <- pAttach_post2 |>
     mutate(UV_raw=paste(round(UV_raw, 1), "cm/s"),
@@ -456,7 +609,7 @@ if(fishCol=="RW_logit") {
     geom_line(alpha=0.2, linewidth=0.2) +
     scale_colour_viridis_c(option="plasma", end=0.9) +
     ylim(0, NA) +
-    labs(x="Salinity (psu)", y="Daily Pr(Attachment)") +
+    labs(x="Salinity (psu)", y="Pr(Attach to host)") +
     facet_grid(RW~UV_raw)
 } else if(fishCol=="BSA") {
   attach_mx <- readRDS(glue("{dat_dir}/attach_env_mx_BSA.rds"))
@@ -474,7 +627,7 @@ if(fishCol=="RW_logit") {
       expand_grid(
         Int=1,
         BSA=seq_quantiles(c(attach_mx[,,2])[c(attach_mx[,,2]) > 0], 0.25, 0.75, length.out=2),
-        Sal=seq_quantiles(c(attach_mx[,,3]), 0.25, 0.75, length.out=3),
+        Sal=seq_quantiles(c(attach_mx[,,3]), 0.25, 0.75, length.out=3) |> round(),
         Temp=seq_quantiles(c(attach_mx[,,4]), 0.1, 0.9, length.out=3),
         UV=seq_quantiles(c(attach_mx[,,5]), 0, 0.995,  length.out=20)
       ) |>
@@ -493,7 +646,7 @@ if(fishCol=="RW_logit") {
         BSA=seq_quantiles(c(attach_mx[,,2])[c(attach_mx[,,2]) > 0], 0.25, 0.75, length.out=2),
         Sal=seq_quantiles(c(attach_mx[,,3]), 0.01, 0.99, length.out=20),
         Temp=seq_quantiles(c(attach_mx[,,4]), 0.1, 0.9, length.out=3),
-        UV=seq_quantiles(c(attach_mx[,,5]), 0.25, 0.75,  length.out=3)
+        UV=seq_quantiles(c(attach_mx[,,5]), 0.25, 0.75,  length.out=3) |> round()
       ) |>
         mutate(UV_sq=UV^2)
     )) |>
@@ -513,7 +666,7 @@ if(fishCol=="RW_logit") {
     geom_line(alpha=0.2, linewidth=0.2) +
     scale_colour_viridis_c(option="plasma", end=0.9) +
     ylim(0, NA) +
-    labs(x="UV (cm/s)", y="Daily Pr(Attachment)") +
+    labs(x="UV (cm/s)", y="Pr(Attach to host)") +
     facet_grid(BSA~salinity)
   pB <- pAttach_post2 |>
     mutate(UV_raw=paste(round(UV_raw, 1), "cm/s"),
@@ -524,7 +677,7 @@ if(fishCol=="RW_logit") {
     geom_line(alpha=0.2, linewidth=0.2) +
     scale_colour_viridis_c(option="plasma", end=0.9) +
     ylim(0, NA) +
-    labs(x="Salinity (psu)", y="Daily Pr(Attachment)") +
+    labs(x="Salinity (psu)", y="Pr(Attach to host)") +
     facet_grid(BSA~UV_raw)
 }
 

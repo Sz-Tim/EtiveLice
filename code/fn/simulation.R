@@ -19,8 +19,8 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   # IP_mx[farm, hour, sim]
   IP_mx <- make_IP_mx(influx_df, info, out_dir)
 
-  # attach_env_mx[farm, hour, (1, RW, sal, uv, uv^2)]
-  attach_env_mx <- make_attach_env_mx(farm_env, info, params, out_dir)
+  # attach_env_mx[farm, hour, (1, BSA, sal, temp, uv, temp^2, uv^2)]
+  attach_env_mx <- make_attach_env_mx(farm_env, info, params, "BSA_z", out_dir)
 
   # sal_mx[day, farm, (1, sal)]
   sal_mx <- make_sal_mx(farm_env_daily, info, params, out_dir)

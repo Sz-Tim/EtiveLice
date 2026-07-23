@@ -113,6 +113,7 @@ saveRDS(sampledDays, glue("{dat_stan_dir}/sampledDays.rds"))
 saveRDS(nFishSampled_mx, glue("{dat_stan_dir}/nFishSampled_mx.rds"))
 saveRDS(trtApplied_mx, glue("{dat_stan_dir}/trtApplied_mx.rds"))
 saveRDS(y_obs, glue("{dat_stan_dir}/y_obs.rds"))
+write_csv(farm_i, glue("{dat_stan_dir}/farm_sites_mowi.csv"))
 
 
 
@@ -136,8 +137,9 @@ farm_env <- read_csv(glue("{inputs_dir}/farm_env_hourly.csv"), show_col_types=F)
          uv=uv*100, # cm/s
          uv_sq=uv^2,
          salinity_m30=salinity - 30) |> # recenter so intercept = high salinity
-  mutate(across(c(temperature, u, v, w, uv, salinity, BSA), ~c(scale(.x)), .names="{.col}_z")) |>
+  mutate(across(c(temperature, u, v, w, uv, salinity), ~c(scale(.x)), .names="{.col}_z")) |>
   mutate(uv_z_sq=uv_z^2,
+         temperature_z_sq=temperature_z^2,
          BSA_z=BSA/sd(BSA))
 # for back-transforming z-scores
 farm_env_avg <- farm_env |>
