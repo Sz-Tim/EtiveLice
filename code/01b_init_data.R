@@ -407,7 +407,7 @@ site_meta <- bind_cols(
     select(logProximity)
 )
 
-write_csv(site_meta, "data/farm_metadata.csv")
+write_csv(site_meta, "data/farm_metadata_widerLinnhe_2022-2025.csv")
 
 
 
