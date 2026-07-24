@@ -19,15 +19,14 @@ theme_set(theme_classic())
 prior_only <- F
 GQ <- T
 
-mod <- c("noHarm", "Harm",
-         "Harm_randIPbg", "Harm_ydayIPbg", "noHarm_ydayIPbg")[5]
+mod <- c("noHarm_randIPbg", "noHarm_ydayIPbg",
+         "Harm_randIPbg", "Harm_ydayIPbg")[1]
 fishCol <- c("RW_logit", "BSA")[2]
 suffix <- paste0(switch(mod,
-                        'noHarm'='_noHarm',
-                        'Harm'='',
+                        'noHarm_randIPbg'='_noHarm_randIPbg',
+                        'noHarm_ydayIPbg'='_noHarm_ydayIPbg',
                         'Harm_randIPbg'='_randIPbg',
-                        'Harm_ydayIPbg'='_ydayIPbg',
-                        'noHarm_ydayIPbg'='_noHarm_ydayIPbg'),
+                        'Harm_ydayIPbg'='_ydayIPbg'),
                  ifelse(prior_only, '_PRIORS', ''),
                  "_", fishCol,
                  ifelse(GQ, '', '_noGQ'))
@@ -46,9 +45,9 @@ trt_meth_ii <- read_csv("data/aquaculture/mowi_trt_cleaned.csv") |>
   arrange(TypeNum) |>
   mutate(abbr=paste0(str_sub(Method, 1, 1), "_", str_split_i(Type, "_", 2)))
 param_key <- tibble(name=c({if(fishCol=="BSA") {
-                             paste0("attach_beta[", 1:6, "]")
+                             paste0("attach_beta[", 1:7, "]")
                            } else {
-                             paste0("attach_beta[", 1:5, "]")
+                             paste0("attach_beta[", 1:6, "]")
                            }},
                            {if(grepl("noHarm", mod)) {
                              paste0("ensWts_p[", 1:info$nSims, "]")
@@ -77,9 +76,9 @@ param_key <- tibble(name=c({if(fishCol=="BSA") {
                            "IP_scale", "IP_halfSat_m3",
                            paste0("trtEff_type[", 1:8, "]")),
                     label=c({if(fishCol=="BSA") {
-                              paste0("attach_", c("Int", "Fish", "Sal", "Temp", "UV", "UVsq"))
+                              paste0("attach_", c("Int", "Fish", "Sal", "Temp", "UV", "Tempsq", "UVsq"))
                             } else {
-                              paste0("attach_", c("Fish", "Sal", "Temp", "UV", "UVsq"))
+                              paste0("attach_", c("Fish", "Sal", "Temp", "UV", "Tempsq", "UVsq"))
                             }},
                             {if(grepl("noHarm", mod)) {
                               paste0("ensWts_", 1:info$nSims)
@@ -115,6 +114,7 @@ keep_pars <- c(ifelse(grepl("ydayIP", mod), "log_IP_bg_m3_coef", "IP_bg_m3"),
                "attach_beta","surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
                "detect_p", "nb_prec", "trtEff_type",
                "mu", "mu_GQ", "y_pred", "y_bar_GQ",
+               "N_attach", "N_attach_GQ",
                "log_lik", "log_lik_GQ"
 )
 if(!GQ) keep_pars <- grep("_GQ", keep_pars, invert=T, value=T)
@@ -143,6 +143,8 @@ fit_full <- mod_full$sample(
   chains=n_chains, parallel_chains=n_chains
 )
 
+suffix <- paste0(suffix, "_tq")
+
 out_full_df <- fit_full$draws(
   variables=keep_pars,
   format="df") |>
@@ -164,7 +166,7 @@ if(GQ) {
     ggplot(aes(med)) +
     geom_histogram() +
     facet_grid(.~stage, scales="free")
-  ggsave(glue("{fig_dir}/fig_loglik{suffix}.png"),
+  ggsave(glue("{fig_dir}/loglik{suffix}.png"),
          p_loglik, width=9, height=3.5)
 }
 
@@ -174,7 +176,7 @@ p_loglik <- out_full_sum |>
   ggplot(aes(med)) +
   geom_histogram() +
   facet_grid(.~stage, scales="free")
-ggsave(glue("{fig_dir}/fig_loglik_fitted{suffix}.png"),
+ggsave(glue("{fig_dir}/loglik_fitted{suffix}.png"),
        p_loglik, width=9, height=3.5)
 
 
@@ -192,7 +194,7 @@ if(grepl("noHarm", mod)) {
 }
 p_attach <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("attach_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
-  post_summary_plot(scales="free") +
+  post_summary_plot(scales="free", nrow=1, ncol=7) +
   geom_vline(xintercept=0, linetype=3)
 p_surv <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("surv_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
@@ -241,7 +243,7 @@ if(grepl("ydayIP", mod)) {
                  nrow=7, align="v", axis="rl", rel_heights=c(2, 1, 2, 1, 2, 2, 1))
 }
 
-ggsave(glue("{fig_dir}/fig_pars{suffix}.png"), p, width=10, height=14)
+ggsave(glue("{fig_dir}/pars{suffix}.png"), p, width=10, height=14)
 
 
 
@@ -263,7 +265,7 @@ if(GQ) {
     {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
     scale_x_date(date_labels="%b") +
     facet_grid(farm~., scales="free_y")
-  ggsave(glue("{fig_dir}/fig_mu_draws_GQ{suffix}.png"), p, width=10, height=15)
+  ggsave(glue("{fig_dir}/mu_draws_GQ{suffix}.png"), p, width=10, height=15)
 
   mu_pred_df <- mu_draws_df |>
     summarise(mn=mean(mu),
@@ -281,19 +283,19 @@ if(GQ) {
     geom_linerange() +
     geom_abline() +
     facet_grid(farm~stage, scales="free")
-  ggsave(glue("figs/ipm_fit/mu_scatter_1_{suffix}.png"), p)
+  ggsave(glue("figs/ipm_fit/mu_scatter_1{suffix}.png"), p)
   p <- ggplot(mu_pred_df, aes(mn, xmin=lo, xmax=hi, y=obs)) +
     geom_point(shape=1) +
     geom_linerange() +
     geom_abline() +
     facet_wrap(~stage, scales="free")
-  ggsave(glue("figs/ipm_fit/mu_scatter_2_{suffix}.png"), p)
+  ggsave(glue("figs/ipm_fit/mu_scatter_2{suffix}.png"), p)
   p <- ggplot(mu_pred_df |> filter(stage=="Ad"), aes(mn, xmin=lo, xmax=hi, y=obs)) +
     geom_point(shape=1) +
     geom_linerange() +
     geom_abline() +
     facet_wrap(~farm, scales="free")
-  ggsave(glue("figs/ipm_fit/mu_scatter_3_{suffix}.png"), p)
+  ggsave(glue("figs/ipm_fit/mu_scatter_3{suffix}.png"), p)
 }
 
 mu_draws_df <- take_mu_draws(out_full_df, NULL,
@@ -308,69 +310,118 @@ p <- mu_draws_df |>
   {if(any((mu_draws_df |> filter(stage=="Ad"))$mu > 15)) scale_y_continuous(limits=c(0, 15), oob=scales::oob_keep)} +
   scale_x_date(date_labels="%b") +
   facet_grid(farm~., scales="free_y")
-ggsave(glue("{fig_dir}/fig_mu_draws{suffix}.png"), p, width=10, height=15)
+ggsave(glue("{fig_dir}/mu_draws{suffix}.png"), p, width=10, height=15)
 
 if("y_pred" %in% keep_pars) {
-  sampledDays <- readRDS(glue("{dat_dir}/sampledDays.rds")) |>
+  sampledDays <- stan_dat$dat$sample_i |>
     as_tibble() |>
     rename(farm=sepaSite) |>
     mutate(farm=as.character(farm),
            sample=row_number()) |>
-    inner_join(readRDS(glue("{dat_dir}/nFishSampled_mx.rds")) |>
+    inner_join(stan_dat$dat$nFishSampled_mx |>
+                 t() |>
                  as_tibble() |>
                  mutate(day=row_number()) |>
-                 pivot_longer(-day, names_to="farm", values_to="nFishSampled") |>
-                 mutate(farm=str_sub(farm, 2, -1)))
+                 pivot_longer(starts_with("V"), names_to="farm", values_to="nFishSampled") |>
+                 mutate(farm=str_sub(farm, 2, -1)),
+               by=join_by(farm, day))
 
-  # TODO: These aren't lined up correctly. Farms are missing from the predictions
-  y_df <- out_full_df |>
+  y_df <- out_full_sum |>
     filter(grepl("y_pred\\[[1-3]", name)) |>
     separate_wider_delim(name, delim=",", names=c("stage", "sample")) |>
     mutate(sample=as.numeric(str_sub(sample, 1, -2)),
            stage=factor(stage, levels=paste0("y_pred[", 1:3), labels=c("Ch", "PA", "Ad"))) |>
-    group_by(.chain, .iteration, .draw, stage, sample) |>
-    summarise(value=sum(value, na.rm=T)) |>
-    group_by(stage, sample) |>
-    sevcheck::get_intervals(value, type="qi") |>
-    ungroup() |>
     left_join(sampledDays, by=join_by(sample)) |>
     select(-sample) |>
-    mutate(type="Fitted") |> rename(y=med) |>
-    bind_rows(expand_grid(farm=as.character(1:info$nFarms),
+    inner_join(expand_grid(farm=as.character(1:info$nFarms),
                           day=1:info$nDays,
                           stage=factor(c("Ch", "PA", "Ad"), levels=c("Ch", "PA", "Ad"))) |>
                 mutate(y=c(readRDS(glue("{dat_dir}/y_obs.rds")))) |>
-                mutate(type="Obs") |>
-                inner_join(sampledDays |> select(-sample), by=join_by(farm, day))) |>
+                inner_join(sampledDays |> select(farm, day), by=join_by(farm, day)),
+               by=join_by(farm, day, stage)) |>
     mutate(day=ymd("2025-01-01") + day - 1,
            farm=paste("Farm", farm),
-           y_perFish=y/nFishSampled) |>
+           across(c(any_of(c("mn", "med", "y")), starts_with("L")), ~.x/nFishSampled)) |>
     filter(nFishSampled > 0)
   y_df |>
     saveRDS(glue("{dat_dir}/y_fitted{suffix}.rds"))
 
+  y_post <- out_full_df |>
+    filter(.draw %in% sample.int(3000, 200) & grepl("y_pred\\[[1-3]", name)) |>
+    separate_wider_delim(name, delim=",", names=c("stage", "sample")) |>
+    mutate(sample=as.numeric(str_sub(sample, 1, -2)),
+           stage=factor(stage, levels=paste0("y_pred[", 1:3), labels=c("Ch", "PA", "Ad"))) |>
+    left_join(sampledDays, by=join_by(sample)) |>
+    select(-sample) |>
+    mutate(y_rep=value/nFishSampled,
+           farm=paste("Farm", farm))
+  pA <- y_post |>
+    ggplot(aes(y_rep)) +
+    geom_density(aes(group=.draw), alpha=0.1, colour="steelblue3") +
+    geom_density(data=y_df, aes(y))
+  pB <- y_post |>
+    ggplot(aes(y_rep)) +
+    geom_density(aes(group=.draw), alpha=0.1, colour="steelblue3") +
+    geom_density(data=y_df, aes(y)) +
+    facet_wrap(~stage, scales="free")
+  pC <- y_post |>
+    ggplot(aes(y_rep)) +
+    geom_density(aes(group=.draw), alpha=0.1, colour="steelblue3") +
+    geom_density(data=y_df, aes(y)) +
+    facet_wrap(~stage*farm, scales="free", ncol=10)
+  ggsave(glue("{fig_dir}/ppcheck_1{suffix}.png"), pA, width=5, height=5)
+  ggsave(glue("{fig_dir}/ppcheck_2{suffix}.png"), pB, width=10, height=4)
+  ggsave(glue("{fig_dir}/ppcheck_3{suffix}.png"), pC, width=15, height=8)
+
+  pA <- y_post |>
+    ggplot(aes(y_rep)) +
+    geom_density(aes(group=.draw), alpha=0.1, colour="steelblue3") +
+    geom_density(data=y_df, aes(y)) +
+    scale_x_continuous(transform="log1p")
+  pB <- y_post |>
+    ggplot(aes(y_rep)) +
+    geom_density(aes(group=.draw), alpha=0.1, colour="steelblue3") +
+    geom_density(data=y_df, aes(y)) +
+    facet_wrap(~stage, scales="free") +
+    scale_x_continuous(transform="log1p")
+  pC <- y_post |>
+    ggplot(aes(y_rep)) +
+    geom_density(aes(group=.draw), alpha=0.1, colour="steelblue3") +
+    geom_density(data=y_df, aes(y)) +
+    facet_wrap(~stage*farm, scales="free", ncol=10) +
+    scale_x_continuous(transform="log1p")
+  ggsave(glue("{fig_dir}/ppcheck_1log{suffix}.png"), pA, width=5, height=5)
+  ggsave(glue("{fig_dir}/ppcheck_2log{suffix}.png"), pB, width=10, height=4)
+  ggsave(glue("{fig_dir}/ppcheck_3log{suffix}.png"), pC, width=15, height=8)
+
+
   p <- y_df |>
-    ggplot(aes(day, y_perFish)) +
-    geom_linerange(aes(ymin=L10/nFishSampled, ymax=L90/nFishSampled, group=type), linewidth=0.25) +
-    geom_point(aes(colour=type, shape=type)) +
-    scale_colour_manual("", values=c("Obs"="blue", "Fitted"="black")) +
-    scale_shape_manual("", values=c("Obs"=4, "Fitted"=1)) +
-    labs(x="Date", y="Mean lice per fish (observed) [50% CI]") +
+    ggplot(aes(mn, y)) +
+    # geom_abline() +
+    geom_point(alpha=0.2, shape=1) +
+    facet_wrap(~stage, scales="free")
+  ggsave(glue("{fig_dir}/y_scatter{suffix}.png"), p, width=10, height=5)
+
+  p <- y_df |>
+    ggplot(aes(day, mn)) +
+    geom_linerange(aes(ymin=L10, ymax=L90), linewidth=0.25) +
+    geom_point(shape=1) +
+    geom_point(aes(y=y), colour="blue", shape=4) +
+    labs(x="Date", y="Mean lice per fish (observed) [80% CI]") +
     scale_x_date(date_labels="%b") +
     facet_grid(stage~farm, scales="free_y")
-  ggsave(glue("{fig_dir}/fig_y{suffix}.png"), p, width=15, height=7)
+  ggsave(glue("{fig_dir}/y{suffix}.png"), p, width=15, height=7)
 
   p <- y_df |>
     filter(stage=="Ad") |>
-    ggplot(aes(day, y_perFish)) +
-    geom_linerange(aes(ymin=L10/nFishSampled, ymax=L90/nFishSampled, group=type), linewidth=0.25) +
-    geom_point(aes(colour=type, shape=type)) +
-    scale_colour_manual("", values=c("Obs"="blue", "Fitted"="black")) +
-    scale_shape_manual("", values=c("Obs"=4, "Fitted"=1)) +
-    labs(x="Date", y="Mean adult female lice per fish (observed) [50% CI]") +
+    ggplot(aes(day, mn)) +
+    geom_linerange(aes(ymin=L10, ymax=L90), linewidth=0.25) +
+    geom_point(shape=1) +
+    geom_point(aes(y=y), colour="blue", shape=4) +
+    labs(x="Date", y="Mean adult female lice per fish (observed) [80% CI]") +
     scale_x_date(date_labels="%b") +
     facet_grid(farm~., scales="free_y")
-  ggsave(glue("{fig_dir}/fig_y_AF{suffix}.png"), p, width=6, height=15)
+  ggsave(glue("{fig_dir}/y_AF{suffix}.png"), p, width=6, height=15)
 }
 
 
@@ -379,20 +430,23 @@ if("y_pred" %in% keep_pars) {
 
 # rhat --------------------------------------------------------------------
 
-out_split <- out_full |>
+library(furrr)
+plan(multicore, workers=10)
+out_split <- out_full_df |>
   filter(name %in% param_key$name) |>
   group_split(name)
-rhats <- future_map_dbl(out_split, ~rstan::Rhat(matrix(.x$value, nrow=500, ncol=6))) |>
+rhats <- future_map_dbl(out_split, ~rstan::Rhat(matrix(.x$value, nrow=iter, ncol=n_chains))) |>
   set_names(map_chr(out_split, ~.x$name[1]))
-rhats |>
+plan(sequential)
+p <- rhats |>
   as_tibble() |>
   mutate(name=names(rhats),
          type=str_split_i(name, "\\[", 1)) |>
   ggplot(aes(value, name)) +
   geom_point() +
   geom_vline(xintercept=1.05) +
-  facet_wrap(~type, scales="free_y", space="free_y", ncol=1) +
-  theme(axis.text.y=element_blank())
+  facet_wrap(~type, scales="free_y", space="free_y", ncol=1)
+ggsave(glue("{fig_dir}/rhat{suffix}.png"), p, width=5, height=10)
 
 
 
