@@ -94,7 +94,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     stan_dat$attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx_RW.rds"))[,hours,]
   } else if(fishCol=="BSA") {
     # attach_beta: [c(Int, BSA, Sal, Temp, UV, Temp^2, UV^2), c(mu, sigma)]; normal (logit scale)
-    stan_dat$prior_attach_beta=cbind(c(-3, 0.25, -0.25, 0.25, 0, 0),
+    stan_dat$prior_attach_beta=cbind(c(-3, 1, 0.25, -0.25, 0.25, 0, 0),
                                      c(0.5, rep(0.25, stan_dat$nAttachCov-3), 0.25, 0.25))
     stan_dat$attach_env_mx=readRDS(glue("{dat_dir}attach_env_mx_BSA.rds"))[,hours,]
   }
