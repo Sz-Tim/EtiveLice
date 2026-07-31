@@ -17,11 +17,11 @@ dir("code/fn", ".R", full.names=T) |> walk(source)
 theme_set(theme_classic())
 
 prior_only <- F
-GQ <- T
-refit <- F
+GQ <- F
+refit <- T
 
 mod <- c("noHarm_randIPbg", "noHarm_ydayIPbg",
-         "Harm_randIPbg", "Harm_ydayIPbg")[1]
+         "Harm_randIPbg", "Harm_ydayIPbg")[4]
 fishCol <- c("RW_logit", "BSA")[2]
 suffix <- paste0(switch(mod,
                         'noHarm_randIPbg'='_noHarm_randIPbg',
@@ -75,7 +75,9 @@ param_key <- tibble(name=c({if(fishCol=="BSA") {
                            paste0("detect_p[", 1:2, "]"),
                            "nb_prec",
                            "IP_scale", "IP_halfSat_m3",
-                           paste0("trtEff_type[", 1:8, "]")),
+                           paste0("trtEff_type[", outer(1:8, 1:3, paste, sep=","), "]")
+                           # paste0("trtEff_type[", 1:8, "]")
+                          ),
                     label=c({if(fishCol=="BSA") {
                               paste0("attach_", c("Int", "Fish", "Sal", "Temp", "UV", "Tempsq", "UVsq"))
                             } else {
@@ -106,7 +108,8 @@ param_key <- tibble(name=c({if(fishCol=="BSA") {
                             paste0("p_detect_", stageGrps[-3]),
                             "neg_binom_prec",
                             "IP_scale", "IP_halfSat_m3",
-                            paste0("trtEff_", trt_meth_ii$abbr)
+                            paste0("trtEff_type[", outer(trt_meth_ii$abbr, stageGrps, paste, sep=","), "]")
+                            # paste0("trtEff_", trt_meth_ii$abbr)
                     )) |>
   mutate(label=factor(label, levels=unique(label)))
 
@@ -114,8 +117,8 @@ keep_pars <- c(ifelse(grepl("ydayIP", mod), "log_IP_bg_m3_coef", "IP_bg_m3"),
                ifelse(grepl("noHarm", mod), "ensWts_p", "ensWts_harm"),
                "attach_beta","surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
                "detect_p", "nb_prec", "trtEff_type",
-               "mu", "mu_GQ", "y_pred", "y_bar_GQ",
-               "N_attach", "N_attach_GQ",
+               # "mu", "mu_GQ", "y_pred", "y_bar_GQ",
+               # "N_attach", "N_attach_GQ",
                "log_lik", "log_lik_GQ"
 )
 if(!GQ) keep_pars <- grep("_GQ", keep_pars, invert=T, value=T)
@@ -141,21 +144,38 @@ if(refit) {
   fit_full <- mod_full$sample(
     data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
     adapt_delta=0.95,
+    # iter_warmup=5, iter_sampling=5, chains=2
     iter_warmup=2000, iter_sampling=iter,
     chains=n_chains, parallel_chains=n_chains
   )
 
-  suffix <- paste0(suffix, "_tq")
+  suffix <- paste0(suffix, "_tq_trtStg")
 
   out_full_df <- fit_full$draws(
     variables=keep_pars,
     format="df") |>
     pivot_longer(-starts_with("."))
-  saveRDS(out_full_df, glue("{out_dir}posterior{suffix}.rds"))
+  # saveRDS(out_full_df, glue("{out_dir}posterior{suffix}.rds"))
   out_full_sum <- out_full_df |>
     group_by(name) |>
     sevcheck::get_intervals(value, type="qi")
   saveRDS(out_full_sum, glue("{out_dir}posterior_summary{suffix}.rds"))
+
+  out_full_df |>
+    filter(grepl("ensWts", name)) |>
+    saveRDS(glue("{out_dir}posterior_ensWts{suffix}.rds"))
+  out_full_df |>
+    filter(grepl("log_lik", name)) |>
+    saveRDS(glue("{out_dir}posterior_log_lik{suffix}.rds"))
+  out_full_df |>
+    filter(grepl("attach_beta", name)) |>
+    saveRDS(glue("{out_dir}posterior_attach_beta{suffix}.rds"))
+  out_full_df |>
+    filter(grepl("surv_beta", name)) |>
+    saveRDS(glue("{out_dir}posterior_surv_beta{suffix}.rds"))
+  out_full_df |>
+    filter(grepl("mnDaysStage_beta", name)) |>
+    saveRDS(glue("{out_dir}posterior_mnDaysStage_beta{suffix}.rds"))
 } else {
   suffix <- paste0(suffix, "_tq")
   out_full_df <- readRDS(glue("{out_dir}posterior{suffix}.rds"))
@@ -213,7 +233,7 @@ p_surv_sd <- list(out_full_df, out_full_sum) |>
   geom_vline(xintercept=0, linetype=3)
 p_trt <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("trtEff_type", name)) |> inner_join(param_key, by=join_by(name))) |>
-  post_summary_plot(ncol=4, scales="free_y") +
+  post_summary_plot(ncol=8, scales="free_y") +
   xlim(0, 1)
 p_pMoltTemp <- list(out_full_df, out_full_sum) |>
   map(~.x |> filter(grepl("mnDaysStage_beta", name)) |> inner_join(param_key, by=join_by(name))) |>
@@ -522,8 +542,7 @@ ggsave(glue("{fig_dir}/IPbg_md_map{suffix}.png"),
 yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%24==1,]) |>
   set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
   mutate(yday=1:366)
-ensP_post <- out_full_df |>
-  filter(grepl("ensWts", name)) |>
+ensP_post <- readRDS(glue("{out_dir}posterior_ensWts{suffix}.rds")) |>
   inner_join(param_key, by=join_by(name)) |>
   mutate(sim=paste("Sim", str_split_i(label, "_", 3)),
          param=str_split_i(label, "_", 2)) |>
@@ -548,13 +567,13 @@ ensP_sum <- ensP_post |>
   mutate(date_std=ymd("2020-01-01") + yday - 1,
          sim=factor(sim, levels=paste("Sim", 1:50)))
 
-ggplot(ensP_sum, aes(date_std, md, group=sim)) +
-  geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.1) +
-  geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.1) +
-  geom_line() +
-  scale_y_continuous("Ensemble weight p", limits=c(0, 1),
-                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-  scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b")
+# ggplot(ensP_sum, aes(date_std, md, group=sim)) +
+#   geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.1) +
+#   geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.1) +
+#   geom_line() +
+#   scale_y_continuous("Ensemble weight p", limits=c(0, 1),
+#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+#   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b")
 
 p <- ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
   geom_area(position="fill", colour="grey30", linewidth=0.1) +
@@ -608,10 +627,9 @@ farm_env_avg <- readRDS(glue("{dat_dir}/farm_env_avg.rds"))
 
 if(fishCol=="RW_logit") {
   attach_mx <- readRDS(glue("{dat_dir}/attach_env_mx_RW.rds"))
-  pAttach_post_draws <- glue("{out_dir}/posterior{suffix}.rds") |>
+  pAttach_post_draws <- glue("{out_dir}posterior_attach_beta{suffix}.rds") |>
     readRDS() |>
     filter(.draw %in% draw_sample) |>
-    filter(grepl("attach_beta", name)) |>
     select(-.iteration, -.chain) |>
     mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
     select(-name) |>
@@ -674,10 +692,9 @@ if(fishCol=="RW_logit") {
     facet_grid(RW~UV_raw)
 } else if(fishCol=="BSA") {
   attach_mx <- readRDS(glue("{dat_dir}/attach_env_mx_BSA.rds"))
-  pAttach_post_draws <- glue("{out_dir}/posterior{suffix}.rds") |>
+  pAttach_post_draws <- glue("{out_dir}posterior_attach_beta{suffix}.rds") |>
     readRDS() |>
     filter(.draw %in% draw_sample) |>
-    filter(grepl("attach_beta", name)) |>
     select(-.iteration, -.chain) |>
     mutate(beta=paste0("b", str_sub(name, -2, -2))) |>
     select(-name) |>
@@ -688,7 +705,7 @@ if(fishCol=="RW_logit") {
       expand_grid(
         Int=1,
         BSA=seq_quantiles(c(attach_mx[,,2])[c(attach_mx[,,2]) > 0], 0.25, 0.75, length.out=2),
-        Sal=seq_quantiles(c(attach_mx[,,3]), 0.25, 0.75, length.out=3) |> round(),
+        Sal=seq_quantiles(c(attach_mx[,,3]), 0.01, 0.99, length.out=3) |> round(),
         Temp=seq_quantiles(c(attach_mx[,,4]), 0.1, 0.9, length.out=3),
         UV=seq_quantiles(c(attach_mx[,,5]), 0, 0.995,  length.out=20)
       ) |>
@@ -707,7 +724,24 @@ if(fishCol=="RW_logit") {
         BSA=seq_quantiles(c(attach_mx[,,2])[c(attach_mx[,,2]) > 0], 0.25, 0.75, length.out=2),
         Sal=seq_quantiles(c(attach_mx[,,3]), 0.01, 0.99, length.out=20),
         Temp=seq_quantiles(c(attach_mx[,,4]), 0.1, 0.9, length.out=3),
-        UV=seq_quantiles(c(attach_mx[,,5]), 0.25, 0.75,  length.out=3) |> round()
+        UV=seq_quantiles(c(attach_mx[,,5]), 0.1, 0.95,  length.out=3) |> round()
+      ) |>
+        mutate(UV_sq=UV^2)
+    )) |>
+    unnest(attach_df) |>
+    mutate(pAttach=plogis(b1*Int + b2*BSA + b3*Sal + b4*Temp + b5*UV + b6*UV_sq),
+           salinity=Sal*farm_env_avg$salinity[2] + farm_env_avg$salinity[1],
+           UV_raw=UV*farm_env_avg$uv[2] + farm_env_avg$uv[1],
+           BSA=BSA*farm_env_avg$BSA[2],
+           temperature=Temp*farm_env_avg$temperature[2] + farm_env_avg$temperature[1])
+  pAttach_post3 <- pAttach_post_draws |>
+    mutate(attach_df=list(
+      expand_grid(
+        Int=1,
+        BSA=seq_quantiles(c(attach_mx[,,2])[c(attach_mx[,,2]) > 0], 0.25, 0.75, length.out=2),
+        Sal=seq_quantiles(c(attach_mx[,,3]), 0.01, 0.99, length.out=3),
+        Temp=seq_quantiles(c(attach_mx[,,4]), 0.01, 0.99, length.out=20),
+        UV=seq_quantiles(c(attach_mx[,,5]), 0.1, 0.95,  length.out=3) |> round()
       ) |>
         mutate(UV_sq=UV^2)
     )) |>
@@ -725,7 +759,7 @@ if(fishCol=="RW_logit") {
     ggplot(aes(UV_raw, pAttach,
                group=paste(BSA, salinity, temperature, .draw), colour=temperature)) +
     geom_line(alpha=0.2, linewidth=0.2) +
-    scale_colour_viridis_c(option="plasma", end=0.9) +
+    scale_colour_viridis_c("Temperature (C)", option="plasma", end=0.9) +
     ylim(0, NA) +
     labs(x="UV (cm/s)", y="Pr(Attach to host)") +
     facet_grid(BSA~salinity)
@@ -736,28 +770,41 @@ if(fishCol=="RW_logit") {
     ggplot(aes(salinity, pAttach,
                group=paste(BSA, UV_raw, temperature, .draw), colour=temperature)) +
     geom_line(alpha=0.2, linewidth=0.2) +
-    scale_colour_viridis_c(option="plasma", end=0.9) +
+    scale_colour_viridis_c("Temperature (C)", option="plasma", end=0.9) +
     ylim(0, NA) +
     labs(x="Salinity (psu)", y="Pr(Attach to host)") +
     facet_grid(BSA~UV_raw)
+  pC <- pAttach_post3 |>
+    mutate(UV_raw=paste(round(UV_raw, 1), "cm/s"),
+           UV_raw=factor(UV_raw, levels=unique(UV_raw)),
+           BSA=paste("BSA:", round(BSA, 2))) |>
+    ggplot(aes(temperature, pAttach,
+               group=paste(BSA, UV_raw, salinity, .draw), colour=salinity)) +
+    geom_line(alpha=0.2, linewidth=0.2) +
+    scale_colour_distiller("Salinity (psu)", palette="Blues") +
+    ylim(0, NA) +
+    labs(x="Temperature (C)", y="Pr(Attach to host)") +
+    facet_grid(BSA~UV_raw)
 }
 
-plot_grid(pA + theme(legend.position="none"),
-          pB + theme(legend.position="none"),
-          get_legend(pA),
-          nrow=1, ncol=3, rel_widths=c(1,1,0.3),
-          align="hv", axis="tblr", labels=c("A", "B", "")) |>
-  ggsave(glue("{fig_dir}/postAttachReg{suffix}.png"),
-       plot=_, width=12, height=4)
+# plot_grid(pA + theme(legend.position="none"),
+#           pB + theme(legend.position="none"),
+#           get_legend(pA),
+#           nrow=1, ncol=3, rel_widths=c(1,1,0.3),
+#           align="hv", axis="tblr", labels=c("A", "B", "")) |>
+#   ggsave(glue("{fig_dir}/postAttachReg{suffix}.png"),
+#        plot=_, width=12, height=4)
+ggsave(glue("{fig_dir}/postAttachRegA{suffix}.png"), pA, width=7, height=5)
+ggsave(glue("{fig_dir}/postAttachRegB{suffix}.png"), pB, width=7, height=5)
+ggsave(glue("{fig_dir}/postAttachRegC{suffix}.png"), pC, width=7, height=5)
 
 
 # . Salinity covariate effects --------------------------------------------
 S_range <- range(readRDS(glue("{dat_dir}/sal_mx.rds")))
 S_df <- tibble(sal=seq_range(S_range, length.out=100))
-pSurv_post <- glue("{out_dir}/posterior{suffix}.rds") |>
+pSurv_post <- glue("{out_dir}posterior_surv_beta{suffix}.rds") |>
   readRDS() |>
   filter(.draw %in% draw_sample) |>
-  filter(grepl("surv_beta", name)) |>
   select(-.iteration, -.chain) |>
   inner_join(param_key, by=join_by(name)) |>
   select(-name) |>
@@ -792,10 +839,9 @@ T_z_range <- range(readRDS(glue("{dat_dir}/temp_z_mx.rds")))
 T_df <- tibble(temp=seq_range(T_range, length.out=100),
                temp_z=seq_range(T_z_range, length.out=100))
 
-stageDur_df <-  glue("{out_dir}/posterior{suffix}.rds") |>
+stageDur_df <-  glue("{out_dir}posterior_mnDaysStage_beta{suffix}.rds") |>
   readRDS() |>
   filter(.draw %in% draw_sample) |>
-  filter(grepl("mnDaysStage_beta", name)) |>
   select(-.iteration, -.chain) |>
   inner_join(param_key, by=join_by(name)) |>
   select(-name) |>
@@ -854,15 +900,15 @@ if(FALSE) {
   library(loo)
 
   mod_f <- dir("out/ipm_fit", "posterior", full.names=T) |>
+    grep("noGQ", x=_, value=T) |>
     grep("summary|PRIORS", x=_, invert=T, value=T)
 
-  ll_names <- c("log_lik\\[", "log_lik_GQ", "log_lik\\[", "log_lik_GQ", "log_lik\\[", "log_lik_GQ", "log_lik\\[")
-
-  log_lik_ls <- map2(mod_f, ll_names,
+  log_lik_ls <- map(mod_f,
                      ~readRDS(.x) |>
-                       filter(grepl(.y, name)) |>
+                       filter(grepl("log_lik", name)) |>
                        mutate(name=factor(name)) |>
                        arrange(name, .chain, .iteration))
+  saveRDS(log_lik_ls, "out/ipm_fit/log_lik_ls.rds")
 
   log_lik_df <- map_dfr(seq_along(mod_f),
                         ~log_lik_ls[[.x]] |>
@@ -871,14 +917,23 @@ if(FALSE) {
                           mutate(mod=basename(mod_f[.x]) |>
                                    str_remove(".rds"))) |>
     mutate(clean=factor(mod,
-                        levels=paste0("posterior",
-                                      c("_randIPbg_BSA", "_noHarm_ydayIPbg_BSA", "_ydayIPbg_BSA", "_BSA",
-                                        "", "_noHarm", "_randIPbg_RW_logit")),
-                        labels=c("ranIPbg_ydayEns_BSA", "ydayIPbg_fixEns_BSA", "ydayIPbg_ydayEns_BSA", "fixIPbg_ydayEns_BSA",
-                                 "fixIPbg_ydayEns_RW", "fixIPbg_fixEns_RW", "ranIPbg_ydayEns_RW")))
+                        levels=paste0("posterior_",
+                                      c("noHarm_ydayIPbg_BSA_noGQ",
+                                        "noHarm_randIPbg_BSA_noGQ_tq", "noHarm_ydayIPbg_BSA_noGQ_tq",
+                                        "randIPbg_BSA_noGQ_tq", "ydayIPbg_BSA_noGQ_tq")),
+                        labels=c("noHarm_ydayIPbg_linTemp", "noHarm_fixIPbg", "noHarm_ydayIPbg",
+                                 "Harm_fixIPbg", "Harm_ydayIPbg")))
+    # mutate(clean=factor(mod,
+    #                     levels=paste0("posterior",
+    #                                   c("_randIPbg_BSA", "_noHarm_ydayIPbg_BSA", "_ydayIPbg_BSA", "_BSA",
+    #                                     "", "_noHarm", "_randIPbg_RW_logit")),
+    #                     labels=c("ranIPbg_ydayEns_BSA", "ydayIPbg_fixEns_BSA", "ydayIPbg_ydayEns_BSA", "fixIPbg_ydayEns_BSA",
+    #                              "fixIPbg_ydayEns_RW", "fixIPbg_fixEns_RW", "ranIPbg_ydayEns_RW")))
+  saveRDS(log_lik_df, "out/ipm_fit/log_lik_df.rds")
 
-  ggplot(log_lik_df, aes(nll, y=clean)) +
+  p <- ggplot(log_lik_df, aes(nll, y=clean)) +
     ggdist::stat_halfeye()
+  ggsave("figs/ipm_fit/log_lik_distributions.png", p)
 
   log_lik_df |>
     summarise(mn=mean(nll),
