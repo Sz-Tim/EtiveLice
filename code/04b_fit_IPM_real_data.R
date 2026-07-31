@@ -18,6 +18,7 @@ theme_set(theme_classic())
 
 prior_only <- F
 GQ <- T
+refit <- F
 
 mod <- c("noHarm_randIPbg", "noHarm_ydayIPbg",
          "Harm_randIPbg", "Harm_ydayIPbg")[1]
@@ -135,25 +136,31 @@ stan_dat <- make_stan_data(dat_dir, priors_only=prior_only, source="real",
                            fishCol=fishCol,
                            prior_ls=prior_ls)
 
-mod_full <- cmdstan_model(glue("code/stan/tuning_integrated_population_model{str_remove(suffix, '_PRIORS') |> str_remove(paste0('_', fishCol)) |> str_remove('_noGQ')}.stan"))
-fit_full <- mod_full$sample(
-  data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
-  adapt_delta=0.95,
-  iter_warmup=2000, iter_sampling=iter,
-  chains=n_chains, parallel_chains=n_chains
-)
+if(refit) {
+  mod_full <- cmdstan_model(glue("code/stan/tuning_integrated_population_model{str_remove(suffix, '_PRIORS') |> str_remove(paste0('_', fishCol)) |> str_remove('_noGQ')}.stan"))
+  fit_full <- mod_full$sample(
+    data=stan_dat$dat, init=0, seed=101, refresh=max(iter/100, 1),
+    adapt_delta=0.95,
+    iter_warmup=2000, iter_sampling=iter,
+    chains=n_chains, parallel_chains=n_chains
+  )
 
-suffix <- paste0(suffix, "_tq")
+  suffix <- paste0(suffix, "_tq")
 
-out_full_df <- fit_full$draws(
-  variables=keep_pars,
-  format="df") |>
-  pivot_longer(-starts_with("."))
-saveRDS(out_full_df, glue("{out_dir}posterior{suffix}.rds"))
-out_full_sum <- out_full_df |>
-  group_by(name) |>
-  sevcheck::get_intervals(value, type="qi")
-saveRDS(out_full_sum, glue("{out_dir}posterior_summary{suffix}.rds"))
+  out_full_df <- fit_full$draws(
+    variables=keep_pars,
+    format="df") |>
+    pivot_longer(-starts_with("."))
+  saveRDS(out_full_df, glue("{out_dir}posterior{suffix}.rds"))
+  out_full_sum <- out_full_df |>
+    group_by(name) |>
+    sevcheck::get_intervals(value, type="qi")
+  saveRDS(out_full_sum, glue("{out_dir}posterior_summary{suffix}.rds"))
+} else {
+  suffix <- paste0(suffix, "_tq")
+  out_full_df <- readRDS(glue("{out_dir}posterior{suffix}.rds"))
+  out_full_sum <- readRDS(glue("{out_dir}posterior_summary{suffix}.rds"))
+}
 
 
 
@@ -515,7 +522,7 @@ ggsave(glue("{fig_dir}/IPbg_md_map{suffix}.png"),
 yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%24==1,]) |>
   set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
   mutate(yday=1:366)
-ensP_post <- out_full |>
+ensP_post <- out_full_df |>
   filter(grepl("ensWts", name)) |>
   inner_join(param_key, by=join_by(name)) |>
   mutate(sim=paste("Sim", str_split_i(label, "_", 3)),
@@ -563,37 +570,37 @@ p <- ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
 ggsave(glue("{fig_dir}/IPens_md{suffix}.png"),
        plot=p, width=4.5, height=4.5)
 
-ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
-  geom_area(position="fill", colour="grey30", linewidth=0.1) +
-  scale_fill_brewer("Simulation", palette="Paired") +
-  scale_y_continuous("Weight in ensemble", limits=c(0, 1),
-                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-  scale_x_datetime("Day of year", date_breaks="1 month", date_labels="%b") +
-  coord_polar()
-
-ensP_post |>
-  filter(.draw %in% draw_sample[1:20]) |>
-  mutate(date_std=ymd("2020-01-01") + yday - 1,
-         sim=factor(sim, levels=paste("Sim", 1:50))) |>
-  ggplot(aes(date_std, p, fill=sim)) +
-  geom_area(position="fill", colour="grey30", linewidth=0.1) +
-  scale_fill_brewer("Simulation", palette="Paired") +
-  scale_y_continuous("Weight in ensemble", limits=c(0, 1),
-                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-  scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
-  facet_wrap(~.draw, nrow=4)
-
-
-ensP_post |>
-  filter(.draw %in% draw_sample) |>
-  mutate(date_std=ymd("2020-01-01") + yday - 1,
-         sim=factor(sim, levels=paste("Sim", 1:50))) |>
-  ggplot(aes(date_std, p, group=.draw)) +
-  geom_line(alpha=0.2) +
-  scale_y_continuous("Weight in ensemble", limits=c(0, 1),
-                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-  scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
-  facet_wrap(~sim, nrow=2)
+# ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
+#   geom_area(position="fill", colour="grey30", linewidth=0.1) +
+#   scale_fill_brewer("Simulation", palette="Paired") +
+#   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+#   scale_x_datetime("Day of year", date_breaks="1 month", date_labels="%b") +
+#   coord_polar()
+#
+# ensP_post |>
+#   filter(.draw %in% draw_sample[1:20]) |>
+#   mutate(date_std=ymd("2020-01-01") + yday - 1,
+#          sim=factor(sim, levels=paste("Sim", 1:50))) |>
+#   ggplot(aes(date_std, p, fill=sim)) +
+#   geom_area(position="fill", colour="grey30", linewidth=0.1) +
+#   scale_fill_brewer("Simulation", palette="Paired") +
+#   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+#   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
+#   facet_wrap(~.draw, nrow=4)
+#
+#
+# ensP_post |>
+#   filter(.draw %in% draw_sample) |>
+#   mutate(date_std=ymd("2020-01-01") + yday - 1,
+#          sim=factor(sim, levels=paste("Sim", 1:50))) |>
+#   ggplot(aes(date_std, p, group=.draw)) +
+#   geom_line(alpha=0.2) +
+#   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+#   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
+#   facet_wrap(~sim, nrow=2)
 
 
 # . Attachment covariate effects ------------------------------------------
