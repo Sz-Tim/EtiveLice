@@ -117,8 +117,8 @@ keep_pars <- c(ifelse(grepl("ydayIP", mod), "log_IP_bg_m3_coef", "IP_bg_m3"),
                ifelse(grepl("noHarm", mod), "ensWts_p", "ensWts_harm"),
                "attach_beta","surv_beta", "surv_int_farm_sd", "mnDaysStage_beta",
                "detect_p", "nb_prec", "trtEff_type",
-               # "mu", "mu_GQ", "y_pred", "y_bar_GQ",
-               # "N_attach", "N_attach_GQ",
+               "mu", "mu_GQ", "y_pred", "y_bar_GQ",
+               "N_attach", "N_attach_GQ",
                "log_lik", "log_lik_GQ"
 )
 if(!GQ) keep_pars <- grep("_GQ", keep_pars, invert=T, value=T)
@@ -161,21 +161,10 @@ if(refit) {
     sevcheck::get_intervals(value, type="qi")
   saveRDS(out_full_sum, glue("{out_dir}posterior_summary{suffix}.rds"))
 
-  out_full_df |>
-    filter(grepl("ensWts", name)) |>
-    saveRDS(glue("{out_dir}posterior_ensWts{suffix}.rds"))
-  out_full_df |>
-    filter(grepl("log_lik", name)) |>
-    saveRDS(glue("{out_dir}posterior_log_lik{suffix}.rds"))
-  out_full_df |>
-    filter(grepl("attach_beta", name)) |>
-    saveRDS(glue("{out_dir}posterior_attach_beta{suffix}.rds"))
-  out_full_df |>
-    filter(grepl("surv_beta", name)) |>
-    saveRDS(glue("{out_dir}posterior_surv_beta{suffix}.rds"))
-  out_full_df |>
-    filter(grepl("mnDaysStage_beta", name)) |>
-    saveRDS(glue("{out_dir}posterior_mnDaysStage_beta{suffix}.rds"))
+  walk(keep_pars,
+       ~out_full_df |>
+         filter(grepl(.x, name)) |>
+         saveRDS(glue("{out_dir}{.x}_post{suffix}.rds")))
 } else {
   suffix <- paste0(suffix, "_tq")
   out_full_df <- readRDS(glue("{out_dir}posterior{suffix}.rds"))
@@ -498,128 +487,133 @@ draw_sample <- sample.int(1500, 300)
 
 # . IPbg ------------------------------------------------------------------
 
-library(sf)
-mesh_dir <- ifelse(sevcheck::get_os()=="windows", "../03_packages/WeStCOMS/data", "~/hydro/meshes")
-farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
-farm_bbox <- list(xmin=145000, xmax=225500, ymin=720000, ymax=785000)
-linnhe_fp <- st_read(glue("{mesh_dir}/WeStCOMS3_mesh_footprint.gpkg")) |>
-  st_crop(unlist(farm_bbox))
+if(grepl("randIPbg", suffix)) {
+  library(sf)
+  mesh_dir <- ifelse(sevcheck::get_os()=="windows", "../03_packages/WeStCOMS/data", "~/hydro/meshes")
+  farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
+  farm_bbox <- list(xmin=145000, xmax=225500, ymin=720000, ymax=785000)
+  linnhe_fp <- st_read(glue("{mesh_dir}/WeStCOMS3_mesh_footprint.gpkg")) |>
+    st_crop(unlist(farm_bbox))
 
-site_names <- readRDS(glue("{dat_dir}/site_names.rds"))
-farm_sites <- read_csv("data/farm_sites_widerLinnhe_2022-2025.csv")
-farm_IPbg <- out_full_sum |>
-  filter(grepl("IP_bg", name)) |>
-  mutate(farm=str_sub(name, 10, -2) |> as.numeric(),
-         sepaSite=names(site_names)[farm]) |>
-  left_join(farm_sites)
+  site_names <- readRDS(glue("{dat_dir}/site_names.rds"))
+  farm_sites <- read_csv("data/farm_sites_widerLinnhe_2022-2025.csv")
+  farm_IPbg <- out_full_sum |>
+    filter(grepl("IP_bg", name)) |>
+    mutate(farm=str_sub(name, 10, -2) |> as.numeric(),
+           sepaSite=names(site_names)[farm]) |>
+    left_join(farm_sites)
 
-p <- ggplot(linnhe_fp) +
-  geom_sf() +
-  geom_point(data=farm_IPbg, aes(easting, northing, fill=med), size=5, shape=21) +
-  scale_fill_viridis_c(expression("Posterior median lice "%.%" m"^"-3"%.%" h"^"-1"),
+  p <- ggplot(linnhe_fp) +
+    geom_sf() +
+    geom_point(data=farm_IPbg, aes(easting, northing, fill=med), size=5, shape=21) +
+    scale_fill_viridis_c(expression("Posterior median lice "%.%" m"^"-3"%.%" h"^"-1"),
                          option="plasma", begin=0.05, end=0.95, limits=c(0, NA),
-                       breaks=seq(0, 0.2, by=0.05),
-                       labels=c("0", "0.05", "0.10", "0.15", "0.20")) +
-  scale_x_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=3) +
-  scale_y_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=4) +
-  ggtitle("Background IP") +
-  theme(axis.title=element_blank(),
-        legend.position="inside",
-        # legend.position.inside=c(0.277, 0.915),
-        legend.position.inside=c(0.293, 0.915),
-        legend.direction="horizontal",
-        legend.title.position="top",
-        legend.key.height=unit(0.2, "cm"),
-        legend.key.width=unit(1, "cm"),
-        legend.background=element_rect(colour="grey30", linewidth=0.2, fill="white"))
-ggsave(glue("{fig_dir}/IPbg_md_map{suffix}.png"),
-       plot=p, width=5, height=5)
+                         breaks=seq(0, 0.2, by=0.05),
+                         labels=c("0", "0.05", "0.10", "0.15", "0.20")) +
+    scale_x_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=3) +
+    scale_y_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=4) +
+    ggtitle("Background IP") +
+    theme(axis.title=element_blank(),
+          legend.position="inside",
+          # legend.position.inside=c(0.277, 0.915),
+          legend.position.inside=c(0.293, 0.915),
+          legend.direction="horizontal",
+          legend.title.position="top",
+          legend.key.height=unit(0.2, "cm"),
+          legend.key.width=unit(1, "cm"),
+          legend.background=element_rect(colour="grey30", linewidth=0.2, fill="white"))
+  ggsave(glue("{fig_dir}/IPbg_md_map{suffix}.png"),
+         plot=p, width=5, height=5)
+}
 
 
 
 # . IP Ensemble weights ---------------------------------------------------
 
-yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%24==1,]) |>
-  set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
-  mutate(yday=1:366)
-ensP_post <- readRDS(glue("{out_dir}posterior_ensWts{suffix}.rds")) |>
-  inner_join(param_key, by=join_by(name)) |>
-  mutate(sim=paste("Sim", str_split_i(label, "_", 3)),
-         param=str_split_i(label, "_", 2)) |>
-  select(sim, param, .draw, .chain, .iteration, value) |>
-  pivot_wider(names_from="param", values_from="value") |>
-  mutate(yday_df=list(yday_df)) |>
-  unnest(yday_df) |>
-  mutate(logit_p=Int*yday_Int + cos*yday_cos + sin*yday_sin) |>
-  group_by(yday, .draw, .chain, .iteration) |>
-  mutate(p=make_compositional(logit_p, method="softmax")) |>
-  ungroup()
-ensP_sum <- ensP_post |>
-  summarise(md=median(p),
-            mn=mean(p),
-            q05=quantile(p, probs=0.05),
-            q10=quantile(p, probs=0.1),
-            q25=quantile(p, probs=0.25),
-            q75=quantile(p, probs=0.75),
-            q90=quantile(p, probs=0.9),
-            q95=quantile(p, probs=0.95),
-            .by=c(sim, yday)) |>
-  mutate(date_std=ymd("2020-01-01") + yday - 1,
-         sim=factor(sim, levels=paste("Sim", 1:50)))
+if(!grepl("noHarm", suffix)) {
+  yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%24==1,]) |>
+    set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
+    mutate(yday=1:366)
+  ensP_post <- readRDS(glue("{out_dir}ensWts_harm_post{suffix}.rds")) |>
+    inner_join(param_key, by=join_by(name)) |>
+    mutate(sim=paste("Sim", str_split_i(label, "_", 3)),
+           param=str_split_i(label, "_", 2)) |>
+    select(sim, param, .draw, .chain, .iteration, value) |>
+    pivot_wider(names_from="param", values_from="value") |>
+    mutate(yday_df=list(yday_df)) |>
+    unnest(yday_df) |>
+    mutate(logit_p=Int*yday_Int + cos*yday_cos + sin*yday_sin) |>
+    group_by(yday, .draw, .chain, .iteration) |>
+    mutate(p=make_compositional(logit_p, method="softmax")) |>
+    ungroup()
+  ensP_sum <- ensP_post |>
+    summarise(md=median(p),
+              mn=mean(p),
+              q05=quantile(p, probs=0.05),
+              q10=quantile(p, probs=0.1),
+              q25=quantile(p, probs=0.25),
+              q75=quantile(p, probs=0.75),
+              q90=quantile(p, probs=0.9),
+              q95=quantile(p, probs=0.95),
+              .by=c(sim, yday)) |>
+    mutate(date_std=ymd("2020-01-01") + yday - 1,
+           sim=factor(sim, levels=paste("Sim", 1:50)))
 
-# ggplot(ensP_sum, aes(date_std, md, group=sim)) +
-#   geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.1) +
-#   geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.1) +
-#   geom_line() +
-#   scale_y_continuous("Ensemble weight p", limits=c(0, 1),
-#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-#   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b")
+  # ggplot(ensP_sum, aes(date_std, md, group=sim)) +
+  #   geom_ribbon(aes(ymin=q10, ymax=q90), colour=NA, alpha=0.1) +
+  #   geom_ribbon(aes(ymin=q25, ymax=q75), colour=NA, alpha=0.1) +
+  #   geom_line() +
+  #   scale_y_continuous("Ensemble weight p", limits=c(0, 1),
+  #                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  #   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b")
 
-p <- ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
-  geom_area(position="fill", colour="grey30", linewidth=0.1) +
-  scale_fill_brewer("Simulation", palette="Paired") +
-  scale_y_continuous("Posterior median weight", limits=c(0, 1),
-                     expand=c(0,0), oob=scales::oob_keep,
-                     breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-  scale_x_datetime("Day of year", date_breaks="1 month", date_labels="%b",
-                   expand=c(0,0), oob=scales::oob_keep) +
-  ggtitle("Dispersal simulation IP") +
-  theme(axis.title.x=element_blank(),
-        legend.position="none")
-ggsave(glue("{fig_dir}/IPens_md{suffix}.png"),
-       plot=p, width=4.5, height=4.5)
+  p <- ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
+    geom_area(position="fill", colour="grey30", linewidth=0.1) +
+    scale_fill_brewer("Simulation", palette="Paired") +
+    scale_y_continuous("Posterior median weight", limits=c(0, 1),
+                       expand=c(0,0), oob=scales::oob_keep,
+                       breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+    scale_x_datetime("Day of year", date_breaks="1 month", date_labels="%b",
+                     expand=c(0,0), oob=scales::oob_keep) +
+    ggtitle("Dispersal simulation IP") +
+    theme(axis.title.x=element_blank(),
+          legend.position="none")
+  ggsave(glue("{fig_dir}/IPens_md{suffix}.png"),
+         plot=p, width=4.5, height=4.5)
 
-# ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
-#   geom_area(position="fill", colour="grey30", linewidth=0.1) +
-#   scale_fill_brewer("Simulation", palette="Paired") +
-#   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
-#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-#   scale_x_datetime("Day of year", date_breaks="1 month", date_labels="%b") +
-#   coord_polar()
-#
-# ensP_post |>
-#   filter(.draw %in% draw_sample[1:20]) |>
-#   mutate(date_std=ymd("2020-01-01") + yday - 1,
-#          sim=factor(sim, levels=paste("Sim", 1:50))) |>
-#   ggplot(aes(date_std, p, fill=sim)) +
-#   geom_area(position="fill", colour="grey30", linewidth=0.1) +
-#   scale_fill_brewer("Simulation", palette="Paired") +
-#   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
-#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-#   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
-#   facet_wrap(~.draw, nrow=4)
-#
-#
-# ensP_post |>
-#   filter(.draw %in% draw_sample) |>
-#   mutate(date_std=ymd("2020-01-01") + yday - 1,
-#          sim=factor(sim, levels=paste("Sim", 1:50))) |>
-#   ggplot(aes(date_std, p, group=.draw)) +
-#   geom_line(alpha=0.2) +
-#   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
-#                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
-#   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
-#   facet_wrap(~sim, nrow=2)
+  # ggplot(ensP_sum, aes(date_std, md, fill=sim)) +
+  #   geom_area(position="fill", colour="grey30", linewidth=0.1) +
+  #   scale_fill_brewer("Simulation", palette="Paired") +
+  #   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+  #                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  #   scale_x_datetime("Day of year", date_breaks="1 month", date_labels="%b") +
+  #   coord_polar()
+  #
+  # ensP_post |>
+  #   filter(.draw %in% draw_sample[1:20]) |>
+  #   mutate(date_std=ymd("2020-01-01") + yday - 1,
+  #          sim=factor(sim, levels=paste("Sim", 1:50))) |>
+  #   ggplot(aes(date_std, p, fill=sim)) +
+  #   geom_area(position="fill", colour="grey30", linewidth=0.1) +
+  #   scale_fill_brewer("Simulation", palette="Paired") +
+  #   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+  #                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  #   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
+  #   facet_wrap(~.draw, nrow=4)
+  #
+  #
+  # ensP_post |>
+  #   filter(.draw %in% draw_sample) |>
+  #   mutate(date_std=ymd("2020-01-01") + yday - 1,
+  #          sim=factor(sim, levels=paste("Sim", 1:50))) |>
+  #   ggplot(aes(date_std, p, group=.draw)) +
+  #   geom_line(alpha=0.2) +
+  #   scale_y_continuous("Weight in ensemble", limits=c(0, 1),
+  #                      breaks=round(seq(0, 1, by=1/info$nSims), 2)) +
+  #   scale_x_datetime("Day of year", date_breaks="3 months", date_labels="%b") +
+  #   facet_wrap(~sim, nrow=2)
+}
+
 
 
 # . Attachment covariate effects ------------------------------------------
@@ -627,7 +621,7 @@ farm_env_avg <- readRDS(glue("{dat_dir}/farm_env_avg.rds"))
 
 if(fishCol=="RW_logit") {
   attach_mx <- readRDS(glue("{dat_dir}/attach_env_mx_RW.rds"))
-  pAttach_post_draws <- glue("{out_dir}posterior_attach_beta{suffix}.rds") |>
+  pAttach_post_draws <- glue("{out_dir}attach_beta_post{suffix}.rds") |>
     readRDS() |>
     filter(.draw %in% draw_sample) |>
     select(-.iteration, -.chain) |>
@@ -802,7 +796,7 @@ ggsave(glue("{fig_dir}/postAttachRegC{suffix}.png"), pC, width=7, height=5)
 # . Salinity covariate effects --------------------------------------------
 S_range <- range(readRDS(glue("{dat_dir}/sal_mx.rds")))
 S_df <- tibble(sal=seq_range(S_range, length.out=100))
-pSurv_post <- glue("{out_dir}posterior_surv_beta{suffix}.rds") |>
+pSurv_post <- glue("{out_dir}surv_beta_post{suffix}.rds") |>
   readRDS() |>
   filter(.draw %in% draw_sample) |>
   select(-.iteration, -.chain) |>
@@ -839,7 +833,7 @@ T_z_range <- range(readRDS(glue("{dat_dir}/temp_z_mx.rds")))
 T_df <- tibble(temp=seq_range(T_range, length.out=100),
                temp_z=seq_range(T_z_range, length.out=100))
 
-stageDur_df <-  glue("{out_dir}posterior_mnDaysStage_beta{suffix}.rds") |>
+stageDur_df <-  glue("{out_dir}mnDaysStage_beta_post{suffix}.rds") |>
   readRDS() |>
   filter(.draw %in% draw_sample) |>
   select(-.iteration, -.chain) |>
