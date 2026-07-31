@@ -487,16 +487,16 @@ draw_sample <- sample.int(1500, 300)
 
 # . IPbg ------------------------------------------------------------------
 
-if(grepl("randIPbg", suffix)) {
-  library(sf)
-  mesh_dir <- ifelse(sevcheck::get_os()=="windows", "../03_packages/WeStCOMS/data", "~/hydro/meshes")
-  farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
-  farm_bbox <- list(xmin=145000, xmax=225500, ymin=720000, ymax=785000)
-  linnhe_fp <- st_read(glue("{mesh_dir}/WeStCOMS3_mesh_footprint.gpkg")) |>
-    st_crop(unlist(farm_bbox))
+library(sf)
+mesh_dir <- ifelse(sevcheck::get_os()=="windows", "../03_packages/WeStCOMS/data", "~/hydro/meshes")
+farm_bbox <- list(xmin=125000, xmax=225500, ymin=690000, ymax=785000)
+farm_bbox <- list(xmin=145000, xmax=225500, ymin=720000, ymax=785000)
+linnhe_fp <- st_read(glue("{mesh_dir}/WeStCOMS3_mesh_footprint.gpkg")) |>
+  st_crop(unlist(farm_bbox))
+site_names <- readRDS(glue("{dat_dir}/site_names.rds"))
+farm_sites <- read_csv("data/farm_sites_widerLinnhe_2022-2025.csv")
 
-  site_names <- readRDS(glue("{dat_dir}/site_names.rds"))
-  farm_sites <- read_csv("data/farm_sites_widerLinnhe_2022-2025.csv")
+if(grepl("randIPbg", suffix)) {
   farm_IPbg <- out_full_sum |>
     filter(grepl("IP_bg", name)) |>
     mutate(farm=str_sub(name, 10, -2) |> as.numeric(),
@@ -524,6 +524,53 @@ if(grepl("randIPbg", suffix)) {
           legend.background=element_rect(colour="grey30", linewidth=0.2, fill="white"))
   ggsave(glue("{fig_dir}/IPbg_md_map{suffix}.png"),
          plot=p, width=5, height=5)
+} else {
+  yday_df <- as_tibble(make_ydayh_mx()[(1:(366*24))%%(24)==1,]) |>
+    set_names(c("yday_Int", "yday_cos", "yday_sin")) |>
+    mutate(yday=1:366,
+           date=ymd("2024-01-01") + yday-1) |>
+    filter(day(date)==1)
+  post_df <- readRDS(glue("{out_dir}log_IP_bg_m3_coef_post{suffix}.rds")) |>
+    mutate(farm=as.numeric(str_sub(str_split_i(name, ",", 2), 1, -2)),
+           param=str_sub(str_split_i(name, ",", 1), -1, -1),
+           param=c("Int", "cos", "sin")[as.numeric(param)]) |>
+    select(farm, param, .draw, value) |>
+    pivot_wider(names_from="param", values_from="value") |>
+    mutate(yday_df=list(yday_df)) |>
+    unnest(yday_df) |>
+    mutate(log_IP_bg_m3=Int*yday_Int + cos*yday_cos + sin*yday_sin) |>
+    group_by(yday, .draw) |>
+    mutate(IP_bg_m3=exp(log_IP_bg_m3)) |>
+    ungroup() |>
+    summarise(med=median(IP_bg_m3),
+              .by=c(farm, yday)) |>
+    mutate(date_std=ymd("2024-01-01") + yday - 1,
+           sepaSite=names(site_names)[farm]) |>
+    left_join(farm_sites)
+  for(m in 1:12) {
+    p <- ggplot(linnhe_fp) +
+      geom_sf() +
+      geom_point(data=post_df |> filter(month(date_std)==m),
+                 aes(easting, northing, fill=med), size=5, shape=21) +
+      scale_fill_viridis_c(expression("Posterior median lice "%.%" m"^"-3"%.%" h"^"-1"),
+                           option="plasma", begin=0.05, end=0.95, limits=c(0, 0.2),
+                           breaks=seq(0, 0.2, by=0.05),
+                           labels=c("0", "0.05", "0.10", "0.15", "0.20")) +
+      scale_x_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=3) +
+      scale_y_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=4) +
+      ggtitle(paste0("Background IP: 01-", month.abb[m])) +
+      theme(axis.title=element_blank(),
+            legend.position="inside",
+            # legend.position.inside=c(0.277, 0.915),
+            legend.position.inside=c(0.293, 0.915),
+            legend.direction="horizontal",
+            legend.title.position="top",
+            legend.key.height=unit(0.2, "cm"),
+            legend.key.width=unit(1, "cm"),
+            legend.background=element_rect(colour="grey30", linewidth=0.2, fill="white"))
+    ggsave(glue("{fig_dir}/IPbg_md_map-{str_pad(m, 2, 'left', '0')}{suffix}.png"),
+           plot=p, width=5, height=5)
+  }
 }
 
 
