@@ -21,7 +21,7 @@ GQ <- F
 refit <- T
 
 mod <- c("noHarm_randIPbg", "noHarm_ydayIPbg",
-         "Harm_randIPbg", "Harm_ydayIPbg")[4]
+         "Harm_randIPbg", "Harm_ydayIPbg")[1]
 fishCol <- c("RW_logit", "BSA")[2]
 suffix <- paste0(switch(mod,
                         'noHarm_randIPbg'='_noHarm_randIPbg',
@@ -166,8 +166,8 @@ if(refit) {
          filter(grepl(.x, name)) |>
          saveRDS(glue("{out_dir}{.x}_post{suffix}.rds")))
 } else {
-  suffix <- paste0(suffix, "_tq")
-  out_full_df <- readRDS(glue("{out_dir}posterior{suffix}.rds"))
+  suffix <- paste0(suffix, "_tq_trtStg")
+  # out_full_df <- readRDS(glue("{out_dir}posterior{suffix}.rds"))
   out_full_sum <- readRDS(glue("{out_dir}posterior_summary{suffix}.rds"))
 }
 
@@ -553,9 +553,9 @@ if(grepl("randIPbg", suffix)) {
       geom_point(data=post_df |> filter(month(date_std)==m),
                  aes(easting, northing, fill=med), size=5, shape=21) +
       scale_fill_viridis_c(expression("Posterior median lice "%.%" m"^"-3"%.%" h"^"-1"),
-                           option="plasma", begin=0.05, end=0.95, limits=c(0, 0.2),
-                           breaks=seq(0, 0.2, by=0.05),
-                           labels=c("0", "0.05", "0.10", "0.15", "0.20")) +
+                           option="plasma", begin=0.05, end=0.95, limits=c(0, 0.4),
+                           breaks=seq(0, 0.4, by=0.1),
+                           labels=c("0", "0.1", "0.2", "0.3", "0.4")) +
       scale_x_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=3) +
       scale_y_continuous(expand=c(0,0), oob=scales::oob_keep, n.breaks=4) +
       ggtitle(paste0("Background IP: 01-", month.abb[m])) +
@@ -733,7 +733,7 @@ if(fishCol=="RW_logit") {
     facet_grid(RW~UV_raw)
 } else if(fishCol=="BSA") {
   attach_mx <- readRDS(glue("{dat_dir}/attach_env_mx_BSA.rds"))
-  pAttach_post_draws <- glue("{out_dir}posterior_attach_beta{suffix}.rds") |>
+  pAttach_post_draws <- glue("{out_dir}attach_beta_post{suffix}.rds") |>
     readRDS() |>
     filter(.draw %in% draw_sample) |>
     select(-.iteration, -.chain) |>
