@@ -12,6 +12,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     hours <- 1:info$nHours
     dates_GQ <- 1
     hours_GQ <- 1
+    GQ_ypred <- FALSE
   } else {
     info$nDays <- as.numeric(ymd(GQ_start) - info$dateRange[1])
     info$nDays_GQ <- as.numeric(info$dateRange[2] - ymd(GQ_start))
@@ -67,7 +68,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     prior_surv_beta=array(c(rep(c(4, rep(0.2, nrow(params$surv_beta)-1)), info$nStageGroups),
                             rep(c(1, rep(0.1, nrow(params$surv_beta)-1)), info$nStageGroups)),
                           dim=c(nrow(params$surv_beta), info$nStageGroups, 2),
-                          dimnames=list(c("int", "temp"),
+                          dimnames=list(c("int", "Salm30"),
                                         c("Ch1,2", "PA1,2", "Ad"),
                                         c("mu", "sd"))),
     # surv beta: sd for farm-level intercepts: student_t(nu, mu, sd)
@@ -227,7 +228,7 @@ make_attach_env_mx <- function(farm_env, info, params, fishCol="BSA_z", out_dir=
   attach_env_mx[,,5+Int] <- farm_env$temperature_z_sq
   attach_env_mx[,,6+Int] <- farm_env$uv_z_sq
   if(!is.null(out_dir)) {
-    saveRDS(attach_env_mx, glue("{out_dir}/attach_env_mx.rds"))
+    saveRDS(attach_env_mx, glue("{out_dir}/attach_env_mx_{str_remove(fishCol, '_z')}.rds"))
   }
   return(attach_env_mx)
 }

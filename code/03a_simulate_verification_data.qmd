@@ -557,7 +557,8 @@ params <- list(
   # Precision parameter for fish-level lice counts ~negbinom(mu, phi)
   # Distribution tends toward poisson as phi -> Inf
   # nb_prec=abs(rnorm(1, 0, 2)),
-  nb_prec=rchisq(1, 3),
+  nb_prec=rchisq(3, 1, 3),
+  b_zi=cbind(rnorm(3, -1, 1), -abs(rnorm(3, -1, 1))),
   # Background infestation rate from wild fish (copepodids/m3/d)
   IP_bg_m3=(runif(1, min=(1e-5)^0.5, max=(0.1)^0.5))^2,
   # Half saturation constant for attachment (cop/m3/day) 
@@ -592,6 +593,7 @@ params$mnDaysStageCh <- summary(
 params$mnDaysStagePA <- summary(
   lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="PA")))$coefficients[,1:2] * 
   rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
+params$attach_beta_BSA <- params$attach_beta
 ```
 
 In this particular simulation, the settings are:
@@ -767,23 +769,29 @@ p_detect <- tibble(Stage=factor(1:info$nStageGroups,
   scale_x_continuous("P(Detect)", limits=c(0, 1)) +
   theme(axis.title.y=element_blank())
 # sampling
-p_nb <- expand_grid(mu=c(0.01, 0.1, 0.5, 1, 5),
-            y=0:10) |>
-  mutate(p=dnbinom(y, mu=mu, size=params$nb_prec),
-         mu_lab=paste("mu :", mu)) |>
+p_huNB <- expand_grid(mu=c(0.01, 0.1, 0.5, 1, 5),
+                      y=0:10,
+                      stage=1:3) |>
+  mutate(zi=boot::inv.logit(params$b_zi[stage, 1] + params$b_zi[stage, 2]*log(mu)),
+         p=if_else(y==0, 
+                   zi + (1 - zi) * dnbinom(0, mu=mu, size=params$nb_prec[stage]),
+                   (1 - zi) * dnbinom(y, mu=mu, size=params$nb_prec[stage])),
+         mu_lab=paste("mu :", mu),
+         stage=factor(stage, levels=1:3, labels=c("Ch", "PA", "Ad"))) |>
   ggplot(aes(y, p)) + 
   geom_bar(stat="identity", colour="grey30", fill="cadetblue") +
-  geom_text(data=tibble(y=8, p=0.9, mu_lab="mu : 0.01", 
-                        label=paste0("phi: ", round(params$nb_prec, 2))),
+  geom_text(data=expand_grid(y=8, p=0.9, mu_lab="mu : 0.01", stage=1:3) |>
+              mutate(label=paste0("phi: ", round(params$nb_prec[stage], 2)),
+                     stage=factor(stage, levels=1:3, labels=c("Ch", "PA", "Ad"))),
             aes(label=label), parse=T) +
   scale_x_continuous("Observed lice count", breaks=seq(0, 10, by=2)) +
   scale_y_continuous("Probability") +
-  facet_grid(.~mu_lab, labeller=label_parsed)
+  facet_grid(stage~mu_lab, labeller=label_parsed)
 cowplot::plot_grid(cowplot::plot_grid(p_prAttach, p_prAttachIP,
                                       nrow=1, rel_widths=c(1, 0.5)),
                    cowplot::plot_grid(p_ensWts, p_prSurv, p_daysStage, p_detect,
                                       nrow=1, axis="tb", align="h"),
-                   p_nb, ncol=1, rel_heights=c(0.9, 0.5, 0.55))
+                   p_huNB, ncol=1, rel_heights=c(0.9, 0.5, 0.8))
 if(save_figs) {
   ggsave("admin/project_meetings/figs_temp/dataExamp_params.png", width=10, height=9)
 }
@@ -832,10 +840,9 @@ if(use_farm_avg) {
   #   ungroup() |>
   #   mutate(uv_z_sq=uv_z^2)
   influx_df <- influx_df |> 
-    group_by(time, date, day, hour, sepaSite, sim) |>
     summarise(pen=first(pen),
-              influx=sum(influx)) |>
-    ungroup()
+              influx=sum(influx),
+              .by=c(time, date, day, hour, sepaSite, sim))
   info$nFarms <- n_distinct(influx_df$sepaSite)
   info$nPens <- 1
   info$IP_penVolume <- farm_i$vol

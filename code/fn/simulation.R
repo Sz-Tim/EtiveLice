@@ -44,7 +44,6 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
   # ydayh_mx[hour, c(Int, cos, sin)]
   ydayh_mx <- make_ydayh_mx(farm_env)
 
-
   #---- Data structures
   #### Ensemble infection pressure: Number of copepodids in radius
   # ensIP[hour, farm]
@@ -176,9 +175,11 @@ simulate_farm_pops_mn_lpf <- function(params, info, influx_df, farm_env, farm_en
     for(farm in 1:info$nFarms) {
       if(day %in% sampledDays[sampledDays[,1]==farm,2]) {
         for(sex in 1:2) {
+          zi <- rbinom(info$nStages, 1,
+                       boot::inv.logit(params$b_zi[info$stg_grp_ii,1] + params$b_zi[info$stg_grp_ii,2]*log(y_bar[, sex, day, farm])))
           y[, sex, day, farm] <- rnbinom(info$nStages,
                                          mu=y_bar[, sex, day, farm],
-                                         size=params$nb_prec)
+                                         size=params$nb_prec[info$stg_grp_ii]) * (zi==0)
         }
         #--- Treat if AF > threshold
         if(nFishSampled_mx[day, farm] > 0 &

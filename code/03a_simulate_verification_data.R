@@ -8,7 +8,7 @@ library(tidyverse)
 library(glue)
 dir("code/fn", ".R$", full.names=T) |> walk(source)
 
-n_sims <- 2
+n_sims <- 10
 
 for(i in 1:n_sims) {
   sim_number <- str_pad(length(dir("data/sim", "sim"))+1, 2, 'left', '0')
