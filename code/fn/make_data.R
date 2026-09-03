@@ -12,7 +12,6 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     hours <- 1:info$nHours
     dates_GQ <- 1
     hours_GQ <- 1
-    GQ_ypred <- FALSE
   } else {
     info$nDays <- as.numeric(ymd(GQ_start) - info$dateRange[1])
     info$nDays_GQ <- as.numeric(info$dateRange[2] - ymd(GQ_start))
