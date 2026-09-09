@@ -84,6 +84,9 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
                                c(0.5, 0.5)),
     # IP_bg_m3: c(mu, sigma); normal, T(0, )
     prior_IP_bg_m3=c(0.05, 0.05),
+    # log_IP_bg_m3: c(mu, sigma); normal
+    prior_log_IP_bg_m3=c(log(0.01), 0.75),
+    prior_log_harm_IP_bg_m3_sd=0.5,
     # inv_sqrt_nb_prec: df; normal(mu, sd); nb_prec = 1/inv_sqrt_nb_prec^2
     prior_inv_sqrt_nb_prec=c(0, 1)
   )
