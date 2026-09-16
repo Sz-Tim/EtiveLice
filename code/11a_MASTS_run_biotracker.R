@@ -21,7 +21,7 @@ set.seed(1003)
 
 remake_sim_i <- T
 os <- get_os()
-cores_per_sim <- if_else(os=="linux", 26, 15)
+cores_per_sim <- if_else(os=="linux", 20, 15)
 parallel_sims <- if_else(os=="linux", 2, 2)
 start_date <- "2025-01-01"
 end_date <- "2025-06-30"
@@ -35,14 +35,14 @@ dirs <- switch(
              hf2="/home/sa04ts/hydro/WeStCOMS2/SWAN/Archive_daily/",
              jdk="/home/sa04ts/.jdks/jdk-23.0.1/bin/java",
              jar="/home/sa04ts/biotracker/biotracker_v2-2-3.jar",
-             out=glue("{getwd()}/out/MASTS")),
+             out=glue("{getwd()}/out/MASTS_salinity")),
   windows=list(proj="E:/EtiveLice", #getwd(),
                mesh="E:/hydro",
                hf0="E:/hydro/WeStCOMS3/Archive",
                hf2="E:/hydro/WeStCOMS2/SWAN/Archive_daily/",
                jdk="C:/Users/sa04ts/.jdks/openjdk-23.0.2/bin/javaw",
                jar="C:/Users/sa04ts/OneDrive - SAMS/Projects/03_packages/biotracker/out/biotracker_v2-2-3.jar",
-               out="E:/EtiveLice/out/MASTS")
+               out="E:/EtiveLice/out/MASTS_salinity")
 )
 
 if(remake_sim_i) {
