@@ -240,7 +240,7 @@ param_seq <- function(min_i, max_i, length.out, mean_i=NULL, sd_i=NULL, logMn=F)
   }
   if(is.null(sd_i)) sd_i <- mean_i/2
   vals <- seq(min_i, max_i, length.out=length.out)
-  weights <- dnorm(vals, mean_i, sd_i)/sum(dnorm(speeds, mean_i, sd_i))
+  weights <- dnorm(vals, mean_i, sd_i)/sum(dnorm(vals, mean_i, sd_i))
   return(tibble(vals=vals, weights=weights))
 }
 
