@@ -146,6 +146,9 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
       # Egg production function
       eggTemp_fn=bounds$eggTemp_fn |>
         sample(n_sim, replace=T),
+      # rDVM: Induced by light (true) or time (false)
+      swimLightLevel=bounds$swimLightLevel |>
+        sample(n_sim, replace=T),
       # Light responses: sample on a sqrt scale
       lightThreshNauplius=sqrt(bounds$lightN) |>
         qunif_minmax(pnorm(light_mx[,1])) |>
