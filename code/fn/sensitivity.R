@@ -226,6 +226,31 @@ sample_parameter_distributions <- function(n_sim=30, out_dir,
 
 
 
+
+
+
+
+param_seq <- function(min_i, max_i, length.out, mean_i=NULL, sd_i=NULL, logMn=F) {
+  if(is.null(mean_i)) {
+    if(logMn) {
+      mean_i <- exp(mean(c(log(min_i), log(max_i))))
+    } else {
+      mean_i <- mean(c(min_i, max_i))
+    }
+  }
+  if(is.null(sd_i)) sd_i <- mean_i/2
+  vals <- seq(min_i, max_i, length.out=length.out)
+  weights <- dnorm(vals, mean_i, sd_i)/sum(dnorm(speeds, mean_i, sd_i))
+  return(tibble(vals=vals, weights=weights))
+}
+
+
+
+
+
+
+
+
 calc_GSA_connectivity <- function(f, farms, sim, site_areas, cores=4) {
   library(furrr)
   if(get_os()=="windows") {
