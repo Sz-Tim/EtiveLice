@@ -46,6 +46,7 @@ dirs <- switch(
 )
 
 if(remake_sim_i) {
+  post_dir <- glue("{dirs$proj}/data/lit/fit")
   egg_post <- list(constant=read_csv(glue("{post_dir}/egg_temp_constant_post.csv"), show_col_types=F),
                    logistic=read_csv(glue("{post_dir}/egg_temp_logistic_post.csv"), show_col_types=F),
                    linear=read_csv(glue("{post_dir}/egg_temp_linear_post.csv"), show_col_types=F)) |>
