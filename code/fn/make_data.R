@@ -73,7 +73,7 @@ make_stan_data <- function(dat_dir, source="sim", GQ_ypred=TRUE, GQ_start=NULL, 
     # surv beta: sd for farm-level intercepts: student_t(nu, mu, sd)
     prior_surv_int_farm_sd=c(3, 0, 0.75),
     # mnDaysStage: [c(Int, Temp), c(Ch1/Ch2, PA1/PA2), c(mu, sd)]; normal
-    prior_mnDaysStage_F=array(c(params$mnDaysStageCh[,1]/2, params$mnDaysStagePA[,1]/2,
+    prior_mnDaysStage_F=array(c(params$mnDaysStageCh[,1], params$mnDaysStagePA[,1],
                                 params$mnDaysStageCh[,2], params$mnDaysStagePA[,2]),
                               dim=c(2, info$nStageGroups-1, 2),
                               dimnames=list(c("int", "temp"),

@@ -71,6 +71,21 @@ trt_df <- read_csv(glue("{dat_dir}/mowi_trt_cleaned.csv")) |>
              by=join_by(sepaSite, date)) |>
   mutate(across(starts_with("t_"), ~replace_na(.x, 0))) |>
   arrange(sepaSite, date)
+# Set 'treatment date' one day ahead so mortality applies on day of count:
+# I.e., assume lice counts are performed *post* treatment
+# Bit of a hack, but simpler than modifying in Stan since N[t+1] = N[t]*s[t]
+trt_preCount_df <- read_csv(glue("{dat_dir}/mowi_trt_cleaned.csv")) |>
+  select(sepaSite, date, TypeNum) |>
+  mutate(TypeNum=paste0("t_", TypeNum),
+         TypeApplied=1,
+         date=date-1) |>
+  inner_join(read_csv(glue("{dat_dir}/mowi_cleaned.csv")) |> select(sepaSite, date)) |>
+  arrange(TypeNum, sepaSite, date) |>
+  pivot_wider(names_from=TypeNum, values_from=TypeApplied, values_fill=0) |>
+  right_join(mowi_df_ext |> select(sepaSite, date),
+             by=join_by(sepaSite, date)) |>
+  mutate(across(starts_with("t_"), ~replace_na(.x, 0))) |>
+  arrange(sepaSite, date)
 trt_meth_ii <- read_csv(glue("{dat_dir}/mowi_trt_cleaned.csv")) |>
   summarise(.by=c(MethodNum, TypeNum, Method, Type)) |>
   arrange(TypeNum)
@@ -98,6 +113,7 @@ nFish_mx <- make_nFish_mx(mowi_df_ext, info)
 sampledDays <- make_sampledDays(mowi_df_ext |> mutate(pen=sepaSite))
 nFishSampled_mx <- make_nFishSampled_mx(mowi_df_ext, info, nFish_mx)
 trtApplied_mx <- make_trtApplied_mx(trt_df, info)
+trtAppliedPreCount_mx <- make_trtApplied_mx(trt_preCount_df, info)
 mowi_y_obs <- mowi_df_ext |>
   mutate(across(all_of(c("Ch", "PA", "AF")), ~if_else(is.na(.x), 0, .x))) |>
   select(sepaSite, date, Ch, PA, AF) |>
@@ -112,6 +128,7 @@ saveRDS(nFish_mx, glue("{dat_stan_dir}/nFish_mx.rds"))
 saveRDS(sampledDays, glue("{dat_stan_dir}/sampledDays.rds"))
 saveRDS(nFishSampled_mx, glue("{dat_stan_dir}/nFishSampled_mx.rds"))
 saveRDS(trtApplied_mx, glue("{dat_stan_dir}/trtApplied_mx.rds"))
+saveRDS(trtAppliedPreCount_mx, glue("{dat_stan_dir}/trtAppliedPreCount_mx.rds"))
 saveRDS(y_obs, glue("{dat_stan_dir}/y_obs.rds"))
 write_csv(farm_i, glue("{dat_stan_dir}/farm_sites_mowi.csv"))
 
@@ -196,21 +213,21 @@ saveRDS(IP_mx, glue("{dat_stan_dir}/IP_mx.rds"))
 # params ------------------------------------------------------------------
 
 # For calculating priors: mean stage duration
-mnDaysStage_df <- expand_grid(Ch=seq(125, 175, length.out=100),
-                              PA=seq(325, 375, length.out=100)) |>
+# GDD from REF for Chalimus and PA
+# split to Ch1, Ch2 from Ch1+2: assume equal duration
+mnDaysStage_df <- expand_grid(Ch=seq(125, 175, length.out=100)/2,
+                              PA=seq(325, 375, length.out=100)/2) |>
   mutate(PA=PA-Ch) |>
   pivot_longer(everything(), names_to="stage", values_to="GDD") |>
   mutate(temperature=list(seq_range(farm_env$temperature, length.out=100))) |>
   unnest(temperature) |>
   mutate(days=GDD/temperature,
          temp_z=(temperature-farm_env_avg$temperature[1])/farm_env_avg$temperature[2])
-# split to Ch1, Ch2 from Ch1+2: assume equal duration
 params$mnDaysStageCh <- summary(
   lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="Ch")))$coefficients[,1:2] *
-  rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
-# split to PA1, PA2 from PA1+2: assume equal duration
+  rep(c(1, sqrt(nrow(mnDaysStage_df))), each=2)
 params$mnDaysStagePA <- summary(
   lm(days ~ temp_z, data=mnDaysStage_df |> filter(stage=="PA")))$coefficients[,1:2] *
-  rep(c(1, sqrt(nrow(mnDaysStage_df)/2)), each=2)
+  rep(c(1, sqrt(nrow(mnDaysStage_df))), each=2)
 
 saveRDS(params, glue("{dat_stan_dir}/params.rds"))
